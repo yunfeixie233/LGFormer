@@ -259,8 +259,8 @@ class StokenAttention(BaseModule):
 
 class StokenAttentionLayer(BaseModule):
     def __init__(self, dim, n_iter, stoken_size, 
-                 num_heads=1, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, layerscale=False, init_values = 1.0e-5):
+                 num_heads=1, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,drop_path=0.,
+                 layerscale=False,init_values=1e-05):
         super().__init__()
                         
         self.layerscale = layerscale
@@ -273,14 +273,7 @@ class StokenAttentionLayer(BaseModule):
                                     num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, 
                                     attn_drop=attn_drop, proj_drop=drop)   
                     
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        
-        self.norm2 = nn.BatchNorm2d(dim)
-        self.mlp2 = Mlp(in_features=dim, hidden_features=int(dim * mlp_ratio), out_features=dim, act_layer=act_layer, drop=drop)
-                
-        if layerscale:
-            self.gamma_1 = nn.Parameter(init_values * torch.ones(1, dim, 1, 1),requires_grad=True)
-            self.gamma_2 = nn.Parameter(init_values * torch.ones(1, dim, 1, 1),requires_grad=True)
+
         
     def forward(self,stoken_features,pixel_features):
             
@@ -294,7 +287,7 @@ class StokenAttentionLayer(BaseModule):
 
 class BasicLayer(BaseModule):        
     def __init__(self, num_layers, dim, n_iter, stoken_size, 
-                 num_heads=1, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+                 num_heads=1, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, layerscale=False, init_values = 1.0e-5,
                  downsample=False,
                  use_checkpoint=False, checkpoint_num=None):
@@ -305,9 +298,9 @@ class BasicLayer(BaseModule):
                 
         self.blocks = nn.ModuleList([StokenAttentionLayer(
                                            dim=dim[0],  n_iter=n_iter, stoken_size=stoken_size,                                           
-                                           num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale, 
+                                           num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, 
                                            drop=drop, attn_drop=attn_drop, drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                                           act_layer=act_layer, 
+                                           
                                            layerscale=layerscale, init_values=init_values) for i in range(num_layers)])
                                            
                                                                            
@@ -375,7 +368,7 @@ class SpformerNeck(BaseModule):
     def __init__(self, in_chans=3, num_classes=1000,
                  embed_dim=[96, 192, 384, 768], depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24],
                  n_iter=[3, 2, 1, 0], stoken_size=[8, 4, 2, 1],                
-                 mlp_ratio=4., qkv_bias=True, qk_scale=None, 
+                 qkv_bias=True, qk_scale=None, 
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  projection=None, freeze_bn=False,
                  use_checkpoint=False, checkpoint_num=[0,0,0,0], 
@@ -386,7 +379,6 @@ class SpformerNeck(BaseModule):
         self.num_layers = len(depths)
         self.embed_dim = embed_dim        
         self.num_features = embed_dim[-1]
-        self.mlp_ratio = mlp_ratio
         self.stoken_size=stoken_size
         self.freeze_bn = freeze_bn
 
@@ -408,7 +400,6 @@ class SpformerNeck(BaseModule):
                                n_iter=n_iter[i_layer],
                                stoken_size=to_2tuple(stoken_size[i_layer]),                                                       
                                num_heads=num_heads[i_layer], 
-                               mlp_ratio=self.mlp_ratio, 
                                qkv_bias=qkv_bias, qk_scale=qk_scale, 
                                drop=drop_rate, attn_drop=attn_drop_rate,
                                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
