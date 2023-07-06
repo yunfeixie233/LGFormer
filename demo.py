@@ -1,12 +1,11 @@
-# 导入必要的库
 import torch
 from mmseg.models.backbones import ResNet
-from mmseg.models.necks import STViT_neck
-from mmseg.models.decode_heads import SViTHead
+from mmseg.models.necks import SpformerNeck
+from mmseg.models.decode_heads import SpformerHead
 
 # 初始化Backbone, Neck, 和 Head
 backbone = ResNet(depth=50).cuda()
-neck = STViT_neck(embed_dim=[256, 256, 256, 256],
+neck =  SpformerNeck(embed_dim=[256, 256, 256, 256],
                     depths=[4, 2, 1, 1],
                     num_heads=[2,2,2, 2],
                     n_iter=[4, 4, 4, 4], 
@@ -25,22 +24,23 @@ neck = STViT_neck(embed_dim=[256, 256, 256, 256],
                     downsample=False,
                     in_chans=256).cuda()
 
-head = SViTHead(in_channels=256,
+head = SpformerHead(in_channels=256,
        channels=512,
        num_classes=150,
        stoken_size=[4, 4, 4, 4]).cuda()
 
 B=1
-# 输入数据的形状
-input_shape = (B,3,512,512)  # B代表batch size
 
-# 初始化输入数据
+
+input_shape = (B,3,512,512) 
+
+
 input_data = torch.randn(input_shape).to('cuda')
 
-# 前向传播
+
 x = backbone.forward(input_data)
 stoken_features,pixel_features = neck.forward(x)
 output = head.forward(stoken_features,pixel_features)
 
-# 打印输出数据的形状
+
 print(output.shape)
