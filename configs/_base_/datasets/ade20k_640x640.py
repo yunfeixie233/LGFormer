@@ -1,6 +1,6 @@
 # dataset settings
 dataset_type = 'ADE20KDataset'
-data_root = '/root/autodl-tmp/ADEChallengeData2016'
+data_root = 'data/ade/ADEChallengeData2016'
 crop_size = (640, 640)
 data_preprocessor = dict(
     type='SegDataPreProcessor',

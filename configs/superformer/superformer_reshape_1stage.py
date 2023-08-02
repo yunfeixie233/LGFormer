@@ -78,7 +78,7 @@ model = dict(
 
 # dataset settings
 dataset_type = 'ADE20KDataset'
-data_root = '/root/autodl-tmp/ADEChallengeData2016'
+data_root = 'data/ade/ADEChallengeData2016'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 
