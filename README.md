@@ -29,6 +29,9 @@ pip install -r requirements.txt
 # '-v' means verbose, or more output
 # '-e' means installing a project in editable mode,
 # thus any local modifications made to the code will take effect without reinstallation.
+cd mmpretrain
+pip install -v -e .
+# mmpretrain library for data augmentation
 ```
 
 
@@ -49,27 +52,23 @@ The ADE20K dataset is used for training and validation, which can be downloaded 
     │   │   │   ├── validation                                                              
     
 ```
-## Demo
-To modify the model without the need to debug through the complex MMsegmentation framework, use the following command:
-
-```python
-python ./demo.py
-```
 
 ## Training
 
 To train the model, use the following command:
 
 ```bash
-python ./tools/train.py ./configs/spformer/spf_r50_ade20k-512x512.py 
+python ./tools/train.py ./configs/superformer/superformer_reshape_1stage.py
 ```
+
+For the specific meaning in config setting, you can refer to https://mmsegmentation.readthedocs.io/en/latest/user_guides/1_config.html
 
 ## Testing
 
 To test the model, use the following command. Replace `${CHECKPOINT_FILE}` with the path to your saved model weights.
 
 ```bash
-bash ./tools/test.py ./configs/spformer/spf_r50_ade20k-512x512.py  ${CHECKPOINT_FILE}
+python ./tools/test.py ./configs/superformer/superformer_reshape_1stage.py  ${CHECKPOINT_FILE}
 ```
 
 For additional details on training and testing, please refer to the official [mmsegmentation documentation](https://mmsegmentation.readthedocs.io/en/latest/user_guides/4_train_test.html).
@@ -79,8 +78,7 @@ For additional details on training and testing, please refer to the official [mm
 The model is added and registered in MMSegmentation.
 
 - Backbone: `Resnet-50` with feature fusion from different stage.
-- Neck: `SpformerNeck` to complete Superpixel Tokenization and iteratively update Superpixel and Pixel.
-- Head: `SpformerHead` to finish Superpixel Classification and Superpixel Association
+- Head: `SuperformerBottleNeck` to finish Superpixel Tokenization, Classification and Superpixel Association
 
 You can find the implementation of the model in the following directory:
 
@@ -90,9 +88,19 @@ SpformerV1
    |__models
       |__backbones
          |__resnet.py
-      |__necks
-         |__spformer_neck.py
       |__decode_heads
-         |__spformer_head.py
+         |__SuperformerBottleNeck.py
 ```
 
+The original Superformer modules and ops have been put under the following directory:
+
+```
+mmseg/superformer
+├── superpixel
+│   ├── dual_path_transformer_ops.py
+│   ├── superpixel_cross_attention_new_ops.py
+│   ├── superpixel_cross_attention_ops.py
+│   ├── superpixel_ops.py
+│   ├── superpixel_transformer.py
+│   └── test_superpixel_transformer_ops.py
+```
