@@ -9,8 +9,7 @@ from mmengine.utils.dl_utils.parrots_wrapper import _BatchNorm
 
 from mmseg.registry import MODELS
 from ..utils import ResLayer
-import torch.nn.functional as F
-import torch
+
 
 class BasicBlock(BaseModule):
     """Basic block for ResNet."""
@@ -418,8 +417,7 @@ class ResNet(BaseModule):
                  with_cp=False,
                  zero_init_residual=True,
                  pretrained=None,
-                 init_cfg=None,
-                 load_from=None):
+                 init_cfg=None):
         super().__init__(init_cfg)
         if depth not in self.arch_settings:
             raise KeyError(f'invalid depth {depth} for resnet')
@@ -429,38 +427,33 @@ class ResNet(BaseModule):
         block_init_cfg = None
         assert not (init_cfg and pretrained), \
             'init_cfg and pretrained cannot be setting at the same time'
-        if load_from==None:
-        
-            if isinstance(pretrained, str):
-                warnings.warn('DeprecationWarning: pretrained is a deprecated, '
-                            'please use "init_cfg" instead')
-                self.init_cfg = dict(type='Pretrained', checkpoint=pretrained)
-            elif pretrained is None:
-                if init_cfg is None:
-                    self.init_cfg = [
-                        dict(type='Kaiming', layer='Conv2d'),
-                        dict(
+        if isinstance(pretrained, str):
+            warnings.warn('DeprecationWarning: pretrained is a deprecated, '
+                          'please use "init_cfg" instead')
+            self.init_cfg = dict(type='Pretrained', checkpoint=pretrained)
+        elif pretrained is None:
+            if init_cfg is None:
+                self.init_cfg = [
+                    dict(type='Kaiming', layer='Conv2d'),
+                    dict(
+                        type='Constant',
+                        val=1,
+                        layer=['_BatchNorm', 'GroupNorm'])
+                ]
+                block = self.arch_settings[depth][0]
+                if self.zero_init_residual:
+                    if block is BasicBlock:
+                        block_init_cfg = dict(
                             type='Constant',
-                            val=1,
-                            layer=['_BatchNorm', 'GroupNorm'])
-                    ]
-                    block = self.arch_settings[depth][0]
-                    if self.zero_init_residual:
-                        if block is BasicBlock:
-                            block_init_cfg = dict(
-                                type='Constant',
-                                val=0,
-                                override=dict(name='norm2'))
-                        elif block is Bottleneck:
-                            block_init_cfg = dict(
-                                type='Constant',
-                                val=0,
-                                override=dict(name='norm3'))
-            else:
-                raise TypeError('pretrained must be a str or None')
-
+                            val=0,
+                            override=dict(name='norm2'))
+                    elif block is Bottleneck:
+                        block_init_cfg = dict(
+                            type='Constant',
+                            val=0,
+                            override=dict(name='norm3'))
         else:
-            self.load_pretrained_weights(load_from)
+            raise TypeError('pretrained must be a str or None')
 
         self.depth = depth
         self.stem_channels = stem_channels
@@ -532,27 +525,7 @@ class ResNet(BaseModule):
 
         self.feat_dim = self.block.expansion * base_channels * 2**(
             len(self.stage_blocks) - 1)
-        
-        self.mlp1 = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.ReLU(),
-            nn.Linear(64, 256),
-            nn.ReLU()
-        )
-        self.mlp2 = nn.Sequential(
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU()
-        )
-        self.mlp3 = nn.Sequential(
-            nn.Linear(2048, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.ReLU()
-        )
-        
-        
+
     def make_stage_plugins(self, plugins, stage_idx):
         """make plugins for ResNet 'stage_idx'th stage .
 
@@ -694,59 +667,13 @@ class ResNet(BaseModule):
         outs = []
         outs.append(x)
         x = self.maxpool(x)
+
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
             x = res_layer(x)
             if i in self.out_indices:
                 outs.append(x)
-                
-        # Store original sizes
-        original_sizes = [x.shape[2:] for x in outs]
-
-        # Flatten and pass through MLP
-        for i, mlp in enumerate([self.mlp1, self.mlp2, self.mlp3]):
-            original_size = outs[i * 2].size()
-            
-            # Flatten
-            outs[i * 2] = outs[i * 2].view(outs[i * 2].size(0)*outs[i * 2].size(2)*outs[i * 2].size(3), outs[i * 2].size(1))
-            
-            # Pass through MLP
-            outs[i * 2] = mlp(outs[i * 2])
-            
-            # Restore original size
-            outs[i * 2] = outs[i * 2].view(original_size[0],256,original_size[2],original_size[3])
-            
-        # Interpolate
-        outs[0] = F.interpolate(outs[0], scale_factor=0.25, mode='bilinear', align_corners=False)
-#         outs[2] = F.interpolate(outs[2], scale_factor=8, mode='bilinear', align_corners=False)
-        
-        outs[4] = F.interpolate(outs[4], scale_factor=4, mode='bilinear', align_corners=False)  # Consider changing this to scale_factor=32
-        # outs[0] = F.interpolate(outs[0], scale_factor=0.25, mode='bilinear', align_corners=False)
-        
-        # outs[2] = F.interpolate(outs[2], scale_factor=8, mode='bilinear', align_corners=False)
-        # outs[4] = F.interpolate(outs[4], scale_factor=32, mode='bilinear', align_corners=False)  # Consider changing this to scale_factor=32
-
-        if outs[0].shape != outs[2].shape or outs[0].shape != outs[4].shape or outs[2].shape != outs[4].shape:
-             outs[0], outs[2], outs[4] = self.pad_tensors([outs[0], outs[2], outs[4]])
-
-        outs[0]=outs[0]+outs[2]+outs[4]
-        # return tuple(outs)
-        return outs[0]
-    
-    def pad_tensors(self, outs):
-        max_last_dim = max(out.shape[-1] for out in outs)
-        max_second_last_dim = max(out.shape[-2] for out in outs)
-
-        padded_outs = []
-        for out in outs:
-            pad_second_last_dim = max_second_last_dim - out.shape[-2]
-            pad_last_dim = max_last_dim - out.shape[-1]
-            padding = (0, pad_last_dim, 0, pad_second_last_dim)
-            out = F.pad(out, padding)
-            padded_outs.append(out)
-
-        return padded_outs
-
+        return tuple(outs)
 
     def train(self, mode=True):
         """Convert the model into training mode while keep normalization layer
@@ -758,22 +685,7 @@ class ResNet(BaseModule):
                 # trick: eval have effect on BatchNorm only
                 if isinstance(m, _BatchNorm):
                     m.eval()
-                    
-    def load_pretrained_weights(self, weights_path):
-    # 1.加载权重
-        part='backbone.'
 
-        pretrained_weights = torch.load(weights_path)['state_dict']
-        model_state_dict = self.state_dict()
-        # 2.遍历预训练权重，只保留目标模型中存在的权重
-        pretrained_weights = {k.replace(part, ''): v for k, v in pretrained_weights.items() if k.replace(part, '') in model_state_dict and v.size() == model_state_dict[k.replace(part, '')].size()}
-        
-        # 3.更新模型的状态字典
-        model_state_dict.update(pretrained_weights)
-    
-        # 4.加载新的状态字典到模型
-        self.load_state_dict(model_state_dict)
-        print("load checkpoint of ",part)
 
 @MODELS.register_module()
 class ResNetV1c(ResNet):
