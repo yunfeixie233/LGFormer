@@ -1,4 +1,3 @@
-from tkinter import N
 from typing import Any, Callable, Dict, MutableMapping, Optional, Sequence, Tuple, Union
 import warnings
 import math
@@ -14,13 +13,8 @@ from timm.models.vision_transformer import Block, _cfg
 from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
-from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
-from .decode_head import BaseDecodeHead
-from ..builder import HEADS
-
-
-from ...superformer.superpixel import superpixel_transformer as st
-from ...superformer.superpixel import superpixel_ops
+from superpixel import superpixel_transformer as st
+from superpixel import superpixel_ops
 
 
 LayerScale2d = st.LayerScale2d
@@ -526,11 +520,11 @@ class SuperformerStage(nn.Module):
             sp_features_seg,
         )
 
-@HEADS.register_module()
-class SuperformerBottleNeck(BaseDecodeHead):
+
+class SuperformerBottleNeck(nn.Module):
     def __init__(
         self,
-        img_size: Sequence[int] = (224,224),
+        img_size: int = 224,
         in_channels: int = 3,
         num_classes: int = 1000,
         stem_channels_list: Sequence[int] = (64,),
@@ -573,27 +567,16 @@ class SuperformerBottleNeck(BaseDecodeHead):
         use_middle_pixel_features: bool = False,
         seg_specific_classifier: str = None,
         seg_num_classes: int = 150,
-        use_stem: bool = True,
-        projection_dim:int =-1,
-        trip_fuse:bool = False,
-        all_fuse:bool = False,
-        xception_fuse:bool = False,
-        **kwargs
+
 
     ):
-        super().__init__(in_channels=3,
-        channels=256,
-        num_classes=20,
-        out_channels=20,
-        in_index=0,
-**kwargs)
+        super().__init__()
 
         if sp_pixel_features_update_method == "fixed" and use_pixel_similarities:
             raise ValueError("pixel_similarities won't be updated")
         self.img_size = img_size
         self.sp_method = sp_method
         self.sp_iter = sp_iter
-        self.sp_dim=dims[0]
         self.sp_features_init_methods = sp_features_init_methods
         self.sp_position_embedding_method = sp_position_embedding_method
         self.sp_position_embedding_stride = sp_position_embedding_stride
@@ -620,32 +603,22 @@ class SuperformerBottleNeck(BaseDecodeHead):
 
         conv_norm_layer = conv_norm_layer or partial(timm_layers.LayerNorm2d, eps=1e-6)
         conv_act_layer = conv_act_layer or act_layer
-        
+
         stem_kernel_sizes = stem_kernel_sizes or [3] * len(stem_channels_list)
-        self.use_stem=use_stem
-        if self.use_stem is True:
-            self.stem = st.ConvStem(
-                in_channels,
-                stem_channels_list,
-                stem_kernel_sizes,
-                stem_strides,
-                conv_types=stem_conv_types,
-                # norm_layer=conv_norm_layer,  # pyright: ignore [reportGeneralTypeIssues]
-                # act_layer=conv_act_layer,  # pyright: ignore [reportGeneralTypeIssues]
-            )
+        self.stem = st.ConvStem(
+            in_channels,
+            stem_channels_list,
+            stem_kernel_sizes,
+            stem_strides,
+            conv_types=stem_conv_types,
+            # norm_layer=conv_norm_layer,  # pyright: ignore [reportGeneralTypeIssues]
+            # act_layer=conv_act_layer,  # pyright: ignore [reportGeneralTypeIssues]
+        )
 
         cur_stride = int(np.prod(stem_strides))
         # pixel_output_shape = tuple([img_size // cur_stride for _ in range(2)])
-        self.projection_dim=projection_dim
-        self.trip_fuse = trip_fuse 
-        self.all_fuse = all_fuse
-        self.xception_fuse=xception_fuse
-        if projection_dim<0:
-            pixel_dim = stem_channels_list[-1]
-        elif self.trip_fuse or self.all_fuse or self.xception_fuse:
-            pixel_dim = 256
-        else:
-            pixel_dim=projection_dim
+
+        pixel_dim = stem_channels_list[-1]
         sp_dim = None
         self.sp_global_init_method = sp_global_init_method
         if self.sp_features_init_methods[0] == "from_feature":
@@ -732,15 +705,7 @@ class SuperformerBottleNeck(BaseDecodeHead):
 
         num_stages = len(depths)
         stages = []
-
-        if projection_dim>0:
-            stage_in_dim = projection_dim
-
-        elif self.trip_fuse or self.all_fuse or self.xception_fuse:
-            stage_in_dim = 256
-        else:
-            stage_in_dim = stem_channels_list[-1]
-
+        stage_in_dim = stem_channels_list[-1]
         for i, (depth, dim, head, sp_size, sp_head, stride) in enumerate(
             zip(depths, dims, heads, sp_sizes, sp_heads, strides)
         ):
@@ -809,8 +774,7 @@ class SuperformerBottleNeck(BaseDecodeHead):
         self.head = (
             nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         )
-        if projection_dim>0:
-            self.projection=nn.Conv2d(stem_channels_list[-1],projection_dim,1,1)
+        
         if self.seg_specific_classifier:
             assert seg_num_classes > 0
             # NOTE(meijieru): the token features doesn't use avgpool, so we skip
@@ -824,31 +788,7 @@ class SuperformerBottleNeck(BaseDecodeHead):
                 raise ValueError()
             self.seg_norm = norm_layer(self.embed_dim)
 
-        
-        if self.trip_fuse:
-                self.mlp1 = nn.Conv2d(64,256,1)
-                self.mlp2 =  nn.Conv2d(512,256,1)
-                self.mlp3 =  nn.Conv2d(2048,256,1)
-                # self.mlp1 = nn.Conv2d(64,256,1)
-                # self.mlp2 =  nn.Conv2d(128,256,1)
-                # self.mlp3 =  nn.Conv2d(512,256,1)
-                self.fuse_conv = nn.Conv2d(256*3,256,1)
-                self.fuse_norm=norm_layer_2d(256)
-                self.act_layer=nn.GELU()
-        elif self.all_fuse:
-                self.mlp1 = nn.Conv2d(64,256,1)
-                self.mlp2 = nn.Conv2d(256,256,1)
-                self.mlp3 = nn.Conv2d(512,256,1)
-                self.mlp4 =  nn.Conv2d(1024,256,1)
-                self.mlp5 =  nn.Conv2d(2048,256,1)
-                self.fuse_norm=norm_layer_2d(256)
-                self.act_layer=nn.GELU()
-        elif self.xception_fuse:
-            self.mlp1 = nn.Conv2d(256,256,1)
-            self.mlp2 =  nn.Conv2d(728,256,1)
-            self.mlp3 =  nn.Conv2d(2048,256,1)
-            self.fuse_norm=norm_layer_2d(256)
-            self.act_layer=nn.GELU()
+
         if weight_init != "skip":
             self.init_weights(weight_init)
 
@@ -860,11 +800,11 @@ class SuperformerBottleNeck(BaseDecodeHead):
             "",
             "default",
         )
-        if mode == "default" or mode == "":
+        if mode == "default":
             init_fn = init_superformer_weights
         else:
             raise NotImplementedError(f"Unknown init mode: {mode}")
-        
+
         # timm.models.named_apply(init_fn, self)
         timm.models.helpers.named_apply(init_fn, self)
 
@@ -878,8 +818,8 @@ class SuperformerBottleNeck(BaseDecodeHead):
         sp_dim: Optional[int],
         method: str = "sp_cross",
     ) -> Tuple[Callable, Sequence[int]]:
-        assert self.img_size[0] % pixel_stride == 0
-        pixel_shape = [self.img_size[i] // pixel_stride for i in range(2)]
+        assert self.img_size % pixel_stride == 0
+        pixel_shape = [self.img_size // pixel_stride for _ in range(2)]
         sp_shape = [val // sp_size for val in pixel_shape]
 
         if (
@@ -943,21 +883,13 @@ class SuperformerBottleNeck(BaseDecodeHead):
     ) -> Optional[torch.Tensor]:
         if self.sp_features_init_methods[0] == "from_feature":
             return self.sp_init(pixel_features)
-        elif self.sp_features_init_methods[0] == "leanable":
-            return nn.Parameter(
-                torch.randn(1, self.sp_dim, self.superpixel_shape[0],self.superpixel_shape[1]) * 0.02
-            )
-            return 
         return None
 
     def forward_features(
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, MutableMapping[str, torch.Tensor]]:
-        if self.use_stem == True:
-            endpoints, pixel_features = self.stem(x)
-        else:
-            endpoints=None
-            pixel_features=x
+        endpoints, pixel_features = self.stem(x)
+
         sp_features_last = self.init_superpixel_features(pixel_features)
         assert len(self.stages) > 0
         for _, stage in enumerate(self.stages):
@@ -1032,7 +964,7 @@ class SuperformerBottleNeck(BaseDecodeHead):
                 info = last_stage.tokenization_info
                 if info is None:
                     raise ValueError()
-                scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                scale_factor = self.img_size // last_sp_layer.pixel_shape[0] // stride
 
                 # raise NotImplementedError(
                 #     "TODO(meijier): use pixel similarities & not merge"
@@ -1060,70 +992,10 @@ class SuperformerBottleNeck(BaseDecodeHead):
         self,
         x: torch.Tensor,
         generate_seg: bool = True,
-        return_pixel_logits: bool = True,
-        seg_stride: int = 1,
+        return_pixel_logits: bool = False,
+        seg_stride: int = 2,
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
-        if isinstance(x,tuple) and not self.trip_fuse and not self.all_fuse and not self.xception_fuse:
-            x=x[-1]
-            
-        elif self.projection_dim>0:
-            x=self.projection(x)
-        
-        elif self.trip_fuse:
-            x=list(x)
-            # Flatten and pass through MLP
-            for i, mlp in enumerate([self.mlp1, self.mlp2, self.mlp3]):
-                # Pass through MLP
-                x[i * 2] = mlp(x[i * 2])
-                
-                
-            # Interpolate for city scapes
-            # x[0] = F.interpolate(x[0], scale_factor=0.25, mode='bilinear', align_corners=False)
-            # x[2] = F.interpolate(x[2], scale_factor=2, mode='bilinear', align_corners=False)          
-            # x[4] = F.interpolate(x[4], scale_factor=2, mode='bilinear', align_corners=False)  
-            # Interpolate for ADE20K
-            x[0] = F.interpolate(x[0], scale_factor=0.5, mode='bilinear', align_corners=False)
-            x[2] = F.interpolate(x[2], scale_factor=2, mode='bilinear', align_corners=False)          
-            x[4] = F.interpolate(x[4], scale_factor=2, mode='bilinear', align_corners=False)  
-
-            # x = torch.cat([x[i] for i in [0, 2, 4]], dim=1)
-            # x=self.fuse_conv(x)
-            x=x[0]+x[2]+x[4]
-            x=self.fuse_norm(x)
-            x=self.act_layer(x)
-
-        elif self.all_fuse:
-            x=list(x)
-            # Flatten and pass through MLP
-            for i, mlp in enumerate([self.mlp1, self.mlp2, self.mlp3,self.mlp4,self.mlp5]):
-                # Pass through MLP
-                x[i] = mlp(x[i])
-            # Interpolate
-            x[0] = F.interpolate(x[0], scale_factor=0.5, mode='bilinear', align_corners=False)
-            x[2] = F.interpolate(x[2], scale_factor=2, mode='bilinear', align_corners=False)
-            x[3] = F.interpolate(x[3], scale_factor=2, mode='bilinear', align_corners=False)          
-            x[4] = F.interpolate(x[4], scale_factor=2, mode='bilinear', align_corners=False)  
-            x=x[0]+x[1]+x[2]+x[3]+x[4]
-            x=self.fuse_norm(x)
-            x=self.act_layer(x)
-
-        elif self.xception_fuse:
-            x=list(x)
-            
-            for i, mlp in enumerate([self.mlp1, self.mlp2, self.mlp3]):
-                # Pass through MLP
-                x[i] = mlp(x[i])
-            # Interpolate
-            x[0] = F.interpolate(x[0], scale_factor=2, mode='bilinear', align_corners=False)
-            x[1] = F.interpolate(x[1], scale_factor=4, mode='bilinear', align_corners=False)
-            x[2] = F.interpolate(x[2], scale_factor=4, mode='bilinear', align_corners=False) 
-                     
-            x=x[0]+x[1]+x[2]
-            x=self.fuse_norm(x)
-            x=self.act_layer(x)
-
-        
         sp_features, sp_features_seg, endpoints = self.forward_features(x)
         if generate_seg:
                 sp_logits, pixel_logits = self.forward_segmentation(
@@ -1131,7 +1003,7 @@ class SuperformerBottleNeck(BaseDecodeHead):
             )
                 ret={}
                 ret["seg"] = pixel_logits
-                return ret["seg"]
+                return ret
         else:
             logits = self.forward_head(sp_features)
             return logits
@@ -1154,7 +1026,7 @@ class SuperformerBottleNeck(BaseDecodeHead):
             patch_embed = stage.patch_embed
             tokenization_info = stage.tokenization_info
             if resize_similarities:
-                scale_factor = self.img_size[0] // stage.patch_embed.pixel_shape[0]
+                scale_factor = self.img_size // stage.patch_embed.pixel_shape[0]
             else:
                 scale_factor = 1
             if tokenization_info is None:
@@ -1315,7 +1187,6 @@ def asym_bottleneck_conv4_small_nofinal_head2_spilavg(**kwargs):
     return asym_bottleneck_conv4_small_nofinal_head4_spilavg(
         **_update_params(dict(sp_heads=(2, 2)), **kwargs)
     )
-
     
 @register_model
 def asym_bottleneck_conv4_small_nofinal_head2_spilavg_seg(**kwargs):
@@ -1341,88 +1212,6 @@ def asym_bottleneck_conv4_small_nofinal_head2_spilavg_seg_3stage(**kwargs):
         **kwargs,
     )
     )
-
-@register_model
-def asym_bottleneck_conv4_small_nofinal_head2_spilavg_seg_4stage(**kwargs): 
-        return asym_bottleneck_conv4_small_nofinal_head4_spilavg(
-            **_update_params({'sp_heads': (2,2,2,2),
-                           'seg_specific_classifier': "Conv",
-                           'seg_num_classes': 150,
-                            'depths':(12,12,12,12),
-                            'dims':(384,384,384,384),
-                            'heads':(6,6,6,6),
-                            'strides':(1,1,1,1),
-                            'sp_sizes':(4,4,4,4),
-                            'sp_heads':(2,2,2,2),
-                            'sp_features_init_methods':("from_feature","from_feature","from_feature","from_feature")},
-        **kwargs,
-    )
-    )
-
-@register_model
-def asym_bottleneck_conv4_base_nofinal_head2_spilavg_seg_2stage(**kwargs): 
-        return asym_bottleneck_conv4_small_nofinal_head4_spilavg(
-            **_update_params({'sp_heads': (2,2),
-                           'seg_specific_classifier': "Conv",
-                           'seg_num_classes': 150,
-                            'depths':(12,12),
-                            'dims':(768,768),
-                            'heads':(12,12),
-                            'strides':(1,1,1),
-                            'sp_sizes':(4,4),
-                            'sp_heads':(3,3),
-                            'sp_features_init_methods':("from_feature","from_feature"),
-                            'stem_channels_list':(48, 96),
-                            'stem_kernel_sizes':(4, 4),
-                            'stem_strides':(4, 4),
-                            'stem_conv_types':("conv", "conv"),
-                            'pos_embed_position_method':"none"
-
-                            },
-        **kwargs,
-    )
-    )
-@register_model
-def asym_bottleneck_conv4_base_nofinal_head2_spilavg_seg_6stage(**kwargs): 
-        return asym_bottleneck_conv4_small_nofinal_head4_spilavg(
-            **_update_params({'sp_heads': (2,2),
-                           'seg_specific_classifier': "Conv",
-                           'seg_num_classes': 150,
-                            'depths':(6,6,6,6,6,6,),
-                            'dims':(768,768,768,768,768,768),
-                            'heads':(6,6,6,6,6,6),
-                            'strides':(1,1,1,1,1,1),
-                            'sp_sizes':(4,4,4,4,4,4),
-                            'sp_heads':(3,3,3,3,3,3),
-                            'sp_features_init_methods':("from_feature","from_feature","from_feature","from_feature","from_feature","from_feature"),
-                            'stem_channels_list':(48, 96),
-                            'stem_kernel_sizes':(4, 4),
-                            'stem_strides':(4, 4),
-                            'stem_conv_types':("conv", "conv"),
-                            'pos_embed_position_method':"none"
-                            },
-        **kwargs,
-    )
-    )
-@register_model
-def asym_bottleneck_conv4_small_nofinal_head2_spilavg_seg_9stage(**kwargs): 
-        return asym_bottleneck_conv4_small_nofinal_head4_spilavg(
-            **_update_params({'sp_heads': (2,2,2,2,2,2),
-                           'seg_specific_classifier': "Conv",
-                           'seg_num_classes': 150,
-                            'depths':(6,6,6,3,3,3,2,2,2),
-                            'dims':(384,384,384,384,384,384,384,384,384),
-                            'heads':(6,6,6,6,6,6,6,6,6),
-                            'strides':(1,1,1,1,1,1,1,1,1),
-                            'sp_sizes':(4,4,4,4,4,4,4,4,4),
-                            'sp_heads':(1,1,1,1,1,1,1,1,1),
-                            'sp_features_init_methods':("from_feature","from_feature","from_feature","from_feature","from_feature","from_feature","from_feature","from_feature","from_feature"),
-                            'pos_embed_position_method':"none"
-},
-        **kwargs,
-    )
-    )
-
 
 @register_model
 def asym_bottleneck_conv4_tiny_nofinal_head2_spilavg(**kwargs):
