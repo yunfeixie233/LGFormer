@@ -2,7 +2,7 @@ _base_ = [
     '../_base_/default_runtime.py', '../_base_/schedules/schedule_160k.py',
     '../_base_/datasets/ade20k_640x640.py',
 ]
-custom_imports = dict(imports='mmpretrain.models', allow_failed_imports=False)
+custom_imports = dict(imports='mmpretrain', allow_failed_imports=False)
 norm_cfg = dict(type='SyncBN', requires_grad=True)
 crop_size = (640, 640)
 data_preprocessor = dict(
