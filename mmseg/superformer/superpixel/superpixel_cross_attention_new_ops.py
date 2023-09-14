@@ -19,6 +19,7 @@ from .dual_path_transformer_ops import (
 ThreeInt = Tuple[int, int, int]
 
 
+
 class LayerScale2d(nn.Module):
     def __init__(self, dim, init_values=1e-5, inplace=False):
         super().__init__()
@@ -51,6 +52,7 @@ class DualPathCrossAttentionLayer(BaseModule):
         ls_init_value: Optional[float] = None,
         pixelify: bool = True,
         always_return_similarity_pixel: bool = False,
+        hard_assign: bool = True,
     ):
         """Initializes a DualPathTransformerSimpleLayer."""
         super().__init__()
@@ -116,7 +118,7 @@ class DualPathCrossAttentionLayer(BaseModule):
             pass
         elif self._position_embedding_method == "learnable":
             self.sp_pos_embed = self._create_pos_embed(
-                in_channels_pixel, superpixel_shape, self._sp_position_embedding_stride
+                in_channels_sp, superpixel_shape, self._sp_position_embedding_stride
             )
             self.pixel_pos_embed = self._create_pos_embed(
                 in_channels_pixel, pixel_shape, self._position_embedding_stride
@@ -149,6 +151,7 @@ class DualPathCrossAttentionLayer(BaseModule):
             self.sp_ls1 = nn.Identity()
             self.pixel_ls1 = nn.Identity()
 
+        self.hard_assign = hard_assign
     def _create_pos_embed(self, dim, shape, stride) -> torch.Tensor:
         pos_embed_shape = [int(math.ceil(val / stride)) for val in shape]
         for val in pos_embed_shape:
@@ -184,6 +187,7 @@ class DualPathCrossAttentionLayer(BaseModule):
         sp_query: torch.Tensor,
         pixel_key: torch.Tensor,
         pixel_value: torch.Tensor,
+        
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         sp_query, pixel_key, pixel_value = [
             reshape_and_transpose_for_attention_operation(val, self._num_heads_sp)
@@ -200,10 +204,11 @@ class DualPathCrossAttentionLayer(BaseModule):
             val.flatten(end_dim=1) for val in [sp_query, pixel_key, pixel_value]
         ]
         similarities = (
-            superpixel_ops.compute_similarities_dot_product(pixel_key, sp_query) * scale
+            superpixel_ops.compute_similarities_dot_product_sp(pixel_key, sp_query) * scale
         )
+
         sp_delta = superpixel_ops.update_superpixel_features(
-            pixel_value, sp_query, similarities
+            pixel_value, sp_query, similarities,hard_assign=self.hard_assign
         )
         sp_delta = sp_delta.reshape(b, num_heads * c_value, sh, sw)
         return sp_delta, similarities.reshape(b, num_heads, 9, h, w)
@@ -231,7 +236,7 @@ class DualPathCrossAttentionLayer(BaseModule):
             val.flatten(end_dim=1) for val in [pixel_query, sp_key, sp_value]
         ]
         similarities = (
-            superpixel_ops.compute_similarities_dot_product(pixel_query, sp_key) * scale
+            superpixel_ops.compute_similarities_dot_product_sp(pixel_query, sp_key) * scale
         )
         pixel_delta = None
         if self._pixelify:
@@ -255,6 +260,7 @@ class DualPathCrossAttentionLayer(BaseModule):
             pixel_features_embeded = (
                 self.pixel_pos_conv(pixel_features) + pixel_features
             )
+
         else:
             sp_features_embeded = sp_features
             pixel_features_embeded = pixel_features

@@ -741,6 +741,9 @@ class SuperPixelTokenizationCrossAttentionAsymmetry(SuperPixelTokenization):
                     or return_final_pixel_features
                 )
                 and self.pixel_features_update_method == "residual",
+                # hard_assign=True if i == self.num_blocks - 1 else False,
+                hard_assign = False,
+                
                 **layer_kwargs,
             )
             for i in range(self.num_blocks)
@@ -748,7 +751,7 @@ class SuperPixelTokenizationCrossAttentionAsymmetry(SuperPixelTokenization):
         self.blocks = nn.ModuleList(blocks)
 
     def forward(
-        self, pixel_features: torch.Tensor, sp_features: torch.Tensor
+        self, pixel_features: torch.Tensor, sp_features: torch.Tensor,
     ) -> Tuple[Any, torch.Tensor, torch.Tensor]:
         sp_features = self._compute_init_superpixel_queries(
             pixel_features, sp_features=sp_features

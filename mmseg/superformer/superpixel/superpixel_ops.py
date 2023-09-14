@@ -15,6 +15,16 @@ rearrange = einops.rearrange
 
 SOFTMAX_IN_FLOAT32 = False
 
+def hard_softmax(logits, dim):
+    y_soft = logits.softmax(dim)
+    # Straight through.
+    index = y_soft.max(dim, keepdim=True)[1]
+    y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+    ret = y_hard - y_soft.detach() + y_soft
+
+    return ret
+
+
 
 def maskout_boundary(
     similarities: torch.Tensor, inplace: bool = True, val: float = float("-inf")
@@ -39,25 +49,55 @@ def maskout_boundary(
         raise NotImplementedError()
     return similarities
 
+_unfold_weights_sp = torch.eye(3**2)
+_unfold_weights_sp = _unfold_weights_sp.reshape(3**2, 1, 3, 3)
+_unfold_weights_pixel = torch.eye(12**2)
+_unfold_weights_pixel = _unfold_weights_pixel.reshape(12**2, 1, 12, 12)
 
-_unfold_weights = torch.eye(3**2)
-_unfold_weights = _unfold_weights.reshape(3**2, 1, 3, 3)
 
-
-def unfold_features_v2(features: torch.Tensor) -> torch.Tensor:
-    global _unfold_weights
-    if _unfold_weights.device != features.device:
-        _unfold_weights = _unfold_weights.to(features.device)
+def unfold_features_sp(features: torch.Tensor) -> torch.Tensor:
+    global _unfold_weights_sp
+    if _unfold_weights_sp.device != features.device:
+        _unfold_weights_sp = _unfold_weights_sp.to(features.device)
     b, c, h, w = features.shape
     features = F.conv2d(
         features.reshape(b * c, 1, h, w),
-        _unfold_weights,
+        _unfold_weights_sp,
         stride=1,
         padding=1,
     )
+    
+    # import h5py
+    # with h5py.File('unfold.h5', 'a') as f:  # 使用 'a' 模式以便在文件存在时进行追加
+    #     f.create_dataset("features", data=features.detach().cpu().numpy())
+    #     f.create_dataset("unfold", data=rearrange(features_unfold,
+    #                                               "(b c) n h w-> b c n h w",
+    #                                               b = b,
+    #                                               c = c,
+    #                                               n = 9).detach().cpu().numpy())
     return features.reshape(b, c, 9, h, w)
 
-
+def unfold_features_pixel(features: torch.Tensor) -> torch.Tensor:
+    global _unfold_weights_pixel
+    if _unfold_weights_pixel.device != features.device:
+        _unfold_weights_pixel = _unfold_weights_pixel.to(features.device)
+    b, c, h, w = features.shape
+    features = F.conv2d(
+        features.reshape(b * c, 1, h, w),
+        _unfold_weights_pixel,
+        stride=1,
+        padding="same",
+    )
+    
+    # import h5py
+    # with h5py.File('unfold.h5', 'a') as f:  # 使用 'a' 模式以便在文件存在时进行追加
+    #     f.create_dataset("features", data=features.detach().cpu().numpy())
+    #     f.create_dataset("unfold", data=rearrange(features_unfold,
+    #                                               "(b c) n h w-> b c n h w",
+    #                                               b = b,
+    #                                               c = c,
+    #                                               n = 9).detach().cpu().numpy())
+    return features.reshape(b, c, 144, h, w)
 def fold_features(val: torch.Tensor) -> torch.Tensor:
     """Inverse the unfold operation.
 
@@ -90,7 +130,7 @@ def expand_superpixel_features(
     assert h % sh == 0 and w % sw == 0
     ph, pw = h // sh, w // sw
     # [b, sh, sw, 9, c]
-    unfolded_sp_features = unfold_features(sp_features)
+    unfolded_sp_features = unfold_features_sp(sp_features)
     unfolded_sp_features = rearrange(unfolded_sp_features, "b c n sh sw -> b sh sw n c")
 
     similarities = similarities.view(b, 9, sh, ph, sw, pw)
@@ -99,9 +139,42 @@ def expand_superpixel_features(
     res = (similarities @ unfolded_sp_features).view(b, sh, sw, ph, pw, c)
     res = rearrange(res, "b sh sw ph pw c -> b c (sh ph) (sw pw)")
     return res
+def compute_similarities_dot_product_sp(
+    pixel_features: torch.Tensor, sp_features: torch.Tensor
+) -> torch.Tensor:
+    """SuperPixel Cross Attention.
+
+    Args:
+        pixel_features: [b, c, h, w].
+        sp_features: [b, c, sh, sw].
+
+    Returns:
+        Similarities with shape [b, 9, h, w].
+    """
+    b, c, h, w = pixel_features.shape
+    b_sp, sc, sh, sw = sp_features.shape
+    assert (
+        c == sc and h % sh == 0 and w % sw == 0 and b_sp in [1, b]
+    ), f"{pixel_features.shape}, {sp_features.shape}"
+    ph, pw = h // sh, w // sw
+    
+
+    # [b, sh * sw, c, 9]
+    unfolded_sp_features = (
+        unfold_features_sp(sp_features).permute(0, 3, 4, 1, 2).flatten(1, 2)
+    )
+    # [b, sh * sw, ph * pw, c]
+    pixel_features = rearrange(
+        pixel_features, "b c (sh ph) (sw pw) -> b (sh sw) (ph pw) c", sh=sh, sw=sw
+    )
+    # [b, sh * sw, ph * pw, 9]
+    similarities = pixel_features @ unfolded_sp_features
+    similarities = similarities.view(b, sh, sw, ph, pw, 9).permute(0, 5, 1, 3, 2, 4)
+    similarities = maskout_boundary(similarities)
+    return similarities.contiguous().view(b, 9, h, w)
 
 
-def compute_similarities_dot_product_v2(
+def compute_similarities_dot_product_pixel(
     pixel_features: torch.Tensor, sp_features: torch.Tensor
 ) -> torch.Tensor:
     """SuperPixel Cross Attention.
@@ -121,15 +194,15 @@ def compute_similarities_dot_product_v2(
     ph, pw = h // sh, w // sw
 
     # [b, sh * sw, c, 9]
-    unfolded_sp_features = (
-        unfold_features(sp_features).permute(0, 3, 4, 1, 2).flatten(1, 2)
+    unfold_pixel_features = (
+        unfold_features_pixel(pixel_features).permute(0, 3, 4, 1, 2).flatten(1, 2)
     )
     # [b, sh * sw, ph * pw, c]
     pixel_features = rearrange(
         pixel_features, "b c (sh ph) (sw pw) -> b (sh sw) (ph pw) c", sh=sh, sw=sw
     )
     # [b, sh * sw, ph * pw, 9]
-    similarities = pixel_features @ unfolded_sp_features
+    similarities = unfold_pixel_features @ sp_features
     similarities = similarities.view(b, sh, sw, ph, pw, 9).permute(0, 5, 1, 3, 2, 4)
     similarities = maskout_boundary(similarities)
     return similarities.contiguous().view(b, 9, h, w)
@@ -160,7 +233,7 @@ def similarities_to_another_perspective(
     return torch.stack(res, dim=1)
 
 
-def softmax_along_superpixel(similarities: torch.Tensor) -> torch.Tensor:
+def softmax_along_superpixel(similarities: torch.Tensor,hard_assign: bool) -> torch.Tensor:
     """Softmax within pixels associated to a superpixel.
 
     Args:
@@ -175,12 +248,16 @@ def softmax_along_superpixel(similarities: torch.Tensor) -> torch.Tensor:
         similarities_sp_persptive, "b n sh ph sw pw -> b (n ph pw) sh sw"
     )
     dtype = torch.float32 if SOFTMAX_IN_FLOAT32 else None
-    similarities_sp_persptive = similarities_sp_persptive.softmax(1, dtype=dtype)
+    if hard_assign == True :
+        similarities_sp_persptive = hard_softmax(similarities_sp_persptive,dim = 1)
+    else :
+        similarities_sp_persptive = similarities_sp_persptive.softmax(1, dtype=dtype)
+    
     return similarities_sp_persptive.view(b, 9, ph, pw, sh, sw)
 
 
 def update_superpixel_features_v2(
-    pixel_features: torch.Tensor, sp_features: torch.Tensor, similarities: torch.Tensor
+    pixel_features: torch.Tensor, sp_features: torch.Tensor, similarities: torch.Tensor,hard_assign: bool,
 ) -> torch.Tensor:
     """Updates superpixel features by weighted combination of pixel features.
 
@@ -198,7 +275,7 @@ def update_superpixel_features_v2(
 
     # [b, n, ph, pw, sh, sw]
     similarities = similarities.view(b, 9, sh, ph, sw, pw)
-    similarities = softmax_along_superpixel(similarities)
+    similarities = softmax_along_superpixel(similarities,hard_assign)
     similarities = rearrange(similarities, "b n ph pw sh sw -> b n sh ph sw pw")
     similarities = similarities_to_another_perspective(similarities, 0)
     similarities = rearrange(similarities, "b n sh ph sw pw -> b (sh sw) (ph pw) n")
@@ -215,8 +292,8 @@ def update_superpixel_features_v2(
 
 
 update_superpixel_features = update_superpixel_features_v2
-compute_similarities_dot_product = compute_similarities_dot_product_v2
-unfold_features = unfold_features_v2
+# compute_similarities_dot_product = compute_similarities_dot_product_v2
+# unfold_features = unfold_features_v2
 
 
 def update_pixel_features(
@@ -367,6 +444,67 @@ def compute_hard_association(
         if torch.any(res < 0) or torch.any(res >= sh * sw):
             raise RuntimeError()
     return res
+
+def compute_soft_association(
+    association: torch.Tensor, validate: bool = True, eps: float = 1e-5
+) -> torch.Tensor:
+    """Computes hard association from soft association."""
+    b, c, sh, ph, sw, pw = association.shape
+    if c != 9:
+        raise ValueError(f"Unexpected channel: {c}")
+    if torch.isnan(association).any().item():
+        raise ValueError("NaN detected")
+
+    # If all superpixels have the same weights, choose the middle one.
+    association = association.clone()
+    association[:, 4] += eps
+
+    offset = torch.tensor([-1, 0, 1], device=association.device)
+    offset = (offset[None, :] + (offset * sw)[:, None]).flatten()
+    sp_offsets = offset[association.argmax(dim=1)]
+    grid_id = compute_grid_segments_id(sh, sw, ph, pw, device=association.device)[None, :, :].squeeze(0).unsqueeze(-1).expand(-1, -1, 9)
+    # grid_id.shape: 160, 160, 9
+    
+    sp_id = grid_id + offset
+    rows = sp_id // sw
+    cols = sp_id % sh
+    #rows.shape = cols.shape = 160,160,9
+    # rows = torch.where(rows < 0, torch.tensor(0,device=rows.device), rows)
+    # rows = torch.where(rows > 39, torch.tensor(39,device=rows.device), rows)
+    rows = torch.clamp(rows, 0, 39)  # Clamping rows instead of using torch.where
+    cols = torch.clamp(cols, 0, 39)  # Clamping cols instead of using torch.where
+    import time
+    start = time.time()
+    association_glob = torch.zeros(size=(b, sh * ph, sw * pw, sh, sw), dtype=association.dtype, device=association.device)
+    association[torch.isinf(association)] = 0.0
+
+# Vectorized code
+    association_reshaped = association.reshape([b, sh * ph, sw * pw, c])
+    rows_expanded = rows[None, ...]  # shape becomes (1, sh * ph, sw * pw, sh)
+    cols_expanded = cols[None, ...]  # shape becomes (1, sh * ph, sw * pw, sw)
+
+    index_source = torch.arange(b, device=association.device)[:, None, None, None]
+    association_glob[index_source, torch.arange(sh * ph)[None, :, None, None], torch.arange(sw * pw)[None, None, :, None], rows_expanded, cols_expanded] = association_reshaped   
+    
+    # end = time.time()
+    # print(end-start)
+    # start = time.time()
+
+    # for batch in range(b):
+    #     for i in range(sh * ph):
+    #         for j in range(sw * pw):
+    #             for k in range(c):
+    #                 association_glob_[batch, i, j, rows[i,j,k],  cols[i,j,k]] = (association.reshape([b, sh * ph, sw * pw,c]))[batch, i, j,  k]
+    # end = time.time()
+    # print(end-start)
+    # import h5py
+    # with h5py.File(f'/data2/yunfei/test.h5', 'a') as hf:
+    #     hf.create_dataset('association_glob', data=association_glob.detach().cpu().numpy())
+    #     hf.create_dataset('association_glob_', data=association_glob_.detach().cpu().numpy())
+    #     hf.create_dataset('diff', data=(association_glob_-association_glob).detach().cpu().numpy())
+    # is_equal = torch.allclose(association_glob, association_glob_)
+
+    return association_glob
 
 
 def resize_similarities_v1(
