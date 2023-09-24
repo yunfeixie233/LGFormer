@@ -1,12 +1,15 @@
 _base_ = [
     '../_base_/default_runtime.py', 
-    '../_base_/datasets/ade20k_640x640.py',
+    '../_base_/datasets/ade20k.py',
     './superformer_baseline.py'
 ]
-crop_size = (640, 640)
+crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
 model = dict(
-    data_preprocessor=data_preprocessor)
+    data_preprocessor=data_preprocessor,
+    decode_head=dict(
+    img_size=(512,512)),    
+    test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 optim_wrapper = dict(
     type='OptimWrapper',
