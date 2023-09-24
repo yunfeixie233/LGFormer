@@ -925,8 +925,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 stem_kernel_sizes,
                 stem_strides,
                 conv_types=stem_conv_types,
-                # norm_layer=conv_norm_layer,  # pyright: ignore [reportGeneralTypeIssues]
-                # act_layer=conv_act_layer,  # pyright: ignore [reportGeneralTypeIssues]
+                norm_layer=conv_norm_layer,  # pyright: ignore [reportGeneralTypeIssues]
+                act_layer=conv_act_layer,  # pyright: ignore [reportGeneralTypeIssues]
             )
 
         cur_stride = int(np.prod(stem_strides))
