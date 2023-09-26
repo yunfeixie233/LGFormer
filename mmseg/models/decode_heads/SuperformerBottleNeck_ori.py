@@ -416,28 +416,28 @@ class SuperformerStage(nn.Module):
         else:
             self.pos_embed = None
             self.pixel_pos_embed = None
-            self.blocks = nn.Sequential(
-                *[
-                    block_fn(
-                        embed_dims=out_channels,
-                        num_heads=num_heads,
-                        feedforward_channels=4 * out_channels,
-                        attn_drop_rate=attn_drop_rate,
-                        drop_rate=drop_rate,
-                        drop_path_rate= (drop_path_rate[i]
-                            if isinstance(drop_path_rate, Sequence)
-                            else drop_path_rate),
+        self.blocks = nn.Sequential(
+            *[
+                block_fn(
+                    embed_dims=out_channels,
+                    num_heads=num_heads,
+                    feedforward_channels=4 * out_channels,
+                    attn_drop_rate=attn_drop_rate,
+                    drop_rate=drop_rate,
+                    drop_path_rate= (drop_path_rate[i]
+                        if isinstance(drop_path_rate, Sequence)
+                        else drop_path_rate),
 
-                        num_fcs=2,
-                        qkv_bias=True,
-                        act_cfg=dict(type='GELU'),
-                        norm_cfg=dict(type='LN',eps=1e-6),
-                        with_cp=False,
-                        batch_first=True
-                    )
-                    for i in range(depth)
-                ]
-            )
+                    num_fcs=2,
+                    qkv_bias=True,
+                    act_cfg=dict(type='GELU'),
+                    norm_cfg=dict(type='LN',eps=1e-6),
+                    with_cp=False,
+                    batch_first=True
+                )
+                for i in range(depth)
+            ]
+        )
 
         self.similarities_embedding = similarities_embedding
         if True:
