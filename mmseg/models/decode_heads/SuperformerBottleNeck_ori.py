@@ -876,6 +876,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         pixel_projection = None,
         use_compact_loss: bool= False,
         use_patch_embed: bool = False,
+        resize_similarity: bool =True,
         **kwargs
 
     ):
@@ -886,6 +887,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         in_index=0,
 **kwargs)
         self.use_patch_embed  = use_patch_embed
+        self.resize_similarity = resize_similarity
         if self.use_patch_embed:
             self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -1377,8 +1379,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     info = last_stage.tokenization_info
                     if info is None:
                         raise ValueError()
-                    scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                    # scale_factor = 1
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
                     # raise NotImplementedError(
                     #     "TODO(meijier): use pixel similarities & not merge"
                     # )
@@ -1577,8 +1581,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     info = last_stage.tokenization_info
                     if info is None:
                         raise ValueError()
-                    # scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                    scale_factor = 1
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
                     # raise NotImplementedError(
                     #     "TODO(meijier): use pixel similarities & not merge"
                     # )
@@ -1606,6 +1612,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     pixel_feature = superpixel_ops.expand_superpixel_features(
                         sp_feature, similarities
                     )
+                    _, _, h, w = pixel_feature[2:]
                     pixel_feature = rearrange(
                         pixel_feature,
                         'b c h w -> b (h w) c'
@@ -1614,7 +1621,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     pixel_feature = rearrange(
                         pixel_feature,
                         ' b (h w) c -> b c h w',
-                        h = sh*4, w = sw*4
+                        h = h, w = w
                     )
                     pixel_logits = self.seg_head_conv(pixel_feature)
                     return pixel_logits
