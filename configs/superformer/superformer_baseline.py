@@ -15,19 +15,19 @@ model = dict(
         type='SuperformerBottleNeck_ori',
         sp_global_init_method="lift_avgpool",
         sp_method="sp_cross_asymmetry",
-        img_size=(640,640),
+        img_size=(512,512),
         seg_specific_classifier="Linear",
         seg_num_classes= 150,
         depths=(2,10,0,),
         dims=(384,384,384,),
-        heads=(2,2,1,),
+        heads=(6,6,-1,),
         strides=(1,1,1,),
         sp_sizes=(4,4,4,),
         sp_heads=(2,2,2,),
-        stem_kernel_sizes=(3,3,3,),
-        stem_conv_types=("conv","conv","conv",),
-        stem_channels_list=(16,32,64,),
-        stem_strides=(2,2,1,),
+        stem_kernel_sizes=(4,),
+        stem_conv_types=("conv",),
+        stem_channels_list=(64,),
+        stem_strides=(4,),
         use_stem=True,
         sp_kwargs={
             "return_similarities_final": False,
@@ -36,6 +36,7 @@ model = dict(
         sp_features_init_methods=("from_feature","from_feature","from_feature",),
         sp_position_embedding_method="depthwise",
         sp_iter=2,
+        ls_init_value = None,
         loss_decode=[
             dict(
             type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),]),
@@ -44,20 +45,6 @@ model = dict(
     test_cfg=dict(mode='slide', crop_size=(640, 640), stride=(640, 640)))
 
 
-optim_wrapper = dict(
-    type='OptimWrapper',
-    optimizer=dict(
-    type='AdamW',
-    lr=0.00006,
-    betas=(0.9, 0.999),
-    weight_decay=0.01),
-    paramwise_cfg=dict(
-        custom_keys={
-            'pos_embed': dict(decay_mult=0.),
-            'norm1': dict(decay_mult=0.),
-            'norm2': dict(decay_mult=0.),
-            # 'backbone':dict(lr_mult=0.1)
-        }))
 
 
 param_scheduler = [
