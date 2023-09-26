@@ -37,6 +37,7 @@ model = dict(
         sp_position_embedding_method="depthwise",
         sp_iter=2,
         ls_init_value = None,
+        drop_path_rate = 0.1,        
         loss_decode=[
             dict(
             type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),]),
