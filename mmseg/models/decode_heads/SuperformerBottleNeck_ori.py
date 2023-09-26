@@ -889,7 +889,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
         if self.use_patch_embed:
-            self.patch_embed = PatchEmbed(
+            self.patch_emb = PatchEmbed(
             in_channels=in_channels,
             embed_dims=dims[-1],
             conv_type='Conv2d',
@@ -1269,7 +1269,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, MutableMapping[str, torch.Tensor]]:
         if self.use_patch_embed:
-            sp_features_last = self.patch_embed(x)[0]
+            sp_features_last = self.patch_emb(x)[0]
             pixel_features = sp_features_last
             endpoints = None
             # print("v2",sp_features_last)
