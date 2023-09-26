@@ -35,6 +35,8 @@ from .stdc_head import STDCHead
 from .uper_head import UPerHead
 from .SuperformerBottleNeck_grouptoken import SuperformerBottleNeck
 from .SuperformerBottleNeck_ori import SuperformerBottleNeck_ori
+from .proxy_head import ProxyHead
+
 __all__ = [
     'FCNHead', 'PSPHead', 'ASPPHead', 'PSAHead', 'NLHead', 'GCHead', 'CCHead',
     'UPerHead', 'DepthwiseSeparableASPPHead', 'ANNHead', 'DAHead', 'OCRHead',
@@ -43,5 +45,6 @@ __all__ = [
     'SETRMLAHead', 'DPTHead', 'SETRMLAHead', 'SegmenterMaskTransformerHead',
     'SegformerHead', 'ISAHead', 'STDCHead', 'IterativeDecodeHead',
     'KernelUpdateHead', 'KernelUpdator', 'MaskFormerHead', 'Mask2FormerHead',
-    'LightHamHead', 'PIDHead', 'DDRHead','SuperformerBottleNeck','SuperformerBottleNeck_ori'
+    'LightHamHead', 'PIDHead', 'DDRHead','SuperformerBottleNeck','SuperformerBottleNeck_ori',
+    'ProxyHead'
 ]
