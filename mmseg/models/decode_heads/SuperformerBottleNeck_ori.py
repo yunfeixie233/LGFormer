@@ -11,7 +11,9 @@ import torch.nn.functional as F
 from functools import partial, lru_cache
 
 import timm
-from timm.models.vision_transformer import Block, _cfg
+from timm.models.vision_transformer import _cfg
+from ..backbones.vit import TransformerEncoderLayer as Block
+
 from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
@@ -414,28 +416,29 @@ class SuperformerStage(nn.Module):
         else:
             self.pos_embed = None
             self.pixel_pos_embed = None
-        self.blocks = nn.Sequential(
-            *[
-                block_fn(
-                    dim=out_channels,
-                    num_heads=num_heads,
-                    mlp_ratio=4,
-                    qkv_bias=True,
-                    # drop=drop_rate,
-                    proj_drop=drop_rate,
-                    attn_drop=attn_drop_rate,
-                    drop_path=(
-                        drop_path_rate[i]
-                        if isinstance(drop_path_rate, Sequence)
-                        else drop_path_rate
-                    ),
-                    norm_layer=norm_layer,
-                    act_layer=act_layer,
-                    init_values=ls_init_value
-                )
-                for i in range(depth)
-            ]
-        )
+            self.blocks = nn.Sequential(
+                *[
+                    block_fn(
+                        embed_dims=out_channels,
+                        num_heads=num_heads,
+                        feedforward_channels=4 * out_channels,
+                        attn_drop_rate=attn_drop_rate,
+                        drop_rate=drop_rate,
+                        drop_path_rate= (drop_path_rate[i]
+                            if isinstance(drop_path_rate, Sequence)
+                            else drop_path_rate),
+
+                        num_fcs=2,
+                        qkv_bias=True,
+                        act_cfg=dict(type='GELU'),
+                        norm_cfg=dict(type='LN',eps=1e-6),
+                        with_cp=False,
+                        batch_first=True
+                    )
+                    for i in range(depth)
+                ]
+            )
+
         self.similarities_embedding = similarities_embedding
         if True:
             self.emb_init = nn.Sequential(
