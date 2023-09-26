@@ -1103,7 +1103,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_embed_method=sp_embed_method,
                     sp_project_method=sp_project_method,
                     pixel_refine_method=pixel_refine_method,
-                    return_updated_pixel_features=return_updated_pixel_features if self.classification_feature in ['pixel','superpixel'] else False,
+                    return_updated_pixel_features=return_updated_pixel_features if self.classification_feature in ['pixel','superpixel','superpixel_similarity'] else False,
                     unflatten_sp_features=unflatten_sp_features,
                     use_pos_embed=use_pos_embeds[i],
                     use_cls_token=use_class_tokens[i],
@@ -1612,18 +1612,19 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     pixel_feature = superpixel_ops.expand_superpixel_features(
                         sp_feature, similarities
                     )
-                    _, _, h, w = pixel_feature[2:]
+                    _, _, h, w = pixel_feature.shape
                     pixel_feature = rearrange(
                         pixel_feature,
                         'b c h w -> b (h w) c'
                     )
                     pixel_feature = self.seg_norm(pixel_feature)
-                    pixel_feature = rearrange(
-                        pixel_feature,
+                    pixel_logits = self.seg_head(pixel_feature)
+                    pixel_logits = rearrange(
+                        pixel_logits,
                         ' b (h w) c -> b c h w',
                         h = h, w = w
                     )
-                    pixel_logits = self.seg_head_conv(pixel_feature)
+                    
                     return pixel_logits
                 else:
                     raise ValueError()
