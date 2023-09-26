@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from functools import partial, lru_cache
 
 import timm
-from timm.models.vision_transformer import _cfg
+from timm.models.vision_transformer import Block, _cfg
 from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
@@ -19,7 +19,6 @@ from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
 from .decode_head import BaseDecodeHead
 from ..builder import HEADS
 from mmcv.cnn import build_norm_layer
-from ..backbones.vit import TransformerEncoderLayer as Block
 
 
 from ...superformer.superpixel import superpixel_transformer as st
@@ -28,7 +27,7 @@ import math
 rearrange = einops.rearrange
 LayerScale2d = st.LayerScale2d
 SKIP_CONFIRM = False
-from ..utils import PatchEmbed, resize
+
 def positionalencoding1d(d_model, length,device):
     """
     :param d_model: dimension of the model
@@ -419,26 +418,25 @@ class SuperformerStage(nn.Module):
         self.blocks = nn.Sequential(
             *[
                 block_fn(
-                    embed_dims=out_channels,
+                    dim=out_channels,
                     num_heads=num_heads,
-                    feedforward_channels=4 * out_channels,
-                    attn_drop_rate=attn_drop_rate,
-                    drop_rate=drop_rate,
-                    drop_path_rate= (drop_path_rate[i]
-                        if isinstance(drop_path_rate, Sequence)
-                        else drop_path_rate),
-
-                    num_fcs=2,
+                    mlp_ratio=4,
                     qkv_bias=True,
-                    act_cfg=dict(type='GELU'),
-                    norm_cfg=dict(type='LN',eps=1e-6),
-                    with_cp=False,
-                    batch_first=True
+                    # drop=drop_rate,
+                    proj_drop=drop_rate,
+                    attn_drop=attn_drop_rate,
+                    drop_path=(
+                        drop_path_rate[i]
+                        if isinstance(drop_path_rate, Sequence)
+                        else drop_path_rate
+                    ),
+                    norm_layer=norm_layer,
+                    act_layer=act_layer,
+                    init_values=ls_init_value
                 )
                 for i in range(depth)
             ]
         )
-
         self.similarities_embedding = similarities_embedding
         if True:
             self.emb_init = nn.Sequential(
@@ -875,7 +873,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         classification_feature: str = 'superpixel',
         pixel_projection = None,
         use_compact_loss: bool= False,
-        use_patch_embed: bool = False,
         **kwargs
 
     ):
@@ -885,19 +882,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
-        self.use_patch_embed  = use_patch_embed
-        if self.use_patch_embed:
-            self.patch_embed = PatchEmbed(
-            in_channels=in_channels,
-            embed_dims=dims[-1],
-            conv_type='Conv2d',
-            kernel_size=16,
-            stride=16,
-            padding='corner',
-            norm_cfg=None,
-            init_cfg=None,
-        )
-        self.classification_feature = classification_feature
+
         if sp_pixel_features_update_method == "fixed" and use_pixel_similarities:
             raise ValueError("pixel_similarities won't be updated")
         self.img_size = img_size
@@ -942,7 +927,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 stem_strides,
                 conv_types=stem_conv_types,
                 norm_layer=conv_norm_layer,  # pyright: ignore [reportGeneralTypeIssues]
-                act_layer=conv_act_layer,  # pyright: ignore [reportGeneralTypeIssues]
+                # act_layer=conv_act_layer,  # pyright: ignore [reportGeneralTypeIssues]
             )
 
         cur_stride = int(np.prod(stem_strides))
@@ -1101,7 +1086,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_embed_method=sp_embed_method,
                     sp_project_method=sp_project_method,
                     pixel_refine_method=pixel_refine_method,
-                    return_updated_pixel_features=return_updated_pixel_features if self.classification_feature in ['pixel','superpixel'] else False,
+                    return_updated_pixel_features=return_updated_pixel_features,
                     unflatten_sp_features=unflatten_sp_features,
                     use_pos_embed=use_pos_embeds[i],
                     use_cls_token=use_class_tokens[i],
@@ -1266,18 +1251,12 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
     def forward_features(
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, MutableMapping[str, torch.Tensor]]:
-        if self.use_patch_embed:
-            sp_features_last = self.patch_embed(x)[0]
-            pixel_features = sp_features_last
-            endpoints = None
-            # print("v2",sp_features_last)
+        if self.use_stem == True:
+            endpoints, pixel_features = self.stem(x)
         else:
-            if self.use_stem == True:
-                endpoints, pixel_features = self.stem(x)
-            else:
-                endpoints=None
-                pixel_features=x
-            sp_features_last = self.init_superpixel_features(pixel_features)
+            endpoints=None
+            pixel_features=x
+        sp_features_last = self.init_superpixel_features(pixel_features)
         # import h5py
         # with h5py.File('/data2/yunfei/vis/v2.h5','a') as f:
         #     keys = list(f.keys())
@@ -1550,13 +1529,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                           sh = sh, sw = sw)
             # x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
 
-            # x = F.interpolate(x,scale_factor=4,mode='bilinear')
+            x = F.interpolate(x,scale_factor=4,mode='bilinear')
             x = rearrange(x,
                           'b c h w -> b (h w) c')
             x = self.seg_norm(x)
             pixel_logits = rearrange(self.seg_head(x),
                                      'b (h w) c -> b c h w',
-                                     h = sh, w = sw) 
+                                     h = sh*4, w = sw *4) 
             return pixel_logits
         elif self.classification_feature == "superpixel_similarity":
             
