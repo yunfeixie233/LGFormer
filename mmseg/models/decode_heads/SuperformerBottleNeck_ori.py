@@ -876,6 +876,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         use_compact_loss: bool= False,
         use_patch_embed: bool = False,
         resize_similarity: bool =True,
+        final_iter: int = 2,
         **kwargs
 
     ):
@@ -885,6 +886,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
+        self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
         if self.use_patch_embed:
@@ -1231,7 +1233,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
-                self.sp_iter,
+                self.sp_iter if i != len(self.sp_features_init_methods) -1  else self.final_iter,
                 sp_head,
                 pixel_dim,
                 pixel_shape,
