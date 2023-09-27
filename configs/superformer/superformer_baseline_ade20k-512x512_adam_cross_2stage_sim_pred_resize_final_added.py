@@ -11,7 +11,6 @@ model = dict(
     img_size=(512,512),
     classification_feature = 'superpixel_extralayer',
     resize_similarity =  True,          
-    use_extra_stage = True,
     depths=(2,10,0,),
     dims=(384,384,384,),
     heads=(6,6,-1,),

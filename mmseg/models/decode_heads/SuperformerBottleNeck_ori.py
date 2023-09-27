@@ -876,7 +876,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         use_compact_loss: bool= False,
         use_patch_embed: bool = False,
         resize_similarity: bool =True,
-        use_extra_stage: bool = False,
         **kwargs
 
     ):
@@ -888,7 +887,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
 **kwargs)
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
-        self.use_extra_stage = use_extra_stage
         if self.use_patch_embed:
             self.patch_emb = PatchEmbed(
             in_channels=in_channels,
@@ -1301,7 +1299,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         assert len(self.stages) > 0
 
         for i, stage in enumerate(self.stages):# skip final stage if use extra stage
-            if (self.use_extra_stage) is not False or  i < len(self.stages) -1:
+            if (self.classification_feature != "superpixel_extralayer") or  i < len(self.stages) -1:
                 pixel_features, sp_features, sp_features_seg = stage(
                     pixel_features,
                     sp_features_last,
@@ -1646,13 +1644,11 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 sh, sw = last_sp_layer.superpixel_shape
             else:
                 raise ValueError()
-            x = einops.rearrange(x,
+            x_2d = einops.rearrange(x,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
             
-            info, _, _ = last_sp_layer(pixel_feature,x)
-            x = einops.rearrange(x,
-                          'b c h w -> b (h w) c')
+            info, _, _ = last_sp_layer(pixel_feature,x_2d)
             #classification
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
