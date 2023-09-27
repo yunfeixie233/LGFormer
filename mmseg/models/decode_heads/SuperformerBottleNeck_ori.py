@@ -453,9 +453,6 @@ class SuperformerStage(nn.Module):
                 norm_layer_2d(in_channels_sp),
                 act_layer(),
             )
-        delattr(self, 'conv_seg')
-        delattr(self, 'fc_norm')
-        delattr(self, 'head')        
         self.init_weights()
 
     def init_weights(self):
@@ -1105,7 +1102,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_embed_method=sp_embed_method,
                     sp_project_method=sp_project_method,
                     pixel_refine_method=pixel_refine_method,
-                    return_updated_pixel_features=return_updated_pixel_features if self.classification_feature in ['pixel','superpixel','superpixel_similarity'] else False,
+                    return_updated_pixel_features=return_updated_pixel_features if self.classification_feature in ['pixel','superpixel','superpixel_similarity','superpixel_bilinear'] else False,
                     unflatten_sp_features=unflatten_sp_features,
                     use_pos_embed=use_pos_embeds[i],
                     use_cls_token=use_class_tokens[i],
@@ -1169,6 +1166,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         if weight_init != "skip":
             self.init_weights(weight_init)
         self.use_compact_loss =use_compact_loss
+        delattr(self, 'conv_seg')
+        delattr(self, 'fc_norm')
+        delattr(self, 'head')        
+        
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
