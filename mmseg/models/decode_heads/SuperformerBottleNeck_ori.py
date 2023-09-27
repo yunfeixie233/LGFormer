@@ -876,7 +876,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         use_compact_loss: bool= False,
         use_patch_embed: bool = False,
         resize_similarity: bool =True,
-        final_iter: int = 2,
         **kwargs
 
     ):
@@ -886,7 +885,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
-        self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
         if self.use_patch_embed:
@@ -1138,7 +1136,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             # NOTE(meijieru): the token features doesn't use avgpool, so we skip
             # the fc_norm.
             
-            if self.classification_feature in ['superpixel','superpixel_bilinear','superpixel_similarity',"superpixel_extralayer"]:
+            if self.classification_feature in ['superpixel','superpixel_bilinear','superpixel_similarity',"superpixel_extralayer",'superpixel_extralayer_similarity']:
 
                 if self.seg_specific_classifier == "Linear":
                     self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1233,7 +1231,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
-                self.sp_iter if i != len(self.sp_features_init_methods) -1  else self.final_iter,
+                self.sp_iter,
                 sp_head,
                 pixel_dim,
                 pixel_shape,
@@ -1301,7 +1299,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         assert len(self.stages) > 0
 
         for i, stage in enumerate(self.stages):# skip final stage if use extra stage
-            if (self.classification_feature != "superpixel_extralayer") or  i < len(self.stages) -1:
+            if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear"]) or  i < len(self.stages) -1:
                 pixel_features, sp_features, sp_features_seg = stage(
                     pixel_features,
                     sp_features_last,
@@ -1699,6 +1697,69 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     pixel_logits = superpixel_ops.expand_superpixel_features(
                         sp_logits, similarities
                     )
+        elif self.classification_feature == "superpixel_extralayer_similarity": 
+            #final info               
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            x_2d = einops.rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+            
+            info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            #classification
+            pixel_logits = None
+            if return_pixel_logits:
+                if isinstance(last_sp_layer, nn.AvgPool2d):
+                    raise NotImplementedError()
+                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    if info is None:
+                        raise ValueError()
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
+                    # raise NotImplementedError(
+                    #     "TODO(meijier): use pixel similarities & not merge"
+                    # )
+
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False)
+                    similarities = prepare_similarities(
+                        last_sp_layer,
+                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                        scale_factor=scale_factor,
+                    )
+                    similarities = similarities.softmax(1)
+                    similarities = einops.rearrange(
+                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                    )
+                    sp_feature = rearrange(
+                        x,
+                        'b (h w) c -> b c h w',
+                        h = sh, w= sw,
+                    )
+                    pixel_feature = superpixel_ops.expand_superpixel_features(
+                        sp_feature, similarities
+                    )
+                    _, _, h, w = pixel_feature.shape
+                    pixel_feature = rearrange(
+                        pixel_feature,
+                        'b c h w -> b (h w) c'
+                    )
+                    pixel_feature = self.seg_norm(pixel_feature)
+                    pixel_logits = self.seg_head(pixel_feature)
+                    pixel_logits = rearrange(
+                        pixel_logits,
+                        ' b (h w) c -> b c h w',
+                        h = h, w = w
+                    )
+                    
+                    return None,pixel_logits
                 else:
                     raise ValueError()
 
@@ -1779,7 +1840,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     ret={}
                     ret["seg"] = pixel_logits
                     return ret["seg"]
-        elif self.classification_feature == "superpixel_extralayer":
+        elif self.classification_feature in ["superpixel_extralayer",'superpixel_extralayer_similarity']:
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features
