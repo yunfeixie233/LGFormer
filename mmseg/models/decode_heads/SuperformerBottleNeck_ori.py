@@ -440,7 +440,7 @@ class SuperformerStage(nn.Module):
         )
 
         self.similarities_embedding = similarities_embedding
-        if True:
+        if False:
             self.emb_init = nn.Sequential(
                 timm_layers.create_conv2d(
                     in_channels=in_channels_sp,
@@ -453,7 +453,9 @@ class SuperformerStage(nn.Module):
                 norm_layer_2d(in_channels_sp),
                 act_layer(),
             )
-
+        delattr(self, 'conv_seg')
+        delattr(self, 'fc_norm')
+        delattr(self, 'head')        
         self.init_weights()
 
     def init_weights(self):

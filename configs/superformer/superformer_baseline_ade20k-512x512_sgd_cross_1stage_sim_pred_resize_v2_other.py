@@ -1,17 +1,17 @@
 _base_ = [
     '../_base_/default_runtime.py', 
     '../_base_/datasets/ade20k.py',
-    './superformer_baseline.py',
-    # '../_base_/schedules/schedule_160k.py'
+    './superformer_baseline.py'
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
-    classification_feature = 'superpixel_bilinear',        
-    sp_iter=0,
-),    
+    img_size=(512,512),
+    classification_feature = 'superpixel',
+    resize_similarity =  True,  
+),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 optim_wrapper = dict(
@@ -28,7 +28,6 @@ optim_wrapper = dict(
             'ls':dict(decay_mult=0.),
             'ln':dict(decay_mult=0.),
         }))
-
 
 
 param_scheduler = [
@@ -56,4 +55,3 @@ default_hooks = dict(
     visualization=dict(type='SegVisualizationHook'))
 
 find_unused_parameters=True
-
