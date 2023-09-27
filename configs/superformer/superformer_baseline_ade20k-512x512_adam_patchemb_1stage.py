@@ -28,6 +28,8 @@ optim_wrapper = dict(
             'norm2': dict(decay_mult=0.),
             'ls':dict(decay_mult=0.),
             'ln':dict(decay_mult=0.),
+            'bn':dict(decay_mult=0.),
+            
         }))
 
 
