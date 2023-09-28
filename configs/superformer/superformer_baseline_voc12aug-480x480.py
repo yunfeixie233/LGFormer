@@ -14,8 +14,8 @@ model = dict(
         type='pseudo',),
     decode_head=dict(
         img_size=(480,480),
-        seg_num_classes= 21,),
-        test_cfg=dict(mode='slide', crop_size=(480, 480), stride=(480, 480)))
+        seg_num_classes=60,),
+        test_cfg=dict(mode='slide', crop_size=(480, 480), stride=(320, 320)))
 
 optim_wrapper = dict(
     type='OptimWrapper',
