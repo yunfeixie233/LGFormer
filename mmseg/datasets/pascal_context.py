@@ -56,8 +56,8 @@ class PascalContextDataset(BaseSegDataset):
             ann_file=ann_file,
             reduce_zero_label=False,
             **kwargs)
-        assert self.file_client.exists(
-            self.data_prefix['img_path']) and osp.isfile(self.ann_file)
+        # assert self.file_client.exists(
+        #     self.data_prefix['img_path']) and osp.isfile(self.ann_file)
 
 
 @DATASETS.register_module()
