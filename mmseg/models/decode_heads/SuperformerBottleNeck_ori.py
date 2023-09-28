@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from functools import partial, lru_cache
 
 import timm
-from timm.models.vision_transformer import _cfg
+from timm.models.vision_transformer import Block, _cfg
 from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
@@ -19,7 +19,6 @@ from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
 from .decode_head import BaseDecodeHead
 from ..builder import HEADS
 from mmcv.cnn import build_norm_layer
-from ..backbones.vit import TransformerEncoderLayer as Block
 
 
 from ...superformer.superpixel import superpixel_transformer as st
@@ -251,6 +250,7 @@ class SuperformerStage(nn.Module):
         act_layer=nn.GELU,
         block_fn=Block,
         pixel_ls_init_value: Optional[float] = 1e-5,
+        ls_init_value = None,
         superpixel_layer: Optional[st.SuperPixelTokenization] = None,
         superpixel_shape: Tuple[int, int] = (-1, -1),
         seg_block_idx: Optional[int] = None,
@@ -419,25 +419,26 @@ class SuperformerStage(nn.Module):
         self.blocks = nn.Sequential(
             *[
                 block_fn(
-                    embed_dims=out_channels,
+                    dim=out_channels,
                     num_heads=num_heads,
-                    feedforward_channels=4 * out_channels,
-                    attn_drop_rate=attn_drop_rate,
-                    drop_rate=drop_rate,
-                    drop_path_rate= (drop_path_rate[i]
-                        if isinstance(drop_path_rate, Sequence)
-                        else drop_path_rate),
-
-                    num_fcs=2,
+                    mlp_ratio=4,
                     qkv_bias=True,
-                    act_cfg=dict(type='GELU'),
-                    norm_cfg=dict(type='LN',eps=1e-6),
-                    with_cp=False,
-                    batch_first=True
+                    # drop=drop_rate,
+                    proj_drop=drop_rate,
+                    attn_drop=attn_drop_rate,
+                    drop_path=(
+                        drop_path_rate[i]
+                        if isinstance(drop_path_rate, Sequence)
+                        else drop_path_rate
+                    ),
+                    norm_layer=norm_layer,
+                    act_layer=act_layer,
+                    init_values=ls_init_value
                 )
                 for i in range(depth)
             ]
         )
+        
 
         self.similarities_embedding = similarities_embedding
         if False:
@@ -857,6 +858,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         attn_drop_rate: float = 0.0,
         sp_ls_init_value: Optional[float] = 1e-5,
         pixel_ls_init_value: Optional[float] = 1e-5,
+        ls_init_value = None,
         pre_norm_pixel: bool = False,
         pixel_refine_method: str = "identity",
         sp_embed_method: str = "identity",
@@ -914,6 +916,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.sp_pixel_features_update_method = sp_pixel_features_update_method
         self.sp_ls_init_value = sp_ls_init_value
         self.pixel_ls_init_value = pixel_ls_init_value
+        self.ls_init_value = ls_init_value
         self.sp_kwargs = sp_kwargs or {}
         self.use_middle_pixel_features = use_middle_pixel_features
 
@@ -1100,6 +1103,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     attn_drop_rate=attn_drop_rate,
                     superpixel_layer=sp_layer,
                     pixel_ls_init_value=pixel_ls_init_value,
+                    ls_init_value=ls_init_value,
                     pre_norm_pixel=pre_norm_pixel_stage,
                     sp_embed_method=sp_embed_method,
                     sp_project_method=sp_project_method,
