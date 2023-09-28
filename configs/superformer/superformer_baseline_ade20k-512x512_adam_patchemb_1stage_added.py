@@ -61,4 +61,4 @@ default_hooks = dict(
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 
-find_unused_parameters=True
+find_unused_parameters=False
