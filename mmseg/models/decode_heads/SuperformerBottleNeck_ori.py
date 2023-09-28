@@ -1174,7 +1174,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
-        
+        if self.use_patch_embed:
+            delattr(self, 'sp_init')
+
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
