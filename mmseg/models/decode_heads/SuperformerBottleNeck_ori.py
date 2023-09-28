@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from functools import partial, lru_cache
 
 import timm
-from timm.models.vision_transformer import _cfg
+from timm.models.vision_transformer import Block, _cfg
 from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
@@ -19,7 +19,6 @@ from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
 from .decode_head import BaseDecodeHead
 from ..builder import HEADS
 from mmcv.cnn import build_norm_layer
-from ..backbones.vit import TransformerEncoderLayer as Block
 
 
 from ...superformer.superpixel import superpixel_transformer as st
@@ -250,7 +249,8 @@ class SuperformerStage(nn.Module):
         norm_layer_2d=timm_layers.LayerNorm2d,
         act_layer=nn.GELU,
         block_fn=Block,
-        ls_init_value: Optional[float] = None,
+        pixel_ls_init_value: Optional[float] = 1e-5,
+        ls_init_value = None,
         superpixel_layer: Optional[st.SuperPixelTokenization] = None,
         superpixel_shape: Tuple[int, int] = (-1, -1),
         seg_block_idx: Optional[int] = None,
@@ -353,8 +353,8 @@ class SuperformerStage(nn.Module):
                 act_layer() if sp_project_method == "act" else nn.Identity(),
             )
             self.pixel_delta_ls = (
-                LayerScale2d(in_channels, ls_init_value)
-                if ls_init_value is not None
+                LayerScale2d(in_channels, pixel_ls_init_value)
+                if pixel_ls_init_value is not None
                 else nn.Identity()
             )
         else:
@@ -419,25 +419,26 @@ class SuperformerStage(nn.Module):
         self.blocks = nn.Sequential(
             *[
                 block_fn(
-                    embed_dims=out_channels,
+                    dim=out_channels,
                     num_heads=num_heads,
-                    feedforward_channels=4 * out_channels,
-                    attn_drop_rate=attn_drop_rate,
-                    drop_rate=drop_rate,
-                    drop_path_rate= (drop_path_rate[i]
-                        if isinstance(drop_path_rate, Sequence)
-                        else drop_path_rate),
-
-                    num_fcs=2,
+                    mlp_ratio=4,
                     qkv_bias=True,
-                    act_cfg=dict(type='GELU'),
-                    norm_cfg=dict(type='LN',eps=1e-6),
-                    with_cp=False,
-                    batch_first=True
+                    # drop=drop_rate,
+                    proj_drop=drop_rate,
+                    attn_drop=attn_drop_rate,
+                    drop_path=(
+                        drop_path_rate[i]
+                        if isinstance(drop_path_rate, Sequence)
+                        else drop_path_rate
+                    ),
+                    norm_layer=norm_layer,
+                    act_layer=act_layer,
+                    init_values=ls_init_value
                 )
                 for i in range(depth)
             ]
         )
+        
 
         self.similarities_embedding = similarities_embedding
         if False:
@@ -782,8 +783,7 @@ class SuperformerStage(nn.Module):
         sp_features = sp_features.flatten(2).transpose(1, 2)  # BCHW -> BNC
         if False:
             sp_features = self.add_sim_embed(sp_features,info)
-        # if self.pos_embed_method == "fixed":
-        if True:
+        if self.pos_embed_method == "fixed":
             sp_features = self.add_pos_embed(sp_features)
 
         # sp_features = self.blocks(sp_features)
@@ -855,8 +855,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         drop_rate: float = 0.0,
         drop_path_rate: float = 0.0,
         attn_drop_rate: float = 0.0,
-        ls_init_value: Optional[float] = 1e-5,
         sp_ls_init_value: Optional[float] = 1e-5,
+        pixel_ls_init_value: Optional[float] = 1e-5,
+        ls_init_value = None,
         pre_norm_pixel: bool = False,
         pixel_refine_method: str = "identity",
         sp_embed_method: str = "identity",
@@ -876,6 +877,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         use_compact_loss: bool= False,
         use_patch_embed: bool = False,
         resize_similarity: bool =True,
+        final_iter: int = 2,
         **kwargs
 
     ):
@@ -885,6 +887,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
+        self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
         if self.use_patch_embed:
@@ -911,6 +914,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.sp_sp_position_embedding_stride = sp_sp_position_embedding_stride
         self.sp_pixel_features_update_method = sp_pixel_features_update_method
         self.sp_ls_init_value = sp_ls_init_value
+        self.pixel_ls_init_value = pixel_ls_init_value
+        self.ls_init_value = ls_init_value
         self.sp_kwargs = sp_kwargs or {}
         self.use_middle_pixel_features = use_middle_pixel_features
 
@@ -1096,13 +1101,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     drop_path_rate=drop_path_rates[cur_depth : cur_depth + depth],
                     attn_drop_rate=attn_drop_rate,
                     superpixel_layer=sp_layer,
-                    # ls_init_value=None if i == 2 else ls_init_value,
+                    pixel_ls_init_value=pixel_ls_init_value,
                     ls_init_value=ls_init_value,
                     pre_norm_pixel=pre_norm_pixel_stage,
                     sp_embed_method=sp_embed_method,
                     sp_project_method=sp_project_method,
                     pixel_refine_method=pixel_refine_method,
-                    return_updated_pixel_features=return_updated_pixel_features if self.classification_feature in ['pixel','superpixel','superpixel_similarity','superpixel_bilinear'] else False,
+                    return_updated_pixel_features=return_updated_pixel_features,
                     unflatten_sp_features=unflatten_sp_features,
                     use_pos_embed=use_pos_embeds[i],
                     use_cls_token=use_class_tokens[i],
@@ -1136,7 +1141,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             # NOTE(meijieru): the token features doesn't use avgpool, so we skip
             # the fc_norm.
             
-            if self.classification_feature in ['superpixel','superpixel_bilinear','superpixel_similarity']:
+            if self.classification_feature in ['superpixel','superpixel_bilinear','superpixel_similarity',"superpixel_extralayer",'superpixel_extralayer_similarity']:
 
                 if self.seg_specific_classifier == "Linear":
                     self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1231,7 +1236,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
-                self.sp_iter,
+                self.sp_iter if i != len(self.sp_features_init_methods) -1  else self.final_iter,
                 sp_head,
                 pixel_dim,
                 pixel_shape,
@@ -1297,12 +1302,15 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         #     f.create_dataset(key, data=sp_features_last.detach().cpu().numpy())
 
         assert len(self.stages) > 0
-        for _, stage in enumerate(self.stages):
-            pixel_features, sp_features, sp_features_seg = stage(
-                pixel_features,
-                sp_features_last,
-            )
-            sp_features_last = sp_features_seg
+
+        for i, stage in enumerate(self.stages):# skip final stage if use extra stage
+            if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear"]) or  i < len(self.stages) -1:
+                pixel_features, sp_features, sp_features_seg = stage(
+                    pixel_features,
+                    sp_features_last,
+                    
+                )
+                sp_features_last = sp_features_seg
 
             # # rank not consistent due to whether flatten or not
             # # res[f"sp_features_stage{i}"] = sp_features
@@ -1631,6 +1639,142 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     return pixel_logits
                 else:
                     raise ValueError()
+        elif self.classification_feature == "superpixel_extralayer": 
+            #final info               
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            x_2d = einops.rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+            
+            info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            #classification
+            if not self.seg_specific_classifier:
+                raise ValueError("No segmentation head is found.")
+            elif self.seg_specific_classifier=="Linear":
+                
+                x = self.seg_norm(x)
+                b, num, c = x.shape
+                x = x.reshape(b * num, c)
+
+                sp_logits = self.seg_head(x)
+                sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+            elif self.seg_specific_classifier=="Conv":
+                x = self.seg_norm(x)
+                b, num, c = x.shape
+
+                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(x)
+            pixel_logits = None
+            if return_pixel_logits:
+                if isinstance(last_sp_layer, nn.AvgPool2d):
+                    raise NotImplementedError()
+                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    if info is None:
+                        raise ValueError()
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
+                    # raise NotImplementedError(
+                    #     "TODO(meijier): use pixel similarities & not merge"
+                    # )
+
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False)
+                    similarities = prepare_similarities(
+                        last_sp_layer,
+                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                        scale_factor=scale_factor,
+                    )
+                    similarities = similarities.softmax(1)
+                    similarities = einops.rearrange(
+                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                    )
+                    # import h5py
+                    # with h5py.File("/data2/yunfei/vis/similarities.h5","a") as f:
+                    #     f.create_dataset("similarities",data=similarities.detach().cpu().numpy())
+                    pixel_logits = superpixel_ops.expand_superpixel_features(
+                        sp_logits, similarities
+                    )
+                else:
+                    raise ValueError()
+
+            return sp_logits, pixel_logits
+        elif self.classification_feature == "superpixel_extralayer_similarity": 
+            #final info               
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            x_2d = einops.rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+            
+            info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            #classification
+            pixel_logits = None
+            if return_pixel_logits:
+                if isinstance(last_sp_layer, nn.AvgPool2d):
+                    raise NotImplementedError()
+                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    if info is None:
+                        raise ValueError()
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
+                    # raise NotImplementedError(
+                    #     "TODO(meijier): use pixel similarities & not merge"
+                    # )
+
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False)
+                    similarities = prepare_similarities(
+                        last_sp_layer,
+                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                        scale_factor=scale_factor,
+                    )
+                    similarities = similarities.softmax(1)
+                    similarities = einops.rearrange(
+                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                    )
+                    sp_feature = rearrange(
+                        x,
+                        'b (h w) c -> b c h w',
+                        h = sh, w= sw,
+                    )
+                    pixel_feature = superpixel_ops.expand_superpixel_features(
+                        sp_feature, similarities
+                    )
+                    _, _, h, w = pixel_feature.shape
+                    pixel_feature = rearrange(
+                        pixel_feature,
+                        'b c h w -> b (h w) c'
+                    )
+                    pixel_feature = self.seg_norm(pixel_feature)
+                    pixel_logits = self.seg_head(pixel_feature)
+                    pixel_logits = rearrange(
+                        pixel_logits,
+                        ' b (h w) c -> b c h w',
+                        h = h, w = w
+                    )
+                    
+                    return None,pixel_logits
+                else:
+                    raise ValueError()
+
+            return sp_logits, pixel_logits
+        else:
+            raise(NotImplementedError)
     def forward(
         self,
         x: torch.Tensor,
@@ -1701,6 +1845,14 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             if generate_seg:
                     pixel_logits = self.forward_segmentation(
                     sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
+                )
+                    ret={}
+                    ret["seg"] = pixel_logits
+                    return ret["seg"]
+        elif self.classification_feature in ["superpixel_extralayer",'superpixel_extralayer_similarity']:
+            if generate_seg:
+                    sp_logits, pixel_logits = self.forward_segmentation(
+                    x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features
                 )
                     ret={}
                     ret["seg"] = pixel_logits
