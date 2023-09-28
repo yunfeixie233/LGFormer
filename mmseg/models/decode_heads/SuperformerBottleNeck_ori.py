@@ -891,7 +891,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
         if self.use_patch_embed:
-            self.patch_emb = PatchEmbed(
+            self.patch_embed = PatchEmbed(
             in_channels=in_channels,
             embed_dims=dims[-1],
             conv_type='Conv2d',
@@ -1107,7 +1107,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_embed_method=sp_embed_method,
                     sp_project_method=sp_project_method,
                     pixel_refine_method=pixel_refine_method,
-                    return_updated_pixel_features=return_updated_pixel_features,
+                    return_updated_pixel_features=return_updated_pixel_features if self.use_patch_embed is False else False,
                     unflatten_sp_features=unflatten_sp_features,
                     use_pos_embed=use_pos_embeds[i],
                     use_cls_token=use_class_tokens[i],
@@ -1234,6 +1234,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             )
         elif method == "sp_cross_asymmetry":
             assert sp_dim is not None
+            if self.use_patch_embed:
+                sp_iter = 0
+            else:
+                if i != len(self.sp_features_init_methods) -1:
+                    sp_iter = self.sp_iter
+                else:
+                    sp_iter = self.final_iter
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
                 self.sp_iter if i != len(self.sp_features_init_methods) -1  else self.final_iter,
@@ -1277,7 +1284,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, MutableMapping[str, torch.Tensor]]:
         if self.use_patch_embed:
-            sp_features_last = self.patch_emb(x)[0]
+            sp_features_last = self.patch_embed(x)[0]
             pixel_features = sp_features_last
             endpoints = None
             # print("v2",sp_features_last)
