@@ -1236,12 +1236,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             if self.use_patch_embed:
                 sp_iter = 0
-            else:
+            elif self.classification_feature in ['superpixel_extralayer','superpixel_extralayer_bilinear']:
                 if i != len(self.sp_features_init_methods) -1:
                     sp_iter = self.sp_iter
                 else:
                     sp_iter = self.final_iter
-
+            else:
+                sp_iter = self.sp_iter
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
                 sp_iter,
