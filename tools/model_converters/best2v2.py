@@ -9,8 +9,9 @@ import torch.nn.functional as F
 new_model_data = {}
 
 h = w = 14 
-def convert_v2(src, det):
-    data = torch.load(src)
+def convert_v2(args):
+
+    data = torch.load(args.src)
     model_data = data['model']    
     for key, value in model_data.items():
         
@@ -24,7 +25,7 @@ def convert_v2(src, det):
                 w=w,
             )
 
-            value = F.interpolate(value,size=(32,32),mode='bilinear')
+            value = F.interpolate(value,size=args.size,mode='bicubic')
             
 
             value = rearrange(
@@ -38,7 +39,7 @@ def convert_v2(src, det):
 
         new_model_data[new_key] = value
         
-    torch.save(new_model_data, det)
+    torch.save(new_model_data, args.dst)
 
 
 def main():
@@ -48,8 +49,9 @@ def main():
     parser.add_argument('src', help='src model path or url')
     # The dst path must be a full path of the new checkpoint.
     parser.add_argument('dst', help='save path')
+    parser.add_argument('--size', help='interpolation size', default=(32,32))
     args = parser.parse_args()
-    convert_v2(args.src, args.dst)
+    convert_v2(args)
 
 
 if __name__ == '__main__':
