@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/default_runtime.py', 
     './superformer_baseline.py',
-    '../_base_/datasets/pascal_voc12_aug.py',
+    '../_base_/datasets/pascal_context.py',
 ]
 norm_cfg = dict(type='SyncBN', requires_grad=True)
 crop_size = (480, 480)
