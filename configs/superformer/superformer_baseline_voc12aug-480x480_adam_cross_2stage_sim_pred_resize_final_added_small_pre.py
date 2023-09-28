@@ -12,7 +12,7 @@ model = dict(
     strides=(1,1,1,),
     sp_sizes=(4,4,4,),
     sp_heads=(2,2,1,),
-    sp_features_init_methods=("from_feature","from_feature","from_feature",),)),
+    sp_features_init_methods=("from_feature","from_feature","from_feature",),))
 
 
 
