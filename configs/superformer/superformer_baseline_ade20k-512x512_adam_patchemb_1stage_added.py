@@ -10,6 +10,7 @@ model = dict(
     decode_head=dict(
     img_size=(512,512),
     use_patch_embed = True,
+    use_stem = False,
     sp_iter = 0,
     classification_feature = 'superpixel_bilinear',),    
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
