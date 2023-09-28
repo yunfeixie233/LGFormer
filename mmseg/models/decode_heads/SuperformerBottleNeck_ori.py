@@ -1241,9 +1241,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_iter = self.sp_iter
                 else:
                     sp_iter = self.final_iter
+
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
-                self.sp_iter if i != len(self.sp_features_init_methods) -1  else self.final_iter,
+                sp_iter,
                 sp_head,
                 pixel_dim,
                 pixel_shape,
