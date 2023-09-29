@@ -278,6 +278,9 @@ class EncoderDecoder(BaseSegmentor):
                 batch_img_metas[0]['img_shape'] = crop_img.shape[2:]
                 # the output of encode_decode is seg logits tensor map
                 # with shape [N, C, H, W]
+                if crop_img.shape[-1] !=  crop_img.shape[-2]:
+                    max_side = max(crop_img.shape[2], crop_img.shape[3])
+                    crop_img = F.interpolate(crop_img, size = max_side,mode = 'bicubic')                
                 crop_seg_logit = self.encode_decode(crop_img, batch_img_metas)
                 preds += F.pad(crop_seg_logit,
                                (int(x1), int(preds.shape[3] - x2), int(y1),
