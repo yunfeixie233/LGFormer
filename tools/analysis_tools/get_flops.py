@@ -73,7 +73,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
         model.cuda()
     model = revert_sync_batchnorm(model)
 
-    data = torch.randn(input_shape)
+    data = torch.randn(input_shape).unsqueeze(0).cuda()
 
     model.eval()
     
@@ -82,7 +82,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
     from fvcore.nn import FlopCountAnalysis
     from fvcore.nn import flop_count_table
 
-    flops = FlopCountAnalysis(model, torch.rand(1, 3, 512, 512).cuda())
+    flops = FlopCountAnalysis(model, data)
     print(flop_count_table(flops, max_depth=6))
 
 
