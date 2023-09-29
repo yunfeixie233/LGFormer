@@ -36,7 +36,7 @@ from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
                          RandomMosaic, RandomRotate, RandomRotFlip, Rerange,
                          ResizeShortestEdge, ResizeToMultiple, RGB2Gray,
                          SegRescale)
-from .voc import PascalVOCDataset
+from .voc import PascalVOCDataset,PascalPartDataset
 
 # yapf: enable
 __all__ = [
@@ -57,5 +57,6 @@ __all__ = [
     'SynapseDataset', 'REFUGEDataset', 'MapillaryDataset_v1',
     'MapillaryDataset_v2', 'Albu', 'LEVIRCDDataset',
     'LoadMultipleRSImageFromFile', 'LoadSingleRSImageFromFile',
-    'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset'
+    'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset',
+    'PascalPartDataset'
 ]
