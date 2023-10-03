@@ -1295,8 +1295,16 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
     ) -> Tuple[torch.Tensor, torch.Tensor, MutableMapping[str, torch.Tensor]]:
         if self.use_patch_embed:
             sp_features_last = self.patch_embed(x)[0]
-            pixel_features = sp_features_last
+            pixel_features = None
             endpoints = None
+            assert len(self.stages) > 0
+
+            for i, stage in enumerate(self.stages):# skip final stage if use extra stage
+                    sp_features_last = stage.add_pos_embed(sp_features_last)  
+                    sp_features_last = stage.forward_blocks_range(
+                        sp_features_last,0,len(stage.blocks)
+                    )
+            return sp_features_last, sp_features_last, endpoints, pixel_features
             # print("v2",sp_features_last)
         else:
             if self.use_stem == True:
@@ -1318,22 +1326,22 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 
         #     f.create_dataset(key, data=sp_features_last.detach().cpu().numpy())
 
-        assert len(self.stages) > 0
+            assert len(self.stages) > 0
 
-        for i, stage in enumerate(self.stages):# skip final stage if use extra stage
-            if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear"]) or  i < len(self.stages) -1:
-                pixel_features, sp_features, sp_features_seg = stage(
-                    pixel_features,
-                    sp_features_last,
-                    
-                )
-                sp_features_last = sp_features_seg
+            for i, stage in enumerate(self.stages):# skip final stage if use extra stage
+                if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear"]) or  i < len(self.stages) -1:
+                    pixel_features, sp_features, sp_features_seg = stage(
+                        pixel_features,
+                        sp_features_last,
+                        
+                    )
+                    sp_features_last = sp_features_seg
 
-            # # rank not consistent due to whether flatten or not
-            # # res[f"sp_features_stage{i}"] = sp_features
-            # if return_updated_pixel_features:
-            #     endpoints[f"pixel_features_stage{i}"] = pixel_features
-        return sp_features, sp_features_seg, endpoints, pixel_features
+                # # rank not consistent due to whether flatten or not
+                # # res[f"sp_features_stage{i}"] = sp_features
+                # if return_updated_pixel_features:
+                #     endpoints[f"pixel_features_stage{i}"] = pixel_features
+            return sp_features, sp_features_seg, endpoints, pixel_features
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.norm(x)
