@@ -878,6 +878,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         use_patch_embed: bool = False,
         resize_similarity: bool =True,
         final_iter: int = 2,
+        cls_scale_factor: int = 1,
+
         **kwargs
 
     ):
@@ -1171,6 +1173,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         if weight_init != "skip":
             self.init_weights(weight_init)
         self.use_compact_loss =use_compact_loss
+        self.cls_scale_factor = cls_scale_factor
+        if self.cls_scale_factor > 1:
+            assert  self.classification_feature == "superpixel_bilinear"
+        
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
@@ -1574,15 +1580,14 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             x = rearrange(x,
                           'b (sh sw) c -> b c sh sw',
                           sh = sh, sw = sw)
-            # x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-
-            # x = F.interpolate(x,scale_factor=4,mode='bilinear')
+            
+            x = F.interpolate(x,scale_factor=self.cls_scale_factor,mode='bilinear')
             x = rearrange(x,
                           'b c h w -> b (h w) c')
             x = self.seg_norm(x)
             pixel_logits = rearrange(self.seg_head(x),
                                      'b (h w) c -> b c h w',
-                                     h = sh, w = sw) 
+                                     h = sh * self.cls_scale_factor, w = sw* self.cls_scale_factor ) 
             return pixel_logits
         elif self.classification_feature == "superpixel_similarity":
             
