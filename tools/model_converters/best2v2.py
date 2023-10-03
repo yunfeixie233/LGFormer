@@ -25,7 +25,7 @@ def convert_v2(args):
                 w=w,
             )
 
-            value = F.interpolate(value,size=args.size,mode='bicubic')
+            value = F.interpolate(value,size=args.shape,mode='bicubic')
             
 
             value = rearrange(
@@ -49,7 +49,12 @@ def main():
     parser.add_argument('src', help='src model path or url')
     # The dst path must be a full path of the new checkpoint.
     parser.add_argument('dst', help='save path')
-    parser.add_argument('--size', help='interpolation size', default=(48,48))
+    parser.add_argument(
+        '--shape',
+        type=int,
+        nargs='+',
+        default=[32,32],
+        help='targeted interpolated size')
     args = parser.parse_args()
     convert_v2(args)
 
