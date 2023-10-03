@@ -49,7 +49,7 @@ def main():
     parser.add_argument('src', help='src model path or url')
     # The dst path must be a full path of the new checkpoint.
     parser.add_argument('dst', help='save path')
-    parser.add_argument('--size', help='interpolation size', default=(32,32))
+    parser.add_argument('--size', help='interpolation size', default=(48,48))
     args = parser.parse_args()
     convert_v2(args)
 
