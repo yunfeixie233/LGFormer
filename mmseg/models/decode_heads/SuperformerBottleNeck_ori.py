@@ -879,7 +879,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         resize_similarity: bool =True,
         final_iter: int = 2,
         cls_scale_factor: int = 1,
-
+        use_similarity_head: bool = False,
         **kwargs
 
     ):
@@ -1176,7 +1176,14 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.cls_scale_factor = cls_scale_factor
         if self.cls_scale_factor > 1:
             assert  self.classification_feature == "superpixel_bilinear"
-        
+        self.use_similarity_head = use_similarity_head
+        if self.use_similarity_head:
+            from mmcv.cnn import DepthwiseSeparableConvModule
+
+            self.similarity_head = \
+                DepthwiseSeparableConvModule(
+                9, 9, kernel_size=3, padding=1)
+
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
@@ -1712,6 +1719,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     similarities = einops.rearrange(
                         similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
                     )
+                    if self.use_similarity_head:
+                        similarities = self.similarity_head(similarities)
                     # import h5py
                     # with h5py.File("/data2/yunfei/vis/similarities.h5","a") as f:
                     #     f.create_dataset("similarities",data=similarities.detach().cpu().numpy())
