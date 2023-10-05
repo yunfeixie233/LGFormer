@@ -542,6 +542,7 @@ def resize_similarities_v2(
     similarities: torch.Tensor,
     scale_factor: float,
     mode: str = "bilinear",
+    resize_version : str = 'v2',
     **kwargs,
 ) -> torch.Tensor:
     """Resizes similarities, before softmax.
@@ -566,7 +567,7 @@ def resize_similarities_v2(
     #     similarities_sp_persptive, "b n sh ph sw pw -> b (n ph pw) sh sw"
     # )
     
-    if True:
+    if resize_version == 'v2':
         similarities_sp_persptive = rearrange(
         similarities_sp_persptive,
         "b c sh ph sw pw -> (b c) (sh sw) ph pw"
@@ -582,25 +583,42 @@ def resize_similarities_v2(
         sh=sh,
         sw=sw
     )
-
-    else:
+    elif resize_version == 'v3':
         similarities_sp_persptive = rearrange(
-            similarities_sp_persptive,
-            "b (ih iw) sh ph sw pw -> b (sh sw) (ih ph) (iw pw)",
-            ih=3,
-            iw=3,
-        )
+        similarities_sp_persptive,
+        "b c sh ph sw pw -> b c (sh ph) (sw pw)"
+    )
         res = F.interpolate(
-            similarities_sp_persptive, scale_factor=scale_factor, mode=mode, **kwargs
-        )    
+        similarities_sp_persptive, scale_factor=scale_factor, mode=mode, **kwargs
+    )
         res = rearrange(
         res,
-        "b (sh sw) (ih ph) (iw pw) -> b (ih iw) sh ph sw pw",
-        ih=3,
-        iw=3,
+        "b c (sh ph) (sw pw) -> b c sh ph sw pw",
+        b=b,
+        c=n,
         sh=sh,
-        sw=sw,
+        sw=sw
     )
+    else:
+        raise(NotImplementedError)
+    # else:
+    #     similarities_sp_persptive = rearrange(
+    #         similarities_sp_persptive,
+    #         "b (ih iw) sh ph sw pw -> b (sh sw) (ih ph) (iw pw)",
+    #         ih=3,
+    #         iw=3,
+    #     )
+    #     res = F.interpolate(
+    #         similarities_sp_persptive, scale_factor=scale_factor, mode=mode, **kwargs
+    #     )    
+    #     res = rearrange(
+    #     res,
+    #     "b (sh sw) (ih ph) (iw pw) -> b (ih iw) sh ph sw pw",
+    #     ih=3,
+    #     iw=3,
+    #     sh=sh,
+    #     sw=sw,
+    # )
     
 
     # mask = (similarities_sp_persptive == float("-inf")).to(dtype=torch.float32)

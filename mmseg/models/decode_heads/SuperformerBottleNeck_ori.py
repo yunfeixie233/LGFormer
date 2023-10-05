@@ -144,6 +144,8 @@ def prepare_similarities(
     similarities: torch.Tensor,
     scale_factor,
     merge_multihead_similarities: bool = True,
+    resize_version: str = 'v2',
+    
 ) -> torch.Tensor:
     if similarities.dim() == 5:
         if not merge_multihead_similarities:
@@ -162,7 +164,7 @@ def prepare_similarities(
         similarities = superpixel_ops.resize_similarities(
             similarities,
             scale_factor=scale_factor,
-            # mode = "bicubic"
+            resize_version = resize_version,
         )
         similarities = superpixel_ops.maskout_boundary(similarities)
     return similarities
@@ -880,6 +882,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         final_iter: int = 2,
         cls_scale_factor: int = 1,
         use_similarity_head: bool = False,
+        resize_version: str = 'v2',
         **kwargs
 
     ):
@@ -889,6 +892,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
+        self.resize_version = resize_version
         self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
@@ -1435,6 +1439,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1483,6 +1488,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1562,6 +1568,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1636,6 +1643,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1722,6 +1730,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1775,6 +1784,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
