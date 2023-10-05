@@ -28,6 +28,8 @@ rearrange = einops.rearrange
 LayerScale2d = st.LayerScale2d
 SKIP_CONFIRM = False
 from ..utils import PatchEmbed, resize
+from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
+
 def positionalencoding1d(d_model, length,device):
     """
     :param d_model: dimension of the model
@@ -144,6 +146,8 @@ def prepare_similarities(
     similarities: torch.Tensor,
     scale_factor,
     merge_multihead_similarities: bool = True,
+    resize_version: str = 'v2',
+    
 ) -> torch.Tensor:
     if similarities.dim() == 5:
         if not merge_multihead_similarities:
@@ -162,11 +166,48 @@ def prepare_similarities(
         similarities = superpixel_ops.resize_similarities(
             similarities,
             scale_factor=scale_factor,
-            # mode = "bicubic"
+            resize_version = resize_version,
         )
         similarities = superpixel_ops.maskout_boundary(similarities)
     return similarities
 
+
+
+def resize_attn_map(attentions, h, w, align_corners=False):
+    """
+
+    Args:
+        attentions: shape [B, num_head, H*W, groups]
+        h:
+        w:
+
+    Returns:
+
+        attentions: shape [B, num_head, h, w, groups]
+
+
+    """
+    scale = (h * w // attentions.shape[2])**0.5
+    if h > w:
+        w_featmap = w // int(np.round(scale))
+        h_featmap = attentions.shape[2] // w_featmap
+    else:
+        h_featmap = h // int(np.round(scale))
+        w_featmap = attentions.shape[2] // h_featmap
+    assert attentions.shape[
+        2] == h_featmap * w_featmap, f'{attentions.shape[2]} = {h_featmap} x {w_featmap}, h={h}, w={w}'
+
+    bs = attentions.shape[0]
+    nh = attentions.shape[1]  # number of head
+    groups = attentions.shape[3]  # number of group token
+    # [bs, nh, h*w, groups] -> [bs*nh, groups, h, w]
+    attentions = rearrange(
+        attentions, 'bs nh (h w) c -> (bs nh) c h w', bs=bs, nh=nh, h=h_featmap, w=w_featmap, c=groups)
+    attentions = F.interpolate(attentions, size=(h, w), mode='bilinear', align_corners=align_corners)
+    #  [bs*nh, groups, h, w] -> [bs, nh, h*w, groups]
+    attentions = rearrange(attentions, '(bs nh) c h w -> bs nh h w c', bs=bs, nh=nh, h=h, w=w, c=groups)
+
+    return attentions
 
 def visualize_superpixel(tokenization_info, patch_embed, scale_factor):
     assert tokenization_info is not None
@@ -266,7 +307,9 @@ class SuperformerStage(nn.Module):
         no_embed_class: bool = False,
         use_pixel_similarities: bool = False,
         use_middle_pixel_features: bool = False,
-        similarities_embedding: bool = False,
+        mergelayer = None,
+        merge_pos = None,
+
     ) -> None:
         super().__init__()
 
@@ -286,6 +329,8 @@ class SuperformerStage(nn.Module):
         self.patch_embed = superpixel_layer()
         self.use_pixel_similarities = use_pixel_similarities
         self.use_middle_pixel_features = use_middle_pixel_features
+        self.mergelayer = mergelayer
+        self.merge_pos = merge_pos
 
         if pre_norm_pixel:
             raise NotImplementedError()
@@ -440,20 +485,6 @@ class SuperformerStage(nn.Module):
         )
         
 
-        self.similarities_embedding = similarities_embedding
-        if False:
-            self.emb_init = nn.Sequential(
-                timm_layers.create_conv2d(
-                    in_channels=in_channels_sp,
-                    out_channels=in_channels_sp,
-                    kernel_size=4,
-                    stride=4,
-                    padding="same",
-                    bias=False,
-                ),
-                norm_layer_2d(in_channels_sp),
-                act_layer(),
-            )
         self.init_weights()
 
     def init_weights(self):
@@ -563,7 +594,7 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int
+        self, x: torch.Tensor, start: int, end: int,
     ) -> torch.Tensor:
         for i in range(start, end):
             x = self.blocks[i](x)
@@ -821,6 +852,33 @@ class SuperformerStage(nn.Module):
             sp_features,
             sp_features_seg,
         )
+class Mlp(nn.Module):
+
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+
+
+class MixerMlp(Mlp):
+
+    def forward(self, x):
+        return super().forward(x.transpose(1, 2)).transpose(1, 2)
+
+
+
 
 @HEADS.register_module()
 class SuperformerBottleNeck_ori(BaseDecodeHead):
@@ -880,6 +938,26 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         final_iter: int = 2,
         cls_scale_factor: int = 1,
         use_similarity_head: bool = False,
+        resize_version: str = 'v2',
+        use_pixel_similarities_upsample: bool = False,
+        use_group_token: bool = False,
+        arch_settings: dict = {
+            'embed_dims': 216,
+            'patch_size': 8,
+            'window_size': 2,
+            'num_layers': 4,
+            'num_heads': 12,
+            'num_group_heads': 6,
+            'num_group_forward_heads': 6,
+            'num_ungroup_heads': 6,
+            'ffn_ratio': 4.,
+            'patch_embed': dict(type='ConvPatchEmbed', num_convs=0),
+            'mlpmixer_depth': 1,
+            'group_layers': {0:64,1:32,2:32,3:16},
+            'drop_path_rate': 0.2
+        },
+
+        
         **kwargs
 
     ):
@@ -889,6 +967,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
+        self.resize_version = resize_version
         self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
@@ -1057,6 +1136,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             raise ValueError(
                 f"Unknown class_token_position_method: {self.class_token_position_method}"
             )
+            
+        self.use_group_token = use_group_token  
+        if self.use_group_token:
+            self.arch_settings = arch_settings
+            self.merge_layer = self._make_merge_layer(
+                self.arch_settings
+            )
 
         num_stages = len(depths)
         stages = []
@@ -1154,7 +1240,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     raise ValueError()
                 self.seg_norm = norm_layer(self.embed_dim)
         
-            elif self.classification_feature =='pixel':
+            elif self.classification_feature in['pixel','pixel_extralayer']:
                 if self.pixel_projection:
                     self.pixel_projection = nn.Conv2d(stem_channels_list[-1], self.embed_dim //2, 1)   
                     self.seg_norm = norm_layer(self.embed_dim //2)
@@ -1183,7 +1269,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             self.similarity_head = \
                 DepthwiseSeparableConvModule(
                 9, 9, kernel_size=3, padding=1)
-
+        self.use_pixel_similarities_upsample = use_pixel_similarities_upsample
+        if self.use_pixel_similarities_upsample:
+            assert self.classification_feature == 'superpixel_extralayer_similarity'
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
@@ -1284,7 +1372,51 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         else:
             raise ValueError(f"Unknown superpixel method {method}")
         return sp_fn, sp_shape
-
+    def _make_merge_layer(
+        self,
+        _arch_settings:dict,
+        
+    ):
+        mergelayer = nn.ModuleList()
+        for i in range(_arch_settings['num_layers']):
+            if i >0 :
+                if _arch_settings["group_projector_methonds"] == 'linear':
+                    group_projector =nn.Sequential(
+                        nn.LayerNorm(_arch_settings['embed_dims']),
+                        MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
+                        )
+                elif _arch_settings["group_projector_methonds"] == 'cross':
+                    group_projector = FullAttnCatBlock(
+                        embed_dims=_arch_settings['embed_dims'],
+                        num_heads = _arch_settings['num_group_heads'],
+                        key_is_query=False,
+                        value_is_key=False,
+                    )
+                elif _arch_settings["group_projector_methonds"]== None:
+                    group_projector=None
+                else :
+                    raise(NotImplementedError)
+            else:
+                group_projector=None
+            _layer_cfg = dict(
+                    embed_dims=_arch_settings['embed_dims'],
+                    depth=_arch_settings['mlpmixer_depth'],
+                    num_group_heads=_arch_settings['num_group_heads'],
+                    num_forward_heads=_arch_settings['num_group_forward_heads'],
+                    num_ungroup_heads=_arch_settings['num_ungroup_heads'],
+                    num_group_token=_arch_settings['group_layers'][i],
+                    ffn_ratio=_arch_settings['ffn_ratio'],
+                    init_stride = _arch_settings['init_strides'][i],
+                    with_cp=None,
+                    group_projector=group_projector,
+                    zero_init_group_token=True,
+                    group_projector_methonds = _arch_settings["group_projector_methonds"],
+                    association_embedding = _arch_settings["association_embedding"],
+                    group_token_init_method = _arch_settings["group_token_init_method"])
+            group_layer = GPBlock(**_layer_cfg)
+            mergelayer.append(group_layer)
+        return mergelayer
+    
     def init_superpixel_features(
         self, pixel_features: torch.Tensor
     ) -> Optional[torch.Tensor]:
@@ -1375,6 +1507,28 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                                      h = h,w = w)
             
             return None, pixel_logits
+        elif self.classification_feature == "pixel_extralayer":
+            _, _, h, w = pixel_feature.shape
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            x_2d = einops.rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+            
+            info, pixel_feature, _ = last_sp_layer(pixel_feature,x_2d)
+            pixel_feature = self.seg_norm(rearrange(pixel_feature,
+                                        "b c h w -> b (h w) c"))
+            pixel_logits = self.seg_head(pixel_feature)
+            pixel_logits = rearrange(pixel_logits,
+                                     "b (h w) c -> b c h w",
+                                     h = h,w = w)
+            return None, pixel_logits
         elif self.classification_feature == "superpixel":
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -1435,6 +1589,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1483,6 +1638,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1562,6 +1718,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1636,6 +1793,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1722,6 +1880,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1770,11 +1929,12 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     #     "TODO(meijier): use pixel similarities & not merge"
                     # )
 
-                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False)
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
                     similarities = prepare_similarities(
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
                         scale_factor=scale_factor,
+                        resize_version = self.resize_version
                     )
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
@@ -1818,6 +1978,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         
         sp_features, sp_features_seg, endpoints, pixel_features = self.forward_features(x)
+        if self.use_group_token:
+            gt = None
+            attn_dict_list = []
+            hw_shape = self.stages[-1].patch_embed.superpixel_shape
+            for merge_layer in self.merge_layer:
+                sp_features_seg, attn_dict_list ,gt =merge_layer(
+                    sp_features_seg,hw_shape, attn_dict_list=attn_dict_list, prev_token=gt)
         h = w = int(math.sqrt(sp_features_seg.shape[1]))
         if self.use_compact_loss:
             if self.classification_feature == "superpixel":
@@ -1882,7 +2049,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     ret={}
                     ret["seg"] = pixel_logits
                     return ret["seg"]
-        elif self.classification_feature in ["superpixel_extralayer",'superpixel_extralayer_similarity']:
+        elif self.classification_feature in ["superpixel_extralayer",'superpixel_extralayer_similarity','pixel_extralayer']:
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features

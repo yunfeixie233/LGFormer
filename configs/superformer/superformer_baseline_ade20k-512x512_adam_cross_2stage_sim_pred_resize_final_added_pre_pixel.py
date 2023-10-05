@@ -9,8 +9,7 @@ model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
     img_size=(512,512),
-    classification_feature = 'superpixel_extralayer_similarity',
-    resize_similarity =  True,          
+    classification_feature = 'pixel_extralayer',
     depths=(2,10,0,),
     dims=(384,384,384,),
     heads=(6,6,-1,),
@@ -18,7 +17,7 @@ model = dict(
     sp_sizes=(4,4,4,),
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
-
+    ls_init_value = 1e-5,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 

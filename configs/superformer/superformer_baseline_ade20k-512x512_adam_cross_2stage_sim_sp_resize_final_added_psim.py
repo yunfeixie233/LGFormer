@@ -18,7 +18,7 @@ model = dict(
     sp_sizes=(4,4,4,),
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
-
+    use_pixel_similarities_upsample = True,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
