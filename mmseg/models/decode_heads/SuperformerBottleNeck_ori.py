@@ -148,8 +148,6 @@ def prepare_similarities(
     merge_multihead_similarities: bool = True,
     resize_version: str = 'v2',
     
-    resize_version: str = 'v2',
-    
 ) -> torch.Tensor:
     if similarities.dim() == 5:
         if not merge_multihead_similarities:
@@ -969,7 +967,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
-        self.resize_version = resize_version
         self.resize_version = resize_version
         self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
