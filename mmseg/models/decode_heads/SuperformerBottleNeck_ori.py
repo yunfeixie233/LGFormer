@@ -956,6 +956,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             'group_layers': {0:64,1:32,2:32,3:16},
             'drop_path_rate': 0.2
         },
+        #visualize param
+        vis_sp: bool =False,
+        output_dir:str = None,
+        vis_gt: bool = False,
 
         
         **kwargs
@@ -1277,7 +1281,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         delattr(self, 'head')        
         if self.use_patch_embed:
             delattr(self, 'sp_init')
-
+        self.output_dir = output_dir
+        self.vis_sp = vis_sp
+        self.vis_gt = vis_gt
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
@@ -1496,7 +1502,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
 
     def forward_segmentation(
         self, x: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        img = None,) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.classification_feature == "pixel":
             b, c, h, w = x.shape
             if self.pixel_projection:
@@ -1845,6 +1851,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                           h = sh, w = sw)
             
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            if self.vis_sp:
+                
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)
+            
             #classification
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -1915,6 +1925,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                           h = sh, w = sw)
             
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            if self.vis_sp:
+                
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)
+            
             #classification
             pixel_logits = None
             if return_pixel_logits:
@@ -1980,6 +1994,11 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         
         sp_features, sp_features_seg, endpoints, pixel_features = self.forward_features(x)
+                
+        if self.vis_sp:
+            
+            self.visualize_superpixel(img = x, info = None, resize_similarities= True)
+        
         if self.use_group_token:
             gt = None
             attn_dict_list = []
@@ -1987,6 +2006,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             for merge_layer in self.merge_layer:
                 sp_features_seg, attn_dict_list ,gt =merge_layer(
                     sp_features_seg,hw_shape, attn_dict_list=attn_dict_list, prev_token=gt)
+            if self.vis_gt:
+                self.visualize_grouptoken_v2(x, hw_shape, attn_dict_list)              
         h = w = int(math.sqrt(sp_features_seg.shape[1]))
         if self.use_compact_loss:
             if self.classification_feature == "superpixel":
@@ -2054,7 +2075,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         elif self.classification_feature in ["superpixel_extralayer",'superpixel_extralayer_similarity','pixel_extralayer']:
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
-                    x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features
+                    x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
+                    img = x
                 )
                     ret={}
                     ret["seg"] = pixel_logits
@@ -2097,22 +2119,324 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 no_weight_decay.add(name)
         print(f"no_weight_decay: {no_weight_decay}")
         return no_weight_decay
-
-    def visualize_superpixel(self, resize_similarities: bool = True):
+    def get_superpixel(self, tokenization_info, patch_embed, scale_factor):
+        assert tokenization_info is not None
+        colormap = superpixel_ops.create_superpixel_colormap("random")
         res = {}
-        for i, stage in enumerate(self.stages):
-            patch_embed = stage.patch_embed
-            tokenization_info = stage.tokenization_info
+        for key, similarities in tokenization_info.items():
+            if "features" in key:
+                continue
+            if similarities.dim() == 5 and similarities.size(1) > 1:
+                # visualize each head
+                for i in range(similarities.size(1)):
+                    val = prepare_similarities(
+                        patch_embed,
+                        similarities[:, i],
+                        scale_factor,
+                        merge_multihead_similarities=False,
+                    )
+                    labels = superpixel_ops.compute_hard_association(val).cpu()
+                        
+                    vis = colormap[labels % colormap.size(0)]
+                    
+                    res[f"{key}_head{i}"] = vis
+            similarities = prepare_similarities(
+                patch_embed, similarities, scale_factor, merge_multihead_similarities=True
+            )
+            labels = superpixel_ops.compute_hard_association(similarities).cpu()
+            vis = colormap[labels % colormap.size(0)]
+            res[key] = vis
+        return res
+    
+    def visualize_superpixel(self, img, info = None,resize_similarities: bool = True):
+        import os.path as osp
+        from PIL import Image
+        import os
+        out_file = osp.join(self.output_dir, 'vis_sp', f'sp.jpg')        
+        img = img.detach()
+        _, _, ih, iw = img.shape
+
+        std = [58.395, 57.12, 57.375]
+        mean = [123.675, 116.28, 103.53]
+        img = img* torch.tensor(std).reshape(1, 3, 1, 1).cuda() + torch.tensor(mean).reshape(1, 3, 1, 1).cuda()
+        img = img.cpu().numpy()
+        im_image = Image.fromarray(img.squeeze().transpose(1, 2, 0).astype(np.uint8))
+        
+        if info:
+            res = {}
+            patch_embed = self.stages[-1].patch_embed
             if resize_similarities:
-                scale_factor = self.img_size[0] // stage.patch_embed.pixel_shape[0]
+                scale_factor = self.img_size[0] // patch_embed.pixel_shape[0]
             else:
                 scale_factor = 1
-            if tokenization_info is None:
-                continue
-            res_i = visualize_superpixel(tokenization_info, patch_embed, scale_factor)
-            res.update({f"stage{i}_{key}": val for key, val in res_i.items()})
-        return res
+            res_i = self.get_superpixel(info, patch_embed, scale_factor)
+            res.update({f"stage_extra_{key}": val for key, val in res_i.items()})
+            
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            counter = 0
+            base_name, file_ext = osp.splitext(out_file)
+            for key, val in res.items():
+                
+                im = val.numpy().astype(np.uint8)
+                resize_output = not resize_similarities or im.shape[0] != ih
+                im = Image.fromarray(im.squeeze())
+                if resize_output:
+                    print('resize_output')
+                    im = im.resize((ih, iw), Image.Resampling.NEAREST)
+                    
+                alpha = 0.3
+                im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
+                im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
+                while osp.exists(f"{base_name}_{counter}_vis_{key}_{file_ext}"):
+                    counter += 1
+                img_out_file = f"{base_name}_{counter}_vis_{key}_{file_ext}"
+                directory, _ = os.path.split(img_out_file)
+                if not os.path.exists(directory):
+                    os.makedirs(directory)  # 创建目录
+                im_alpha.save(img_out_file)
+        else:
+            res = {}
+            for i, stage in enumerate(self.stages):
+                patch_embed = stage.patch_embed
+                tokenization_info = stage.tokenization_info
+                if resize_similarities:
+                    scale_factor = self.img_size[0] // stage.patch_embed.pixel_shape[0]
+                else:
+                    scale_factor = 1
+                if tokenization_info is None:
+                    continue
+                res_i = self.get_superpixel(tokenization_info, patch_embed, scale_factor)
+                res.update({f"stage{i}_{key}": val for key, val in res_i.items()})
+            counter = 0
+            base_name, file_ext = osp.splitext(out_file)
+            for key, val in res.items():
+                
+                im = val.numpy().astype(np.uint8)
+                resize_output = not resize_similarities or im.shape[0] != ih
+                im = Image.fromarray(im.squeeze())
+                if resize_output:
+                    print('resize_output')
+                    im = im.resize((ih, iw), Image.Resampling.NEAREST)
+                    
+                alpha = 0.3
+                im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
+                im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
+                while osp.exists(f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"):
+                    counter += 1
+                img_out_file = f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"
+                directory, _ = os.path.split(img_out_file)
+                if not os.path.exists(directory):
+                    os.makedirs(directory)  # 创建目录
+                im_alpha.save(img_out_file)
 
+    def blend_result(self, img, result, palette=None, out_file=None, opacity=0.5, with_bg=False):
+        import mmcv
+        img = mmcv.imread(img)
+        img = img.copy()
+        seg = result[0]
+        if palette is None:
+            palette = self.PALETTE
+        
+        palette = np.array(palette)
+        assert palette.shape[1] == 3, palette.shape
+        assert len(palette.shape) == 2
+        assert 0 < opacity <= 1.0
+        color_seg = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8)
+        for label, color in enumerate(palette):
+            color_seg[seg == label, :] = color
+        # convert to BGR
+        color_seg = color_seg[..., ::-1]
+
+        if with_bg:
+            fg_mask = seg != 0
+            img[fg_mask] = img[fg_mask] * (1 - opacity) + color_seg[fg_mask] * opacity
+        else:
+            img = img * (1 - opacity) + color_seg * opacity
+            # img = img
+        img = img.astype(np.uint8)
+
+        if out_file is not None:
+            for B in range(img.shape[0]):
+                mmcv.imwrite(img[B], out_file)
+
+        return img
+    def get_attn_maps(self, sp_shape, attn_dict_list, return_onehot=False, rescale=False):
+        """
+        Args:
+            img: [B, C, H, W]
+
+        Returns:
+            attn_maps: list[Tensor], attention map of shape [B, H, W, groups]
+        """
+        attn_maps = []
+        with torch.no_grad():
+            prev_attn_masks = None
+            for idx, attn_dict in enumerate(attn_dict_list):
+                if attn_dict is None:
+                    assert idx == len(attn_dict_list) - 1, 'only last layer can be None'
+                    continue
+                # [B, G, HxW]
+                # B: batch size (1), nH: number of heads, G: number of group token
+                # attn_masks = attn_dict['soft']
+                attn_masks = attn_dict
+                
+                # [B, nH, G, HxW] -> [B, nH, HxW, G]
+                attn_masks = rearrange(attn_masks, 'b h g n -> b h n g')
+                if prev_attn_masks is None:
+                    prev_attn_masks = attn_masks
+                else:
+                    # prev_attn_masks = prev_attn_masks @ attn_masks
+                    # prev_attn_masks = torch.mul(prev_attn_masks , attn_masks)
+
+                    prev_attn_masks = attn_masks
+
+                # [B, nH, HxW, G] -> [B, nH, H, W, G]
+                attn_maps.append(resize_attn_map(prev_attn_masks, *sp_shape[-2:]))
+        length = len(attn_maps)
+        i = 0
+        while i < length:
+            attn_map = attn_maps[i]
+            # [B, nh, H, W, G]
+            if attn_map.shape[1] != 1:
+                new_maps = []
+                for j in range(attn_map.shape[1]):
+                    slice_map = attn_map[:,j,...].unsqueeze(0) # Extracting slice and keeping 5D tensor shape
+                    slice_map = slice_map.squeeze(1)
+                    if rescale:
+                        slice_map = rearrange(slice_map, 'b h w g -> b g h w')
+                        slice_map = F.interpolate(
+                    slice_map, size=sp_shape[1:3], mode='bilinear', align_corners=self.align_corners)
+                        slice_map = rearrange(slice_map, 'b g h w -> b h w g')
+                    if return_onehot:
+                        slice_map = F.one_hot(slice_map.argmax(dim=-1), num_classes=slice_map.shape[-1]).to(dtype=slice_map.dtype)
+                    new_maps.append(slice_map)
+                attn_maps.pop(i)  # Remove the original map
+                for new_map in new_maps:
+                    attn_maps.insert(i, new_map)
+                
+                # Jump the index over the newly added slices
+                i += len(new_maps)
+                length += len(new_maps) - 1  # Adjust the total length after insertion            
+            else:
+                attn_map = attn_map.squeeze(1)
+
+                if rescale:
+                    attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+                    attn_map = F.interpolate(
+                        attn_map, size=sp_shape[1:3], mode='bilinear', align_corners=self.align_corners)
+                    attn_map = rearrange(attn_map, 'b g h w -> b h w g')
+
+                if return_onehot:
+                    # [B, H, W, G]
+                    attn_map = F.one_hot(attn_map.argmax(dim=-1), num_classes=attn_map.shape[-1]).to(dtype=attn_map.dtype)
+
+                attn_maps[i] = attn_map
+                i+=1
+
+        return attn_maps
+    
+    def get_attn_maps_v2(self, sp_shape, attn_dict_list, return_onehot=False, rescale=False):
+        """
+        Args:
+            img: [B, C, H, W]
+
+        Returns:
+            attn_maps: list[Tensor], attention map of shape [B, H, W, groups]
+        """
+        attn_maps = []
+        with torch.no_grad():
+            prev_attn_masks = None
+            for idx, attn_dict in enumerate(attn_dict_list):
+                if attn_dict is None:
+                    assert idx == len(attn_dict_list) - 1, 'only last layer can be None'
+                    continue
+                # [B, G, HxW]
+                # B: batch size (1), nH: number of heads, G: number of group token
+                # attn_masks = attn_dict['soft']
+                attn_masks = attn_dict
+                
+                # [B, nH, G, HxW] -> [B, nH, HxW, G]
+                attn_masks = rearrange(attn_masks, 'b h g n -> b h n g')
+                if prev_attn_masks is None:
+                    prev_attn_masks = attn_masks
+                else:
+                    # prev_attn_masks = prev_attn_masks @ attn_masks
+                    # prev_attn_masks = torch.mul(prev_attn_masks , attn_masks)
+
+                    prev_attn_masks = attn_masks
+
+                # [B, nH, HxW, G] -> [B, nH, H, W, G]
+                attn_maps.append(resize_attn_map(prev_attn_masks, *sp_shape[-2:]))
+        length = len(attn_maps)
+        i = 0
+        while i < length:
+            attn_map = attn_maps[i]
+            # [B, nh, H, W, G]
+            if attn_map.shape[1] != 1:
+                attn_map = torch.sum(attn_map, dim =1, keepdim= True)/ math.sqrt( attn_map.shape[1] )
+            attn_map = attn_map.squeeze(1)
+
+            if rescale:
+                attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+                attn_map = F.interpolate(
+                    attn_map, size=sp_shape[1:3], mode='bilinear', align_corners=self.align_corners)
+                attn_map = rearrange(attn_map, 'b g h w -> b h w g')
+
+            if return_onehot:
+                # [B, H, W, G]
+                attn_map = F.one_hot(attn_map.argmax(dim=-1), num_classes=attn_map.shape[-1]).to(dtype=attn_map.dtype)
+
+            attn_maps[i] = attn_map
+            i+=1
+
+        return attn_maps
+
+    def visualize_grouptoken_v2(self, img, sp_shape, attn_dict_list):
+        import os.path as osp
+        import os
+        img = img.detach()
+        _, _, ih, iw = img.shape
+
+        std = [58.395, 57.12, 57.375]
+        mean = [123.675, 116.28, 103.53]
+        img = img* torch.tensor(std).reshape(1, 3, 1, 1).cuda() + torch.tensor(mean).reshape(1, 3, 1, 1).cuda()
+        img = img.cpu().numpy()
+        
+        out_file = osp.join(self.output_dir, 'vis_tokens', f'gt.jpg')
+        directory = osp.dirname(out_file)
+        if not osp.exists(directory):
+            os.makedirs(directory)
+        attn_maps = self.get_attn_maps(sp_shape, attn_dict_list) 
+        num_groups = [attn_maps[layer_idx].shape[-1] for layer_idx in range(len(attn_maps))]
+        for layer_idx, attn_map in enumerate(attn_maps):
+            attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+            attn_map = F.interpolate(
+                attn_map, size=img.shape[2:], mode='bilinear', align_corners=self.align_corners)
+            group_result = attn_map.argmax(dim=1).cpu().numpy()
+
+            counter = 0
+            base_name, file_ext = osp.splitext(out_file)
+            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}{file_ext}"):
+                counter += 1
+
+            layer_out_file = f"{base_name}_{counter}_layer{layer_idx}{file_ext}"
+
+            
+            GROUP_PALETTE = np.loadtxt('/data2/yunfei/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
+            uni = np.unique(group_result)
+            self.blend_result(
+                img=img.transpose(0, 2, 3, 1),
+                result=group_result,
+                palette=GROUP_PALETTE,
+                out_file=layer_out_file,
+                opacity=0.5)
 
 @register_model
 def asym_bottleneck_small_nofinal_head4(pretrained=False, **kwargs):

@@ -2144,26 +2144,6 @@ class SuperformerBottleNeck(BaseDecodeHead):
             # [B, nh, H, W, G]
             if attn_map.shape[1] != 1:
                 attn_map = torch.sum(attn_map, dim =1, keepdim= True)/ math.sqrt( attn_map.shape[1] )
-                # new_maps = []
-                # for j in range(attn_map.shape[1]):
-                #     slice_map = attn_map[:,j,...].unsqueeze(0) # Extracting slice and keeping 5D tensor shape
-                #     slice_map = slice_map.squeeze(1)
-                #     if rescale:
-                #         slice_map = rearrange(slice_map, 'b h w g -> b g h w')
-                #         slice_map = F.interpolate(
-                #     slice_map, size=sp_shape[1:3], mode='bilinear', align_corners=self.align_corners)
-                #         slice_map = rearrange(slice_map, 'b g h w -> b h w g')
-                #     if return_onehot:
-                #         slice_map = F.one_hot(slice_map.argmax(dim=-1), num_classes=slice_map.shape[-1]).to(dtype=slice_map.dtype)
-                #     new_maps.append(slice_map)
-                # attn_maps.pop(i)  # Remove the original map
-                # for new_map in new_maps:
-                #     attn_maps.insert(i, new_map)
-                
-                # # Jump the index over the newly added slices
-                # i += len(new_maps)
-                # length += len(new_maps) - 1  # Adjust the total length after insertion            
-            # else:
             attn_map = attn_map.squeeze(1)
 
             if rescale:
