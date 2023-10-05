@@ -14,10 +14,15 @@ from einops import rearrange
 from mmcv.cnn import build_norm_layer, build_conv_layer, build_activation_layer
 from mmcv.cnn.bricks.transformer import FFN, AdaptivePadding, build_dropout
 from mmengine.model.weight_init import trunc_normal_
-
+from timm.models import layers as timm_layers
 from mmengine.model import BaseModule, ModuleList
 from mmcv.cnn.bricks import DropPath
-
+import math
+from timm.models.vision_transformer import Block, _cfg
+from functools import partial
+import sys
+sys.path.append("/root/autodl-tmp/GroupViT/models")
+from group_vit import *
 def img2windows(img, H_sp, W_sp):
     B, C, H, W = img.shape
     img_reshape = img.view(B, C, H // H_sp, H_sp, W // W_sp, W_sp)
@@ -148,6 +153,7 @@ class LePEAttnSimpleDWBlock(BaseModule):
             'ffn_drop': drop_rate,
             'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
             'act_cfg': dict(type='GELU'),
+            'layer_scale_init_value':1e-6,
             **ffn_cfgs
         }
         self.ffn = FFN(**_ffn_cfgs)
@@ -250,6 +256,63 @@ class MLPMixer(BaseModule):
     def forward(self, x):
         return self.layers(x)
 
+class AttentionWithRelPos(nn.Module):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.,
+                 attn_map_dim=None, num_cls_tokens=1):
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
+        self.scale = qk_scale or head_dim ** -0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+        self.num_cls_tokens = num_cls_tokens
+        if attn_map_dim is not None:
+            one_dim = attn_map_dim[0]
+            rel_pos_dim = (2 * one_dim - 1)
+            self.rel_pos = nn.Parameter(torch.zeros(num_heads, rel_pos_dim ** 2))
+            tmp = torch.arange(rel_pos_dim ** 2).reshape((rel_pos_dim, rel_pos_dim))
+            out = []
+            offset_x = offset_y = one_dim // 2
+            for y in range(one_dim):
+                for x in range(one_dim):
+                    for dy in range(one_dim):
+                        for dx in range(one_dim):
+                            out.append(tmp[dy - y + offset_y, dx - x + offset_x])
+            self.rel_pos_index = torch.tensor(out, dtype=torch.long)
+            trunc_normal_(self.rel_pos, std=.02)
+        else:
+            self.rel_pos = None
+
+    def forward(self, x, patch_attn=False, mask=None):
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        if self.rel_pos is not None and patch_attn:
+            # use for the indicating patch + cls:
+            rel_pos = self.rel_pos[:, self.rel_pos_index.to(attn.device)].reshape(self.num_heads, N - self.num_cls_tokens, N - self.num_cls_tokens)
+            attn[:, :, self.num_cls_tokens:, self.num_cls_tokens:] = attn[:, :, self.num_cls_tokens:, self.num_cls_tokens:] + rel_pos
+
+        if mask is not None:
+            ## mask is only (BH_sW_s)(ksks)(ksks), need to expand it
+            mask = mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+            attn = attn.masked_fill(mask == 0, torch.finfo(attn.dtype).min)
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
 class LightAttModule(nn.Module):
     def __init__(self,
                  dim,
@@ -330,7 +393,8 @@ class FullAttnModule(nn.Module):
                  qk_scale=None,
                  attn_drop=0.,
                  proj_drop=0.,
-                 q_project=True):
+                 q_project=True,
+                 association_embedding = False):
         super().__init__()
         if out_dim is None:
             out_dim = dim
@@ -345,7 +409,8 @@ class FullAttnModule(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, out_dim)
         self.proj_drop = nn.Dropout(proj_drop)
-
+        self.association_embedding = association_embedding
+        
     def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
         bq, nq, cq = query.shape
         bk, nk, ck = key.shape
@@ -365,13 +430,14 @@ class FullAttnModule(nn.Module):
         attn = (q @ k.transpose(-2, -1)) * self.scale
         if att_bias is not None:
             attn = attn + att_bias.unsqueeze(dim=1)
-
+        if self.association_embedding:
+            if len(attn_dict_list) >0:
+                attn = attn + attn_dict_list[-1].transpose(-2, -1)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
         assert attn.shape == (bq, self.num_heads, nq, nk)
         if isinstance(attn_dict_list,list):
             attn_dict_list.append(attn.transpose(-2, -1))
-
         # [B, nh, N, C//nh] -> [B, N, C]
         # out = (attn @ v).transpose(1, 2).reshape(B, N, C)
         out = rearrange(attn @ v, 'b h n c -> b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
@@ -395,6 +461,8 @@ class FullAttnCatBlock(nn.Module):
                  value_is_key=False,
                  q_project=True,
                  with_cp=False,
+                 association_embedding = False,
+                 layer_scale_init_value = 1e-6,
                  **kwargs):
         super().__init__()
         self.with_cp = with_cp
@@ -420,7 +488,8 @@ class FullAttnCatBlock(nn.Module):
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=drop,
-            q_project=q_project)
+            q_project=q_project,
+            association_embedding = association_embedding)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
         _ffn_cfgs = {
@@ -430,6 +499,7 @@ class FullAttnCatBlock(nn.Module):
             'ffn_drop': drop,
             'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
             'act_cfg': act_cfg,
+            'layer_scale_init_value':layer_scale_init_value
         }
         self.ffn = FFN(**_ffn_cfgs)
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
@@ -533,7 +603,12 @@ class GPBlock(nn.Module):
                  ungroup_att_cfg=dict(),
                  group_projector =None,
                  group_projector_methonds ="linear",
-                 zero_init_group_token = False,                 
+                 zero_init_group_token = False,
+                 association_embedding = False,
+                 group_token_init_method:str = "learnable",
+                 init_kernel_size:int = -1,   
+                 init_stride : int = -1, 
+                 use_assign: bool = False,             
                  **kwargs):
 
         super().__init__()
@@ -541,14 +616,52 @@ class GPBlock(nn.Module):
         self.embed_dims = embed_dims
         self.num_group_token = num_group_token
         self.with_cp = with_cp
+        self.group_token_init_method = group_token_init_method
+        if  self.group_token_init_method =='learnable':
+            self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
+        elif self.group_token_init_method == 'conv_avgpool':
+            from timm.models import layers as timm_layers
 
-        self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
+            self.group_token_init = \
+            nn.Sequential(         
+                timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
+                 nn.AvgPool2d(kernel_size=5,stride=5)
+            )
+        elif self.group_token_init_method == 'avgpool':
+            from timm.models import layers as timm_layers
+
+            self.group_token_init = \
+            nn.Sequential(         
+                 nn.AvgPool2d(kernel_size=downsample,stride=downsample)
+            )
+        elif self.group_token_init_method == 'conv':
+            from timm.models import layers as timm_layers
+            if isinstance(init_kernel_size, tuple) and isinstance(init_stride, tuple):
+                layers = []
+                for k_size, stride in zip(init_kernel_size, init_stride):
+                    layers.extend([
+                        timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size=k_size, stride=stride, padding="same"),
+                        timm_layers.LayerNorm2d(embed_dims),
+                        nn.GELU()
+                    ])
+                self.group_token_init = nn.Sequential(*layers)
+            elif isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+                self.group_token_init = \
+                nn.Sequential(                         
+                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.GELU(),
+                )
+            else:
+                raise(NotImplementedError)
+        else:
+            raise(NotImplementedError)
         self.group_projector = group_projector
         self.group_projector_methonds = group_projector_methonds
         if not zero_init_group_token:
                 trunc_normal_(self.group_token, std=.02)
         
-
+        self.pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02)      
         _group_att_cfg = dict(
             embed_dims=embed_dims,
             num_heads=num_group_heads,
@@ -572,7 +685,7 @@ class GPBlock(nn.Module):
             depth=depth,
             drop_path=drop_path)
         _mixer_cfg.update(fwd_att_cfg)
-        self.mixer = MLPMixer(**_mixer_cfg)
+        # self.mixer = MLPMixer(**_mixer_cfg)
 
         _ungroup_att_cfg = dict(
             embed_dims=embed_dims,
@@ -585,15 +698,57 @@ class GPBlock(nn.Module):
             drop_path=drop_path,
             key_is_query=False,
             value_is_key=True,
-            with_cp=with_cp)
+            with_cp=with_cp,
+            association_embedding = association_embedding)
         _ungroup_att_cfg.update(ungroup_att_cfg)
-        self.un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
+        self.use_assign = use_assign
+        if self.use_assign:
+            self.pre_assign_attn = CrossAttnBlock(
+                dim=embed_dims, num_heads=num_ungroup_heads, mlp_ratio=4, qkv_bias=True, norm_layer=nn.LayerNorm, post_norm=True)
+            self.assign = AssignAttention(
+            dim=embed_dims,
+            num_heads=1,
+            qkv_bias=True,
+            hard=True,
+            gumbel=True,
+            gumbel_tau=1.,
+            sum_assign=False,
+            assign_eps=1.)
+        else:
+            self.un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
 
         self.dwconv = torch.nn.Sequential(
             nn.Conv2d(embed_dims, embed_dims, kernel_size=(3,3), padding=(1,1), bias=False, groups=embed_dims),
             nn.BatchNorm2d(num_features=embed_dims),
-            nn.ReLU(True))
-
+            # nn.ReLU(True))
+            nn.GELU())
+        self.blocks = nn.Sequential(
+            *[
+                Block(
+                    dim=embed_dims,
+                    num_heads=2,
+                    mlp_ratio=4,
+                    qkv_bias=True,
+                    # drop=drop_rate,
+                    proj_drop=drop,
+                    attn_drop=attn_drop,
+                    drop_path=(
+                        drop_path[i]
+                        if isinstance(drop_path, Sequence)
+                        else drop_path
+                    ),
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                    act_layer=nn.GELU,
+                    init_values=1e-6,
+                )
+                for i in range(_mixer_cfg['depth'])
+            ]
+        )
+        self.init_weights()
+    def init_weights(self):
+        if self.pos_embed is not None:
+            timm_layers.trunc_normal_(self.pos_embed, std=0.02)
+        
     def forward(self, x, hw_shape, attn_dict_list = None,prev_token = None):
         """
         Args:
@@ -603,25 +758,66 @@ class GPBlock(nn.Module):
             proj_tokens: shape [B, L, C]
         """
         B, L, C = x.size()
-        group_token = self.group_token.expand(x.size(0), -1, -1)
+        sw = sh = int(math.sqrt(L))
+        if self.group_token_init_method in["avgpool",'conv_avgpool','conv']:
+            x = rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h=sh, w=sw)
+            group_token = self.group_token_init(x)
+            group_token = rearrange(
+                group_token,
+                'b c h w -> b (h w) c'
+            )
+            x = rearrange(x,
+                'b c h w -> b (h w) c ',
+                h=sh, w=sw)
+ 
+        elif self.group_token_init_method == "learnable":
+            group_token = self.group_token.expand(x.size(0), -1, -1)
         if prev_token is None:
             gt = group_token
-        elif self.group_projector_methonds == "linear":
+        elif self.group_projector_methonds == "linear" or "conv":
             gt = group_token + self.group_projector(prev_token)
         elif self.group_projector_methonds == "cross" or self.group_projector_methonds == None:
             gt = group_token 
         
         else:
             raise(NotImplementedError)
-        # gt, attn_dict_list = self.group_layer(query=gt, key=x, value=x, attn_dict_list = attn_dict_list)
         gt, _ = self.group_layer(query=gt, key=x, value=x, attn_dict_list = None)
-        gt = self.mixer(gt)
+        gt = gt + self.pos_embed
+        gt = self.blocks(gt)
         if self.group_projector_methonds == "cross" and prev_token is not None:
             gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
-
-        ungroup_tokens, attn_dict_list = self.un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
-        ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
-        proj_tokens = self.dwconv(ungroup_tokens).view(B, C, -1).permute(0,2,1).contiguous().view(B, L, C)
-
-        return proj_tokens, attn_dict_list, gt
+        if self.use_assign:
+            gt = self.pre_assign_attn(gt, x)
+            new_x, attn_dict_list = self.assign(query = x,key = gt, value = gt ,attn_dict_list = attn_dict_list)
+            x = new_x + x
+            return x,  attn_dict_list, gt
+        else:
+            proj_tokens, attn_dict_list = self.un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+            return proj_tokens, attn_dict_list, gt
+            
+        # ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
+        # proj_tokens = self.dwconv(ungroup_tokens).view(B, C, -1).permute(0,2,1).contiguous().view(B, L, C)
+        # import h5py
+        # with h5py.File("/data2/yunfei/vis_.h5", 'a') as f:
+        #         keys = list(f.keys())            
+        #         key = "ungroup_tokens"
+        #         original_key = key
+        #         count = 0
+        #         while f"{original_key}{count}" in keys:
+        #             count += 1
+        #         key = f"{original_key}{count}"
+        #         f.create_dataset(key, data=ungroup_tokens.detach().cpu().numpy())
+        #         key = "proj_tokens"
+        #         original_key = key
+        #         count = 0
+        #         while f"{original_key}{count}" in keys:
+        #             count += 1
+        #         key = f"{original_key}{count}"
+        #         f.create_dataset(key, data=rearrange(
+        #             proj_tokens,
+        #             'b (h w) c -> b c h w',
+        #             h = hw_shape[0],
+        #             w = hw_shape[1]).detach().cpu().numpy())
 

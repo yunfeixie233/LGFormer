@@ -14,10 +14,15 @@ from einops import rearrange
 from mmcv.cnn import build_norm_layer, build_conv_layer, build_activation_layer
 from mmcv.cnn.bricks.transformer import FFN, AdaptivePadding, build_dropout
 from mmengine.model.weight_init import trunc_normal_
-
+from timm.models import layers as timm_layers
 from mmengine.model import BaseModule, ModuleList
 from mmcv.cnn.bricks import DropPath
-
+import math
+from timm.models.vision_transformer import Block, _cfg
+from functools import partial
+import sys
+# sys.path.append("/root/autodl-tmp/GroupViT/models")
+# from group_vit import *
 def img2windows(img, H_sp, W_sp):
     B, C, H, W = img.shape
     img_reshape = img.view(B, C, H // H_sp, H_sp, W // W_sp, W_sp)
@@ -148,6 +153,7 @@ class LePEAttnSimpleDWBlock(BaseModule):
             'ffn_drop': drop_rate,
             'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
             'act_cfg': dict(type='GELU'),
+            'layer_scale_init_value':1e-6,
             **ffn_cfgs
         }
         self.ffn = FFN(**_ffn_cfgs)
@@ -456,6 +462,7 @@ class FullAttnCatBlock(nn.Module):
                  q_project=True,
                  with_cp=False,
                  association_embedding = False,
+                 layer_scale_init_value = 1e-6,
                  **kwargs):
         super().__init__()
         self.with_cp = with_cp
@@ -492,6 +499,7 @@ class FullAttnCatBlock(nn.Module):
             'ffn_drop': drop,
             'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
             'act_cfg': act_cfg,
+            'layer_scale_init_value':layer_scale_init_value
         }
         self.ffn = FFN(**_ffn_cfgs)
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
@@ -596,7 +604,11 @@ class GPBlock(nn.Module):
                  group_projector =None,
                  group_projector_methonds ="linear",
                  zero_init_group_token = False,
-                 association_embedding = False,                 
+                 association_embedding = False,
+                 group_token_init_method:str = "learnable",
+                 init_kernel_size:int = -1,   
+                 init_stride : int = -1, 
+                 use_assign: bool = False,
                  **kwargs):
 
         super().__init__()
@@ -604,14 +616,55 @@ class GPBlock(nn.Module):
         self.embed_dims = embed_dims
         self.num_group_token = num_group_token
         self.with_cp = with_cp
+        self.group_token_init_method = group_token_init_method
+        if  self.group_token_init_method =='learnable':
+            self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
+        elif self.group_token_init_method == 'conv_avgpool':
+            from timm.models import layers as timm_layers
 
-        self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
+            self.group_token_init = \
+            nn.Sequential(         
+                timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
+                 nn.AvgPool2d(kernel_size=5,stride=5)
+            )
+        elif self.group_token_init_method == 'avgpool':
+            from timm.models import layers as timm_layers
+
+            self.group_token_init = \
+            nn.Sequential(         
+                 nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.GELU(),
+
+            )
+        elif self.group_token_init_method == 'conv':
+            from timm.models import layers as timm_layers
+            if isinstance(init_kernel_size, tuple) and isinstance(init_stride, tuple):
+                layers = []
+                for k_size, stride in zip(init_kernel_size, init_stride):
+                    layers.extend([
+                        timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size=k_size, stride=stride, padding="same"),
+                        timm_layers.LayerNorm2d(embed_dims),
+                        nn.GELU()
+                    ])
+                self.group_token_init = nn.Sequential(*layers)
+            elif isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+                self.group_token_init = \
+                nn.Sequential(                         
+                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.GELU(),
+                )
+            else:
+                raise(NotImplementedError)
+        else:
+            raise(NotImplementedError)
         self.group_projector = group_projector
         self.group_projector_methonds = group_projector_methonds
         if not zero_init_group_token:
                 trunc_normal_(self.group_token, std=.02)
         
-
+        self.pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02)      
         _group_att_cfg = dict(
             embed_dims=embed_dims,
             num_heads=num_group_heads,
@@ -635,7 +688,7 @@ class GPBlock(nn.Module):
             depth=depth,
             drop_path=drop_path)
         _mixer_cfg.update(fwd_att_cfg)
-        self.mixer = MLPMixer(**_mixer_cfg)
+        # self.mixer = MLPMixer(**_mixer_cfg)
 
         _ungroup_att_cfg = dict(
             embed_dims=embed_dims,
@@ -651,13 +704,54 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             association_embedding = association_embedding)
         _ungroup_att_cfg.update(ungroup_att_cfg)
-        self.un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
+        self.use_assign = use_assign
+        if self.use_assign:
+            self.pre_assign_attn = CrossAttnBlock(
+                dim=embed_dims, num_heads=num_ungroup_heads, mlp_ratio=4, qkv_bias=True, norm_layer=nn.LayerNorm, post_norm=True)
+            self.assign = AssignAttention(
+            dim=embed_dims,
+            num_heads=1,
+            qkv_bias=True,
+            hard=True,
+            gumbel=True,
+            gumbel_tau=1.,
+            sum_assign=False,
+            assign_eps=1.)
+        else:
+            self.un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
 
         self.dwconv = torch.nn.Sequential(
             nn.Conv2d(embed_dims, embed_dims, kernel_size=(3,3), padding=(1,1), bias=False, groups=embed_dims),
             nn.BatchNorm2d(num_features=embed_dims),
-            nn.ReLU(True))
-
+            # nn.ReLU(True))
+            nn.GELU())
+        self.blocks = nn.Sequential(
+            *[
+                Block(
+                    dim=embed_dims,
+                    num_heads=2,
+                    mlp_ratio=4,
+                    qkv_bias=True,
+                    # drop=drop_rate,
+                    proj_drop=drop,
+                    attn_drop=attn_drop,
+                    drop_path=(
+                        drop_path[i]
+                        if isinstance(drop_path, Sequence)
+                        else drop_path
+                    ),
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                    act_layer=nn.GELU,
+                    init_values=1e-6,
+                )
+                for i in range(_mixer_cfg['depth'])
+            ]
+        )
+        self.init_weights()
+    def init_weights(self):
+        if self.pos_embed is not None:
+            timm_layers.trunc_normal_(self.pos_embed, std=0.02)
+        
     def forward(self, x, hw_shape, attn_dict_list = None,prev_token = None):
         """
         Args:
@@ -667,10 +761,25 @@ class GPBlock(nn.Module):
             proj_tokens: shape [B, L, C]
         """
         B, L, C = x.size()
-        group_token = self.group_token.expand(x.size(0), -1, -1)
+        sw = sh = int(math.sqrt(L))
+        if self.group_token_init_method in["avgpool",'conv_avgpool','conv']:
+            x = rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h=sh, w=sw)
+            group_token = self.group_token_init(x)
+            group_token = rearrange(
+                group_token,
+                'b c h w -> b (h w) c'
+            )
+            x = rearrange(x,
+                'b c h w -> b (h w) c ',
+                h=sh, w=sw)
+ 
+        elif self.group_token_init_method == "learnable":
+            group_token = self.group_token.expand(x.size(0), -1, -1)
         if prev_token is None:
             gt = group_token
-        elif self.group_projector_methonds == "linear":
+        elif self.group_projector_methonds == "linear" or "conv":
             gt = group_token + self.group_projector(prev_token)
         elif self.group_projector_methonds == "cross" or self.group_projector_methonds == None:
             gt = group_token 
@@ -678,14 +787,40 @@ class GPBlock(nn.Module):
         else:
             raise(NotImplementedError)
         gt, _ = self.group_layer(query=gt, key=x, value=x, attn_dict_list = None)
-
-        gt = self.mixer(gt)
+        gt = gt + self.pos_embed
+        gt = self.blocks(gt)
         if self.group_projector_methonds == "cross" and prev_token is not None:
             gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
-
-        ungroup_tokens, attn_dict_list = self.un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
-        ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
-        proj_tokens = self.dwconv(ungroup_tokens).view(B, C, -1).permute(0,2,1).contiguous().view(B, L, C)
-
-        return proj_tokens, attn_dict_list, gt
+        if self.use_assign:
+            gt = self.pre_assign_attn(gt, x)
+            new_x, attn_dict_list = self.assign(query = x,key = gt, value = gt ,attn_dict_list = attn_dict_list)
+            x = new_x + x
+            return x,  attn_dict_list, gt
+        else:
+            proj_tokens, attn_dict_list = self.un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+            return proj_tokens, attn_dict_list, gt
+            
+        # ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
+        # proj_tokens = self.dwconv(ungroup_tokens).view(B, C, -1).permute(0,2,1).contiguous().view(B, L, C)
+        # import h5py
+        # with h5py.File("/data2/yunfei/vis_.h5", 'a') as f:
+        #         keys = list(f.keys())            
+        #         key = "ungroup_tokens"
+        #         original_key = key
+        #         count = 0
+        #         while f"{original_key}{count}" in keys:
+        #             count += 1
+        #         key = f"{original_key}{count}"
+        #         f.create_dataset(key, data=ungroup_tokens.detach().cpu().numpy())
+        #         key = "proj_tokens"
+        #         original_key = key
+        #         count = 0
+        #         while f"{original_key}{count}" in keys:
+        #             count += 1
+        #         key = f"{original_key}{count}"
+        #         f.create_dataset(key, data=rearrange(
+        #             proj_tokens,
+        #             'b (h w) c -> b c h w',
+        #             h = hw_shape[0],
+        #             w = hw_shape[1]).detach().cpu().numpy())
 
