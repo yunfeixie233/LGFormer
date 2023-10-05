@@ -1407,6 +1407,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     num_group_token=_arch_settings['group_layers'][i],
                     ffn_ratio=_arch_settings['ffn_ratio'],
                     init_stride = _arch_settings['init_strides'][i],
+                    init_kernel_size = _arch_settings['init_kernel_sizes'][i],
+                    
                     with_cp=None,
                     group_projector=group_projector,
                     zero_init_group_token=True,
