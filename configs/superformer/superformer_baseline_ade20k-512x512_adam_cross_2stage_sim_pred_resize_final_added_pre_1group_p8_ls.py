@@ -21,7 +21,7 @@ model = dict(
     ls_init_value = 1e-5,
     resize_version = 'v2',
     use_group_token = 'mix',
-    all_ls = True,
+
     arch_settings = {
         'embed_dims': 384,
         'patch_size': 8,
@@ -41,7 +41,8 @@ model = dict(
         'group_token_init_method':'avgpool',
         "init_strides":(4,),
         'init_kernel_sizes':(4,),
-        'merge_pos':((),(8,),())            
+        'merge_pos':((),(8,),()),
+        'all_ls' : True,            
     },
     
 ),
