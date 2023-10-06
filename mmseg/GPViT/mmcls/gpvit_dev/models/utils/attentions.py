@@ -462,7 +462,7 @@ class FullAttnCatBlock(nn.Module):
                  q_project=True,
                  with_cp=False,
                  association_embedding = False,
-                 layer_scale_init_value = 1e-6,
+                 layer_scale_init_value = 1e-5,
                  **kwargs):
         super().__init__()
         self.with_cp = with_cp
@@ -511,10 +511,10 @@ class FullAttnCatBlock(nn.Module):
             q = self.norm_query(query)
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
-            x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            x = torch.cat((query, self.drop_path(x)),dim=-1)
-            x = self.proj(x)
-            x = self.ffn(self.norm2(x), identity=x)
+            new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            # x = torch.cat((query, self.drop_path(x)),dim=-1)
+            # x = self.proj(x)
+            x = self.ffn(self.norm2(new_x), identity=query)
             return x,attn_dict_list
 
         if self.with_cp:
@@ -609,6 +609,7 @@ class GPBlock(nn.Module):
                  init_kernel_size:int = -1,   
                  init_stride : int = -1, 
                  use_assign: bool = False,
+                 all_ls: bool = False,
                  **kwargs):
 
         super().__init__()
@@ -678,7 +679,10 @@ class GPBlock(nn.Module):
             value_is_key=True,
             with_cp=with_cp)
         _group_att_cfg.update(group_att_cfg)
-        self.group_layer = LightGroupAttnBlock(**_group_att_cfg)
+        if all_ls:
+            self.group_layer = FullAttnCatBlock(**_group_att_cfg)
+        else:    
+            self.group_layer = LightGroupAttnBlock(**_group_att_cfg)
 
         _mixer_cfg = dict(
             num_patches=num_group_token,
@@ -701,8 +705,7 @@ class GPBlock(nn.Module):
             drop_path=drop_path,
             key_is_query=False,
             value_is_key=True,
-            with_cp=with_cp,
-            association_embedding = association_embedding)
+            with_cp=with_cp,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         self.use_assign = use_assign
         if self.use_assign:

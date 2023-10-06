@@ -19,14 +19,14 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    resize_version = 'v3',
-    use_group_token = True,
+    resize_version = 'v2',
+    use_group_token = 'mix',
 
     arch_settings = {
         'embed_dims': 384,
         'patch_size': 8,
         'window_size': 2,
-        'num_layers': 3,
+        'num_layers': 1,
         'num_heads': 2,
         'num_group_heads': 2,
         'num_group_forward_heads': 2,
@@ -34,14 +34,15 @@ model = dict(
         'ffn_ratio': 4.,
         'patch_embed': dict(type='ConvPatchEmbed', num_convs=0),
         'mlpmixer_depth': 1,
-        'group_layers': {0:64,1:64,2:16,},
+        'group_layers': {0:64,},
         'drop_path_rate': 0.2,
         'group_projector_methonds':'linear',
         'association_embedding':False,
         'group_token_init_method':'avgpool',
-        "init_strides":(4,4,8,),            
+        "init_strides":(4,),
+        'init_kernel_sizes':(4,),
+        'merge_pos':((),(8,),())            
     },
-
     
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
