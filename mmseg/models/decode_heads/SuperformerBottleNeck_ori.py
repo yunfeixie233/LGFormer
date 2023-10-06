@@ -1275,7 +1275,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 9, 9, kernel_size=3, padding=1)
         self.use_pixel_similarities_upsample = use_pixel_similarities_upsample
         if self.use_pixel_similarities_upsample:
-            assert self.classification_feature == 'superpixel_extralayer_similarity'
+            assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
@@ -1887,7 +1887,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     #     "TODO(meijier): use pixel similarities & not merge"
                     # )
 
-                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False)
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
                     similarities = prepare_similarities(
                         last_sp_layer,
                         similarities,  # pyright: ignore [reportGeneralTypeIssues]
@@ -2429,7 +2429,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             layer_out_file = f"{base_name}_{counter}_layer{layer_idx}{file_ext}"
 
             
-            GROUP_PALETTE = np.loadtxt('/data2/yunfei/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
+            GROUP_PALETTE = np.loadtxt('/root/autodl-tmp/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
             uni = np.unique(group_result)
             self.blend_result(
                 img=img.transpose(0, 2, 3, 1),
