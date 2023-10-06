@@ -950,7 +950,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         resize_version: str = 'v2',
         use_pixel_similarities_upsample: bool = False,
         use_group_token: str = None,
-
+        extralayer_nols: bool = False,
         arch_settings: dict = {
             'embed_dims': 216,
             'patch_size': 8,
@@ -981,6 +981,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
+        self.extralayer_nols = extralayer_nols
         self.resize_version = resize_version
         self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
@@ -1150,7 +1151,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             raise ValueError(
                 f"Unknown class_token_position_method: {self.class_token_position_method}"
             )
-        assert use_group_token in ['post','mix']      
+        if use_group_token:
+            assert use_group_token in ['post','mix']      
         self.use_group_token = use_group_token
           
         if self.use_group_token:
@@ -1370,6 +1372,12 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_iter = self.final_iter
             else:
                 sp_iter = self.sp_iter
+                
+            if self.extralayer_nols and i == len(self.sp_features_init_methods) -1 :
+                sp_ls_init_value = None
+            else:
+                sp_ls_init_value = self.sp_ls_init_value
+            print(f"{i}stage_{sp_ls_init_value}")
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
                 sp_iter,
@@ -1386,7 +1394,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 num_channels_sp=sp_dim,
                 num_heads_sp=sp_head,
                 layer_kwargs={
-                    "ls_init_value": self.sp_ls_init_value,
+                    "ls_init_value": sp_ls_init_value,
                     "norm_layer": self.norm_layer_2d,
                 },
                 **self.sp_kwargs,
