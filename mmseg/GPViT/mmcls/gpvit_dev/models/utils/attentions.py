@@ -514,7 +514,7 @@ class FullAttnCatBlock(nn.Module):
             new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
             # x = torch.cat((query, self.drop_path(x)),dim=-1)
             # x = self.proj(x)
-            x = self.ffn(self.norm2(new_x), identity=q)
+            x = self.ffn(self.norm2(new_x), identity=query)
             return x,attn_dict_list
 
         if self.with_cp:
@@ -609,6 +609,7 @@ class GPBlock(nn.Module):
                  init_kernel_size:int = -1,   
                  init_stride : int = -1, 
                  use_assign: bool = False,
+                 all_ls: bool = False,
                  **kwargs):
 
         super().__init__()
@@ -678,7 +679,10 @@ class GPBlock(nn.Module):
             value_is_key=True,
             with_cp=with_cp)
         _group_att_cfg.update(group_att_cfg)
-        self.group_layer = LightGroupAttnBlock(**_group_att_cfg)
+        if all_ls:
+            self.group_layer = FullAttnCatBlock(**_group_att_cfg)
+        else:    
+            self.group_layer = LightGroupAttnBlock(**_group_att_cfg)
 
         _mixer_cfg = dict(
             num_patches=num_group_token,
@@ -701,8 +705,7 @@ class GPBlock(nn.Module):
             drop_path=drop_path,
             key_is_query=False,
             value_is_key=True,
-            with_cp=with_cp,
-            association_embedding = association_embedding)
+            with_cp=with_cp,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         self.use_assign = use_assign
         if self.use_assign:

@@ -1477,13 +1477,14 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         ffn_ratio=_arch_settings['ffn_ratio'],
                         init_stride = _arch_settings['init_strides'][i],
                         init_kernel_size = _arch_settings['init_kernel_sizes'][i],
-                        
                         with_cp=None,
                         group_projector=group_projector,
                         zero_init_group_token=True,
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
-                        group_token_init_method = _arch_settings["group_token_init_method"])
+                        group_token_init_method = _arch_settings["group_token_init_method"],
+                        all_ls = _arch_settings["all_ls"] if 'all_ls' in _arch_settings.keys() else False)
+
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
             return merge_layer
