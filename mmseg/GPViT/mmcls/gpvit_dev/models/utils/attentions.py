@@ -22,177 +22,6 @@ from timm.models.vision_transformer import Block, _cfg
 from functools import partial
 import sys
 # sys.path.append("/root/autodl-tmp/GroupViT/models")
-# from group_vit import *
-def img2windows(img, H_sp, W_sp):
-    B, C, H, W = img.shape
-    img_reshape = img.view(B, C, H // H_sp, H_sp, W // W_sp, W_sp)
-    img_perm = img_reshape.permute(0, 2, 4, 3, 5, 1).contiguous().reshape(-1, H_sp * W_sp, C)
-    return img_perm
-
-def windows2img(img_splits_hw, H_sp, W_sp, H, W):
-    B = int(img_splits_hw.shape[0] / (H * W / H_sp / W_sp))
-    img = img_splits_hw.view(B, H // H_sp, W // W_sp, H_sp, W_sp, -1)
-    img = img.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
-    return img
-
-class LePEAttention(nn.Module):
-    def __init__(self, dim, mode, split_size=7, dim_out=None, num_heads=8, attn_drop=0., proj_drop=0., qk_scale=None):
-        super().__init__()
-        self.dim = dim
-        self.dim_out = dim_out or dim
-        self.split_size = split_size
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
-        self.scale = qk_scale or head_dim ** -0.5
-        assert mode in (0, 1)
-        self.mode = mode
-        self.get_v = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1, groups=dim)
-        self.attn_drop = nn.Dropout(attn_drop)
-
-    def im2cswin(self, x, hw_shape):
-        B, N, C = x.shape
-        H, W = hw_shape
-        x = x.transpose(-2, -1).contiguous().view(B, C, H, W)
-        if self.mode == 0:
-            H_sp, W_sp = H, self.split_size
-        else:
-            H_sp, W_sp = self.split_size, W
-        x = img2windows(x, H_sp, W_sp)
-        x = x.reshape(-1, H_sp * W_sp, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3).contiguous()
-        return x
-
-    def get_lepe(self, x, hw_shape, func):
-        B, N, C = x.shape
-        H, W = hw_shape
-        x = x.transpose(-2, -1).contiguous().view(B, C, H, W)
-        if self.mode == 0:
-            H_sp, W_sp = H, self.split_size
-        else:
-            H_sp, W_sp = self.split_size, W
-        x = x.view(B, C, H // H_sp, H_sp, W // W_sp, W_sp)
-        x = x.permute(0, 2, 4, 1, 3, 5).contiguous().reshape(-1, C, H_sp, W_sp)  ### B', C, H', W'
-        lepe = func(x)  ### B', C, H', W'
-        lepe = lepe.reshape(-1, self.num_heads, C // self.num_heads, H_sp * W_sp).permute(0, 1, 3, 2).contiguous()
-        x = x.reshape(-1, self.num_heads, C // self.num_heads, H_sp * W_sp).permute(0, 1, 3, 2).contiguous()
-        return x, lepe
-
-    def forward(self, qkv, hw_shape):
-        """
-        x: B L C
-        """
-        q, k, v = qkv[0], qkv[1], qkv[2]
-        ### Img2Window
-        H, W = hw_shape
-        B, L, C = q.shape
-        assert L == H * W, "flatten img_tokens has wrong size"
-
-        q = self.im2cswin(q, hw_shape)
-        k = self.im2cswin(k, hw_shape)
-        v, lepe = self.get_lepe(v, hw_shape, self.get_v)
-
-        if self.mode == 0:
-            H_sp, W_sp = H, self.split_size
-        else:
-            H_sp, W_sp = self.split_size, W
-
-        q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))  # B head N C @ B head C N --> B head N N
-        attn = nn.functional.softmax(attn, dim=-1, dtype=attn.dtype)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v) + lepe
-        x = x.transpose(1, 2).reshape(-1, H_sp * W_sp, C)  # B head N N @ B head N C
-
-        ### Window2Img
-        x = windows2img(x, H_sp, W_sp, H, W).view(B, -1, C)  # B H' W' C
-
-        return x
-
-class LePEAttnSimpleDWBlock(BaseModule):
-    def __init__(self,
-                 embed_dims,
-                 num_heads,
-                 window_size,  # For convenience, we use window size to denote split size
-                 ffn_ratio=4.,
-                 drop_rate=0.,
-                 drop_path=0.,
-                 attn_cfgs=dict(),
-                 ffn_cfgs=dict(),
-                 norm_cfg=dict(type='LN'),
-                 with_cp=False,
-                 init_cfg=None):
-
-        super().__init__(init_cfg)
-        self.with_cp = with_cp
-        self.dim = embed_dims
-        self.num_heads = num_heads
-        self.split_size = window_size
-        self.ffn_ratio = ffn_ratio
-        self.qkv = nn.Linear(embed_dims, embed_dims * 3, bias=True)
-
-        self.norm1 = build_norm_layer(norm_cfg, embed_dims)[1]
-
-        self.branch_num = 2
-        self.proj = nn.Linear(embed_dims, embed_dims)
-        self.proj_drop = nn.Dropout(0.)
-
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
-        self.attns = nn.ModuleList([
-            LePEAttention(
-                embed_dims // 2, mode=i,
-                split_size=self.split_size, num_heads=num_heads // 2, dim_out=embed_dims // 2,
-                qk_scale=None, attn_drop=0., proj_drop=drop_rate)
-            for i in range(self.branch_num)])
-
-        _ffn_cfgs = {
-            'embed_dims': embed_dims,
-            'feedforward_channels': int(embed_dims * ffn_ratio),
-            'num_fcs': 2,
-            'ffn_drop': drop_rate,
-            'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
-            'act_cfg': dict(type='GELU'),
-            'layer_scale_init_value':1e-6,
-            **ffn_cfgs
-        }
-        self.ffn = FFN(**_ffn_cfgs)
-        self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
-
-        self.dw = nn.Conv2d(embed_dims, embed_dims, kernel_size=(3, 3), padding=(1, 1), bias=False, groups=embed_dims)
-
-    def forward(self, x, hw_shape):
-        """
-        x: B, H*W, C
-        """
-        def _inner_forward(x, hw_shape):
-            H, W = hw_shape
-            B, L, C = x.shape
-            assert L == H * W, "flatten img_tokens has wrong size"
-            img = self.norm1(x)
-            qkv = self.qkv(img).reshape(B, -1, 3, C).permute(2, 0, 1, 3).contiguous()
-
-            x1 = self.attns[0](qkv[:, :, :, :C // 2], hw_shape)
-            x2 = self.attns[1](qkv[:, :, :, C // 2:], hw_shape)
-            attened_x = torch.cat([x1, x2], dim=2)
-            attened_x = self.proj(attened_x)
-            x = x + self.drop_path(attened_x)
-
-            identity = x
-            x = self.norm2(x)
-            x = self.ffn(x, identity=identity)
-
-            B, L, C = x.shape
-            x = x.permute(0, 2, 1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
-            x = self.dw(x)
-            x = x.reshape(B, C, L).permute(0, 2, 1).contiguous()
-            return x
-        if self.with_cp and x.requires_grad:
-            x = cp.checkpoint(_inner_forward, x, hw_shape)
-        else:
-            x = _inner_forward(x, hw_shape)
-        return x
-
 class MLPMixerLayer(nn.Module):
     def __init__(self,
                  num_patches,
@@ -463,6 +292,7 @@ class FullAttnCatBlock(nn.Module):
                  with_cp=False,
                  association_embedding = False,
                  layer_scale_init_value = 1e-5,
+                 
                  **kwargs):
         super().__init__()
         self.with_cp = with_cp
@@ -501,6 +331,7 @@ class FullAttnCatBlock(nn.Module):
             'act_cfg': act_cfg,
             'layer_scale_init_value':layer_scale_init_value
         }
+
         self.ffn = FFN(**_ffn_cfgs)
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
 
@@ -610,6 +441,7 @@ class GPBlock(nn.Module):
                  init_stride : int = -1, 
                  use_assign: bool = False,
                  all_ls: bool = False,
+                 layer_scale_init_value = 1e-5,
                  **kwargs):
 
         super().__init__()
@@ -677,7 +509,8 @@ class GPBlock(nn.Module):
             drop_path=0.,
             key_is_query=False,
             value_is_key=True,
-            with_cp=with_cp)
+            with_cp=with_cp,
+            layer_scale_init_value = layer_scale_init_value)
         _group_att_cfg.update(group_att_cfg)
         if all_ls:
             self.group_layer = FullAttnCatBlock(**_group_att_cfg)
@@ -705,7 +538,8 @@ class GPBlock(nn.Module):
             drop_path=drop_path,
             key_is_query=False,
             value_is_key=True,
-            with_cp=with_cp,)
+            with_cp=with_cp,
+            layer_scale_init_value = layer_scale_init_value,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         self.use_assign = use_assign
         if self.use_assign:
@@ -767,7 +601,7 @@ class GPBlock(nn.Module):
      
         
         sw = sh = int(math.sqrt(L))
-        vis_gt_eff = True
+        vis_gt_eff = False
         if vis_gt_eff:
             import h5py
             sp_before = x.detach()
@@ -854,7 +688,7 @@ class GPBlock(nn.Module):
                     key = original_key + str(count)
                 if int(count) < 5:
                     f.create_dataset(key,data=diff.detach().cpu().numpy()) 
-            return proj_tokens, attn_dict_list, gt
+        return proj_tokens, attn_dict_list, gt
             
         # ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
         # proj_tokens = self.dwconv(ungroup_tokens).view(B, C, -1).permute(0,2,1).contiguous().view(B, L, C)
