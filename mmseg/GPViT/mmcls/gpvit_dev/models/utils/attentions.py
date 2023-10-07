@@ -462,7 +462,9 @@ class FullAttnCatBlock(nn.Module):
                  q_project=True,
                  with_cp=False,
                  association_embedding = False,
-                 layer_scale_init_value = 1e-5,
+                #  layer_scale_init_value = 1e-5,
+                 layer_scale_init_value = 0.,
+                 
                  **kwargs):
         super().__init__()
         self.with_cp = with_cp
@@ -501,6 +503,7 @@ class FullAttnCatBlock(nn.Module):
             'act_cfg': act_cfg,
             'layer_scale_init_value':layer_scale_init_value
         }
+
         self.ffn = FFN(**_ffn_cfgs)
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
 
@@ -764,7 +767,28 @@ class GPBlock(nn.Module):
             proj_tokens: shape [B, L, C]
         """
         B, L, C = x.size()
+     
+        
         sw = sh = int(math.sqrt(L))
+        vis_gt_eff = False
+        if vis_gt_eff:
+            import h5py
+            sp_before = x.detach()
+            sp_before = rearrange(sp_before,
+                                'b (h w) c -> b c h w ',
+                                h = sh, w = sw)
+            
+            with h5py.File("/root/autodl-tmp/vis_before.h5","a") as f:
+                keys = list(f.keys())
+                key = "sp_before"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
+            
         if self.group_token_init_method in["avgpool",'conv_avgpool','conv']:
             x = rearrange(x,
                           'b (h w) c -> b c h w',
@@ -801,6 +825,38 @@ class GPBlock(nn.Module):
             return x,  attn_dict_list, gt
         else:
             proj_tokens, attn_dict_list = self.un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+        
+        if vis_gt_eff:
+            import h5py
+            sp_after = proj_tokens.detach()
+            sp_after = rearrange(sp_after,
+                                'b (h w) c -> b c h w ',
+                                h = sh, w = sw)
+            
+            with h5py.File("/root/autodl-tmp/vis_after.h5","a") as f:
+                keys = list(f.keys())
+                key = "sp_after"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=sp_after.detach().cpu().numpy()) 
+            
+            diff = sp_after - sp_before
+
+            
+            with h5py.File("/root/autodl-tmp/diff.h5","a") as f:
+                keys = list(f.keys())
+                key = "sp_after"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=diff.detach().cpu().numpy()) 
             return proj_tokens, attn_dict_list, gt
             
         # ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
