@@ -551,6 +551,30 @@ class SuperformerStage(nn.Module):
                     similarity.flatten(end_dim=1),
                 )
                 pixel_delta = pixel_delta.reshape(b, c, h, w)
+        
+        # import h5py
+        # with h5py.File('/home/meijieru/workspace/yunfei/pixel.h5','a') as f:
+        #     keys = list(f.keys())
+        #     key = "pixel_features"
+        #     original_key = key
+        #     count = int(0)
+        #     while key in keys:
+        #         print(f"Dataset with key {key} already exists. Updating key name.")
+        #         count = int(count) + 1
+        #         key = original_key + str(count)
+        #     if count <10 :
+        #         f.create_dataset(key, data=x.detach().cpu().numpy())
+        # with h5py.File('/home/meijieru/workspace/yunfei/pixel_delta.h5','a') as f:
+        #     keys = list(f.keys())
+        #     key = "pixel_features_delta_ls"
+        #     original_key = key
+        #     count = int(0)
+        #     while key in keys:
+        #         print(f"Dataset with key {key} already exists. Updating key name.")
+        #         count = int(count) + 1
+        #         key = original_key + str(count)
+        #     if count <10:
+        #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
         res = x + self.pixel_delta_ls(pixel_delta)
         res = self.pixel_refine(res)
         # import h5py
@@ -950,7 +974,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         resize_version: str = 'v2',
         use_pixel_similarities_upsample: bool = False,
         use_group_token: str = None,
-
+        extralayer_nols: bool = False,
         arch_settings: dict = {
             'embed_dims': 216,
             'patch_size': 8,
@@ -981,6 +1005,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         out_channels=seg_num_classes,
         in_index=0,
 **kwargs)
+        self.extralayer_nols = extralayer_nols
         self.resize_version = resize_version
         self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
@@ -1150,7 +1175,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             raise ValueError(
                 f"Unknown class_token_position_method: {self.class_token_position_method}"
             )
-        assert use_group_token in ['post','mix']      
+        if use_group_token:
+            assert use_group_token in ['post','mix']      
         self.use_group_token = use_group_token
           
         if self.use_group_token:
@@ -1363,13 +1389,19 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             if self.use_patch_embed:
                 sp_iter = 0
-            elif self.classification_feature in ['superpixel_extralayer','superpixel_extralayer_bilinear']:
+            elif self.classification_feature in ['superpixel_extralayer','superpixel_extralayer_bilinear','pixel_extralayer']:
                 if i != len(self.sp_features_init_methods) -1:
                     sp_iter = self.sp_iter
                 else:
                     sp_iter = self.final_iter
             else:
                 sp_iter = self.sp_iter
+                
+            if self.extralayer_nols and i == len(self.sp_features_init_methods) -1 :
+                sp_ls_init_value = None
+            else:
+                sp_ls_init_value = self.sp_ls_init_value
+            print(f"{i}stage_{sp_ls_init_value}")
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
                 sp_iter,
@@ -1386,7 +1418,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 num_channels_sp=sp_dim,
                 num_heads_sp=sp_head,
                 layer_kwargs={
-                    "ls_init_value": self.sp_ls_init_value,
+                    "ls_init_value": sp_ls_init_value,
                     "norm_layer": self.norm_layer_2d,
                 },
                 **self.sp_kwargs,
@@ -1434,13 +1466,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         ffn_ratio=_arch_settings['ffn_ratio'],
                         init_stride = _arch_settings['init_strides'][i],
                         init_kernel_size = _arch_settings['init_kernel_sizes'][i],
-                        
                         with_cp=None,
                         group_projector=group_projector,
                         zero_init_group_token=True,
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
-                        group_token_init_method = _arch_settings["group_token_init_method"])
+                        group_token_init_method = _arch_settings["group_token_init_method"],
+                        all_ls = _arch_settings["all_ls"] if 'all_ls' in _arch_settings.keys() else False)
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
             return merge_layer
@@ -1545,7 +1577,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 attn_dict_list = None
                 
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
-                if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear"]) or  i < len(self.stages) -1:
+                if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear","pixel_extralayer"]) or  i < len(self.stages) -1:
                     pixel_features, sp_features, sp_features_seg,attn_dict_list = stage(
                         pixel_features,
                         sp_features_last,
