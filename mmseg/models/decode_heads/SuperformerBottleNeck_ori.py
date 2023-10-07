@@ -551,6 +551,30 @@ class SuperformerStage(nn.Module):
                     similarity.flatten(end_dim=1),
                 )
                 pixel_delta = pixel_delta.reshape(b, c, h, w)
+        
+        # import h5py
+        # with h5py.File('/home/meijieru/workspace/yunfei/pixel.h5','a') as f:
+        #     keys = list(f.keys())
+        #     key = "pixel_features"
+        #     original_key = key
+        #     count = int(0)
+        #     while key in keys:
+        #         print(f"Dataset with key {key} already exists. Updating key name.")
+        #         count = int(count) + 1
+        #         key = original_key + str(count)
+        #     if count <10 :
+        #         f.create_dataset(key, data=x.detach().cpu().numpy())
+        # with h5py.File('/home/meijieru/workspace/yunfei/pixel_delta.h5','a') as f:
+        #     keys = list(f.keys())
+        #     key = "pixel_features_delta_ls"
+        #     original_key = key
+        #     count = int(0)
+        #     while key in keys:
+        #         print(f"Dataset with key {key} already exists. Updating key name.")
+        #         count = int(count) + 1
+        #         key = original_key + str(count)
+        #     if count <10:
+        #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
         res = x + self.pixel_delta_ls(pixel_delta)
         res = self.pixel_refine(res)
         # import h5py
@@ -1365,7 +1389,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             if self.use_patch_embed:
                 sp_iter = 0
-            elif self.classification_feature in ['superpixel_extralayer','superpixel_extralayer_bilinear']:
+            elif self.classification_feature in ['superpixel_extralayer','superpixel_extralayer_bilinear','pixel_extralayer']:
                 if i != len(self.sp_features_init_methods) -1:
                     sp_iter = self.sp_iter
                 else:
@@ -1553,7 +1577,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 attn_dict_list = None
                 
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
-                if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear"]) or  i < len(self.stages) -1:
+                if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear","pixel_extralayer"]) or  i < len(self.stages) -1:
                     pixel_features, sp_features, sp_features_seg,attn_dict_list = stage(
                         pixel_features,
                         sp_features_last,
