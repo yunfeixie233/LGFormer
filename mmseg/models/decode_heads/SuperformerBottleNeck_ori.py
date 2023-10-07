@@ -621,7 +621,6 @@ class SuperformerStage(nn.Module):
     ) -> torch.Tensor:
         if self.merge_layer:
             gt = None
-            attn_dict_list = []
         for i in range(start, end):
             x = self.blocks[i](x)
             if self.merge_layer and i in self.merge_pos:
@@ -2097,7 +2096,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list = self.forward_features(x)
                 
         if self.vis_sp:
-            
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
         
         if self.use_group_token == 'post':
@@ -2107,8 +2105,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             for merge_layer in self.merge_layer:
                 sp_features_seg, attn_dict_list ,gt =merge_layer(
                     sp_features_seg,hw_shape, attn_dict_list=attn_dict_list, prev_token=gt)
-            if self.vis_gt:
-                self.visualize_grouptoken_v2(x, hw_shape, attn_dict_list)              
+        if self.use_group_token in ['post','mix'] and  self.vis_gt:
+            sp_shape = self.stages[-1].patch_embed.superpixel_shape
+            self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)              
         h = w = int(math.sqrt(sp_features_seg.shape[1]))
         if self.use_compact_loss:
             if self.classification_feature == "superpixel":
