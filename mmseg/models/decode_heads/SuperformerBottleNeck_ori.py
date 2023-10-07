@@ -1844,7 +1844,20 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             x = self.seg_norm(x)
             pixel_logits = rearrange(self.seg_head(x),
                                      'b (h w) c -> b c h w',
-                                     h = sh * self.cls_scale_factor, w = sw* self.cls_scale_factor ) 
+                                     h = sh * self.cls_scale_factor, w = sw* self.cls_scale_factor )
+            # import h5py
+            # with h5py.File('/data2/yunfei/sp_logits_2.h5','a') as f:
+            #     keys = list(f.keys())
+            #     key = "sp_logits_2"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         print(f"Dataset with key {key} already exists. Updating key name.")
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) <5 :
+            #         f.create_dataset(key, data=pixel_logits.detach().cpu().numpy())     
+                             
             return pixel_logits
         elif self.classification_feature == "superpixel_similarity":
             
@@ -1947,6 +1960,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 x = self.seg_norm(x)
                 b, num, c = x.shape
 
+
+
                 x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
                 sp_logits = self.seg_head_conv(x)
             pixel_logits = None
@@ -1985,7 +2000,30 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-
+            # import h5py
+            # with h5py.File('/data2/yunfei/pixel_logits.h5','a') as f:
+            #     keys = list(f.keys())
+            #     key = "pixel_logits"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         print(f"Dataset with key {key} already exists. Updating key name.")
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) < 2 :
+            #         f.create_dataset(key, data=pixel_logits.detach().cpu().numpy())     
+                
+            # with h5py.File('/data2/yunfei/sp_logits.h5','a') as f:
+            #     keys = list(f.keys())
+            #     key = "sp_logits"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         print(f"Dataset with key {key} already exists. Updating key name.")
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) <5 :
+            #         f.create_dataset(key, data=sp_logits.detach().cpu().numpy())
             return sp_logits, pixel_logits
         elif self.classification_feature == "superpixel_extralayer_similarity": 
             #final info               
