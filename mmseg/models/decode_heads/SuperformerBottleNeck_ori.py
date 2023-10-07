@@ -624,7 +624,6 @@ class SuperformerStage(nn.Module):
         for i in range(start, end):
             x = self.blocks[i](x)
             if self.merge_layer and i in self.merge_pos:
-
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
                 )
@@ -1514,7 +1513,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
                         group_token_init_method = _arch_settings["group_token_init_method"],
-                        all_ls = _arch_settings["all_ls"] if 'all_ls' in _arch_settings.keys() else False)
+                        all_ls = _arch_settings["all_ls"] if 'all_ls' in _arch_settings.keys() else False,
+                        layer_scale_init_value = _arch_settings["layer_scale_init_value"])
 
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
