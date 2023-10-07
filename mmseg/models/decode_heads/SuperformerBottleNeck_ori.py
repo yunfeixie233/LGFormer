@@ -948,6 +948,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         attn_drop_rate: float = 0.0,
         sp_ls_init_value: Optional[float] = 1e-5,
         pixel_ls_init_value: Optional[float] = 1e-5,
+        pixel_ls_init_value_sca: Optional[float] = 1e-5,
         ls_init_value = None,
         pre_norm_pixel: bool = False,
         pixel_refine_method: str = "identity",
@@ -1034,6 +1035,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.sp_sp_position_embedding_stride = sp_sp_position_embedding_stride
         self.sp_pixel_features_update_method = sp_pixel_features_update_method
         self.sp_ls_init_value = sp_ls_init_value
+        self.pixel_ls_init_value_sca = pixel_ls_init_value_sca
         self.pixel_ls_init_value = pixel_ls_init_value
         self.ls_init_value = ls_init_value
         self.sp_kwargs = sp_kwargs or {}
@@ -1381,6 +1383,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 return_final_pixel_features=return_final_pixel_features,
                 layer_kwargs={
                     "ls_init_value": self.sp_ls_init_value,
+                    "pixel_ls_init_value": self.pixel_ls_init_value_sca,                    
                     "norm_layer": self.norm_layer_2d,
                 },
                 **self.sp_kwargs,
@@ -1398,10 +1401,12 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 sp_iter = self.sp_iter
                 
             if self.extralayer_nols and i == len(self.sp_features_init_methods) -1 :
-                sp_ls_init_value = None
+                pixel_ls_init_value_sca = None
+                sp_ls_init_value = self.sp_ls_init_value
             else:
                 sp_ls_init_value = self.sp_ls_init_value
-            print(f"{i}stage_{sp_ls_init_value}")
+                pixel_ls_init_value_sca = self.pixel_ls_init_value_sca
+            print(f"{i}stage_{pixel_ls_init_value_sca}")
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
                 sp_iter,
@@ -1418,7 +1423,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 num_channels_sp=sp_dim,
                 num_heads_sp=sp_head,
                 layer_kwargs={
-                    "ls_init_value": sp_ls_init_value,
+                    "sp_ls_init_value": sp_ls_init_value,
+                    'pixel_ls_init_value':pixel_ls_init_value_sca,
                     "norm_layer": self.norm_layer_2d,
                 },
                 **self.sp_kwargs,
@@ -1965,6 +1971,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                           h = sh, w = sw)
             
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            
             if self.vis_sp:
                 
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
