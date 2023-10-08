@@ -2,6 +2,7 @@
 Author: Chenhongyi Yang
 LePE attention References: https://github.com/microsoft/CSWin-Transformer
 """
+from ast import Try
 from typing import Sequence
 
 import torch
@@ -22,6 +23,71 @@ from timm.models.vision_transformer import Block, _cfg
 from functools import partial
 import sys
 # sys.path.append("/root/autodl-tmp/GroupViT/models")
+
+
+class SE(nn.Module):
+    """
+    Squeeze and excitation block
+    """
+
+    def __init__(self,
+                 inp,
+                 oup,
+                 expansion=0.25):
+        """
+        Args:
+            inp: input features dimension.
+            oup: output features dimension.
+            expansion: expansion ratio.
+        """
+
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(oup, int(inp * expansion), bias=False),
+            nn.GELU(),
+            nn.Linear(int(inp * expansion), oup, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y
+
+class FeatExtract(nn.Module):
+    """
+    Feature extraction block based on: "Hatamizadeh et al.,
+    Global Context Vision Transformers <https://arxiv.org/abs/2206.09959>"
+    """
+
+    def __init__(self, dim, keep_dim=False):
+        """
+        Args:
+            dim: feature size dimension.
+            keep_dim: bool argument for maintaining the resolution.
+        """
+
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1,
+                      groups=dim, bias=False),
+            nn.GELU(),
+            SE(dim, dim),
+            nn.Conv2d(dim, dim, 1, 1, 0, bias=False),
+        )
+        if not keep_dim:
+            self.pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.keep_dim = keep_dim
+
+    def forward(self, x):
+        x = x.contiguous()
+        x = x + self.conv(x)
+        if not self.keep_dim:
+            x = self.pool(x)
+        return x
+    
 class MLPMixerLayer(nn.Module):
     def __init__(self,
                  num_patches,
@@ -339,13 +405,22 @@ class FullAttnCatBlock(nn.Module):
 
     def forward(self, query, key, value, att_bias=None,attn_dict_list = None):
         def _inner_forward(query, key, value, att_bias,attn_dict_list):
+            # q = self.norm_query(query)
+            # k = q if self.key_is_query else self.norm_key(key)
+            # v = k if self.value_is_key else self.norm_value(value)
+            # new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            # new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
+            # new_x = self.proj(new_x)
+            # x = self.ffn(self.norm2(new_x), identity=query)
+            
             q = self.norm_query(query)
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
-            new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
-            new_x = self.proj(new_x)
-            x = self.ffn(self.norm2(new_x), identity=query)
+            x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            x = torch.cat((query, self.drop_path(x)),dim=-1)
+            x = self.proj(x)
+            x = self.ffn(self.norm2(x), identity=x)
+            
             return x,attn_dict_list
 
         if self.with_cp:
@@ -491,6 +566,12 @@ class GPBlock(nn.Module):
                 )
             else:
                 raise(NotImplementedError)
+        elif self.group_token_init_method == 'GCViT':
+            self.group_token_init = \
+            nn.Sequential(
+                FeatExtract(embed_dims, keep_dim=False),
+                FeatExtract(embed_dims, keep_dim=False),
+            )
         else:
             raise(NotImplementedError)
         self.group_projector = group_projector
@@ -621,7 +702,7 @@ class GPBlock(nn.Module):
                 if int(count) < 5:
                     f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
             
-        if self.group_token_init_method in["avgpool",'conv_avgpool','conv']:
+        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT']:
             x = rearrange(x,
                           'b (h w) c -> b c h w',
                           h=sh, w=sw)
