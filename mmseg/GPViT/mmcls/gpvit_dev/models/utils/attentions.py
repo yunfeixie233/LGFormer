@@ -343,8 +343,8 @@ class FullAttnCatBlock(nn.Module):
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
             new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            # x = torch.cat((query, self.drop_path(x)),dim=-1)
-            # x = self.proj(x)
+            new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
+            new_x = self.proj(new_x)
             x = self.ffn(self.norm2(new_x), identity=query)
             return x,attn_dict_list
 
@@ -367,7 +367,8 @@ class LightGroupAttnBlock(nn.Module):
                  norm_cfg=dict(type='LN'),
                  key_is_query=False,
                  value_is_key=False,
-                 with_cp=False):
+                 with_cp=False,
+                 layer_scale_init_value = None):
         super().__init__()
 
         self.with_cp = with_cp
