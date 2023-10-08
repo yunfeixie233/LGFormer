@@ -543,6 +543,7 @@ def resize_similarities_v2(
     scale_factor: float,
     mode: str = "bilinear",
     resize_version : str = 'v2',
+    vis_upsample: bool = False,
     **kwargs,
 ) -> torch.Tensor:
     """Resizes similarities, before softmax.
@@ -568,13 +569,59 @@ def resize_similarities_v2(
     # )
     
     if resize_version == 'v2':
+        if vis_upsample:
+            import h5py 
+            vis = similarities_sp_persptive.detach()
+            vis = rearrange(
+        vis,
+        "b c sh ph sw pw -> b c (sh ph) (sw pw)"
+    )
+            with h5py.File("/data2/yunfei/sim_before.h5","a") as f:
+                keys = list(f.keys())
+                key = "sim_before"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    print(f"Dataset with key {key} already exists. Updating key name.")
+                    count  = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=vis.detach().cpu().numpy())
+            
+             
         similarities_sp_persptive = rearrange(
         similarities_sp_persptive,
         "b c sh ph sw pw -> (b c) (sh sw) ph pw"
     )
+
+
+        
         res = F.interpolate(
         similarities_sp_persptive, scale_factor=scale_factor, mode=mode, **kwargs
     )
+        if vis_upsample:
+            import h5py 
+            vis = res.detach()
+            vis = vis[0,...].unsqueeze(0)    
+            print(vis.shape)        
+            vis = rearrange(
+        vis,
+        " (b c) (sh sw) ph pw ->  b c (sh ph) (sw pw)",
+        b = b, c = 1, sh  = sh, sw = sw
+    )
+            with h5py.File("/data2/yunfei/sim_after.h5","a") as f:
+                keys = list(f.keys())
+                key = "sim_after"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    print(f"Dataset with key {key} already exists. Updating key name.")
+                    count  = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=vis.detach().cpu().numpy())
+
+        
         res = rearrange(
         res,
         "(b c) (sh sw) ph pw -> b c sh ph sw pw",
@@ -584,6 +631,27 @@ def resize_similarities_v2(
         sw=sw
     )
     elif resize_version == 'v3':
+        if vis_upsample:
+            import h5py 
+            vis = similarities_sp_persptive.detach()
+            vis = rearrange(
+        vis,
+        " b c sh ph sw pw ->  b c (sh ph) (sw pw)",
+        b = b, c = n, sh  = sh, sw = sw
+    )
+            with h5py.File("/data2/yunfei/sim_before_v3.h5","a") as f:
+                keys = list(f.keys())
+                key = "sim_before"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    print(f"Dataset with key {key} already exists. Updating key name.")
+                    count  = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=vis.detach().cpu().numpy())
+                
+        
         similarities_sp_persptive = rearrange(
         similarities_sp_persptive,
         "b c sh ph sw pw -> b c (sh ph) (sw pw)"
@@ -591,6 +659,8 @@ def resize_similarities_v2(
         res = F.interpolate(
         similarities_sp_persptive, scale_factor=scale_factor, mode=mode, **kwargs
     )
+        
+        
         res = rearrange(
         res,
         "b c (sh ph) (sw pw) -> b c sh ph sw pw",
@@ -599,6 +669,27 @@ def resize_similarities_v2(
         sh=sh,
         sw=sw
     )
+        
+        if vis_upsample:
+            import h5py 
+            vis = res.detach()
+            vis = vis[:,0,...].unsqueeze(1)
+            vis = rearrange(
+        vis,
+        " b c sh ph sw pw ->  b c (sh ph) (sw pw)",
+        b = b, c = 1, sh  = sh, sw = sw
+    )
+            with h5py.File("/data2/yunfei/sim_after_v3.h5","a") as f:
+                keys = list(f.keys())
+                key = "sim_after"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    print(f"Dataset with key {key} already exists. Updating key name.")
+                    count  = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) < 5:
+                    f.create_dataset(key,data=vis.detach().cpu().numpy())        
     else:
         raise(NotImplementedError)
     # else:
