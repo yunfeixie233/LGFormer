@@ -1025,7 +1025,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         attn_drop_rate: float = 0.0,
         sp_ls_init_value: Optional[float] = 1e-5,
         pixel_ls_init_value: Optional[float] = 1e-5,
-        pixel_ls_init_value_sca: Optional[float] = 1e-5,
         ls_init_value = None,
         pre_norm_pixel: bool = False,
         pixel_refine_method: str = "identity",
@@ -1112,7 +1111,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.sp_sp_position_embedding_stride = sp_sp_position_embedding_stride
         self.sp_pixel_features_update_method = sp_pixel_features_update_method
         self.sp_ls_init_value = sp_ls_init_value
-        self.pixel_ls_init_value_sca = pixel_ls_init_value_sca
         self.pixel_ls_init_value = pixel_ls_init_value
         self.ls_init_value = ls_init_value
         self.sp_kwargs = sp_kwargs or {}
@@ -1460,7 +1458,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 return_final_pixel_features=return_final_pixel_features,
                 layer_kwargs={
                     "ls_init_value": self.sp_ls_init_value,
-                    "pixel_ls_init_value": self.pixel_ls_init_value_sca,                    
                     "norm_layer": self.norm_layer_2d,
                 },
                 **self.sp_kwargs,
