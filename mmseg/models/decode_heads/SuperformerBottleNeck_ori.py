@@ -820,6 +820,9 @@ class SuperformerStage(nn.Module):
         sp_features_last: Optional[torch.Tensor],
         attn_dict_list:list = None,
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
+        
+        
+        
         if sp_features_last.dim() == 3:
             b, n, c = sp_features_last.shape
             h_w = int(math.sqrt(n))
@@ -834,9 +837,43 @@ class SuperformerStage(nn.Module):
                 w=h_w
                 
             )
+        
         info, sp_features, pixel_features_middle = self.forward_patchify(
             x, sp_features_last
         )
+        vis_sp_patchify = False
+        if vis_sp_patchify:
+            import h5py
+            sp_vis = sp_features_last.detach() 
+            if sp_vis.dim() == 3:  
+                sp_vis = rearrange(
+                    sp_vis,
+                    'b (h w) c -> b c h w',
+                    h = self.patch_embed.superpixel_shape[0],
+                    w = self.patch_embed.superpixel_shape[1],
+                )               
+            with h5py.File('/data2/yunfei/vis_sp_patchify.h5','a') as f:
+                keys = list(f.keys())
+                key = "sp_vis_before"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) <6 :
+                    f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
+                    
+                sp_vis = sp_features.detach() 
+                keys = list(f.keys())
+                key = "sp_vis_after"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) <6 :
+                    f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
+                                        
         assert sp_features.dim() == 4
         sp_features = self.sp_lift(sp_features)
         if self.pos_embed_method in ["pixel", "pixel_no_grad", "both", "both_no_grad"]:
@@ -848,13 +885,55 @@ class SuperformerStage(nn.Module):
             sp_features = self.add_pos_embed(sp_features)
 
         # sp_features = self.blocks(sp_features)
-
+        vis_sp_block = False
+        if vis_sp_block:
+            sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
         sp_features_seg, attn_dict_list = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list)
         sp_features, attn_dict_list = self.forward_blocks_range(
             sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list
         )
         
+
+        if vis_sp_block:
+            import h5py
+            sp_vis = sp_before
+            if sp_vis.dim() == 3:  
+                sp_vis = rearrange(
+                    sp_vis,
+                    'b (h w) c -> b c h w',
+                    h = self.patch_embed.superpixel_shape[0],
+                    w = self.patch_embed.superpixel_shape[1],
+                )               
+            with h5py.File('/data2/yunfei/vis_sp_block.h5','a') as f:
+                keys = list(f.keys())
+                key = "sp_vis_before"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) <6 :
+                    f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
+                    
+                sp_vis = sp_features.detach()
+                if sp_vis.dim() == 3:  
+                    sp_vis = rearrange(
+                        sp_vis,
+                        'b (h w) c -> b c h w',
+                        h = self.patch_embed.superpixel_shape[0],
+                        w = self.patch_embed.superpixel_shape[1],
+                    )               
+                 
+                keys = list(f.keys())
+                key = "sp_vis_after"
+                original_key = key
+                count = int(0)
+                while key in keys:
+                    count = int(count) + 1
+                    key = original_key + str(count)
+                if int(count) <6 :
+                    f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
         sp_features_unflatten = None
         updated_pixel_features = None
         if self.return_updated_pixel_features:
@@ -946,6 +1025,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         attn_drop_rate: float = 0.0,
         sp_ls_init_value: Optional[float] = 1e-5,
         pixel_ls_init_value: Optional[float] = 1e-5,
+        pixel_ls_init_value_sca: Optional[float] = 1e-5,
         ls_init_value = None,
         pre_norm_pixel: bool = False,
         pixel_refine_method: str = "identity",
@@ -1032,6 +1112,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.sp_sp_position_embedding_stride = sp_sp_position_embedding_stride
         self.sp_pixel_features_update_method = sp_pixel_features_update_method
         self.sp_ls_init_value = sp_ls_init_value
+        self.pixel_ls_init_value_sca = pixel_ls_init_value_sca
         self.pixel_ls_init_value = pixel_ls_init_value
         self.ls_init_value = ls_init_value
         self.sp_kwargs = sp_kwargs or {}
@@ -1379,6 +1460,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 return_final_pixel_features=return_final_pixel_features,
                 layer_kwargs={
                     "ls_init_value": self.sp_ls_init_value,
+                    "pixel_ls_init_value": self.pixel_ls_init_value_sca,                    
                     "norm_layer": self.norm_layer_2d,
                 },
                 **self.sp_kwargs,
@@ -1399,7 +1481,6 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 sp_ls_init_value = None
             else:
                 sp_ls_init_value = self.sp_ls_init_value
-            print(f"{i}stage_{sp_ls_init_value}")
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
                 sp_iter,
@@ -1576,6 +1657,27 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 attn_dict_list = None
                 
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
+                vis_sp_stage = False
+                if vis_sp_stage:
+                    import h5py
+                    sp_vis = sp_features_last.detach() 
+                    if sp_vis.dim() == 3:  
+                        sp_vis = rearrange(
+                            sp_vis,
+                            'b (h w) c -> b c h w',
+                            h = stage.patch_embed.superpixel_shape[0],
+                            w = stage.patch_embed.superpixel_shape[1],
+                        )               
+                    with h5py.File('/data2/yunfei/vis_sp_stage.h5','a') as f:
+                        keys = list(f.keys())
+                        key = "sp_vis"
+                        original_key = key
+                        count = int(0)
+                        while key in keys:
+                            count = int(count) + 1
+                            key = original_key + str(count)
+                        if int(count) <6 :
+                            f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
                 if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear","pixel_extralayer"]) or  i < len(self.stages) -1:
                     pixel_features, sp_features, sp_features_seg,attn_dict_list = stage(
                         pixel_features,
@@ -1583,7 +1685,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         attn_dict_list,
                     )
                     sp_features_last = sp_features_seg
-
+                        
                 # # rank not consistent due to whether flatten or not
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:
@@ -1867,7 +1969,20 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             x = self.seg_norm(x)
             pixel_logits = rearrange(self.seg_head(x),
                                      'b (h w) c -> b c h w',
-                                     h = sh * self.cls_scale_factor, w = sw* self.cls_scale_factor ) 
+                                     h = sh * self.cls_scale_factor, w = sw* self.cls_scale_factor )
+            # import h5py
+            # with h5py.File('/data2/yunfei/sp_logits_2.h5','a') as f:
+            #     keys = list(f.keys())
+            #     key = "sp_logits_2"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         print(f"Dataset with key {key} already exists. Updating key name.")
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) <5 :
+            #         f.create_dataset(key, data=pixel_logits.detach().cpu().numpy())     
+                             
             return pixel_logits
         elif self.classification_feature == "superpixel_similarity":
             
@@ -1951,6 +2066,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                           h = sh, w = sw)
             
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            
             if self.vis_sp:
                 
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
@@ -1969,6 +2085,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             elif self.seg_specific_classifier=="Conv":
                 x = self.seg_norm(x)
                 b, num, c = x.shape
+
+
 
                 x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
                 sp_logits = self.seg_head_conv(x)
@@ -2008,7 +2126,30 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-
+            # import h5py
+            # with h5py.File('/data2/yunfei/pixel_logits.h5','a') as f:
+            #     keys = list(f.keys())
+            #     key = "pixel_logits"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         print(f"Dataset with key {key} already exists. Updating key name.")
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) < 2 :
+            #         f.create_dataset(key, data=pixel_logits.detach().cpu().numpy())     
+                
+            # with h5py.File('/data2/yunfei/sp_logits.h5','a') as f:
+            #     keys = list(f.keys())
+            #     key = "sp_logits"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         print(f"Dataset with key {key} already exists. Updating key name.")
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) <5 :
+            #         f.create_dataset(key, data=sp_logits.detach().cpu().numpy())
             return sp_logits, pixel_logits
         elif self.classification_feature == "superpixel_extralayer_similarity": 
             #final info               
