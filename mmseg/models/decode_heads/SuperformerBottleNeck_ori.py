@@ -1348,6 +1348,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         )
         self.classification_feature = classification_feature
+        if self.classification_feature in ['pixel_extralayer','both_extralayer']:
+            assert(self.extralayer_nols == True)
         self.pixel_projection = pixel_projection
         if self.seg_specific_classifier:
             assert seg_num_classes > 0
@@ -1376,11 +1378,14 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             elif self.classification_feature =='both':
                 self.seg_norm = norm_layer(stem_channels_list[-1] + self.embed_dim)
                 self.seg_head = nn.Linear(stem_channels_list[-1] + self.embed_dim, self.seg_num_classes)
-            elif self.classification_feature =='both_dualhead':     
+            elif self.classification_feature in 'both_dualhead' or 'both_extralayer' :     
                 self.seg_norm_pixel = norm_layer(stem_channels_list[-1])
                 self.seg_head_pixel = nn.Linear(stem_channels_list[-1], self.seg_num_classes)
                 self.seg_norm = norm_layer(self.embed_dim)
                 self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+            else:
+                raise(NotImplementedError)
+            
         if weight_init != "skip":
             self.init_weights(weight_init)
         self.use_compact_loss =use_compact_loss
@@ -1466,7 +1471,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             assert sp_dim is not None
             if self.use_patch_embed:
                 sp_iter = 0
-            elif self.classification_feature in ['superpixel_extralayer','superpixel_extralayer_bilinear','pixel_extralayer']:
+            elif 'extralayer' in self.classification_feature :
                 if i != len(self.sp_features_init_methods) -1:
                     sp_iter = self.sp_iter
                 else:
@@ -1675,7 +1680,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                             key = original_key + str(count)
                         if int(count) <6 :
                             f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
-                if (self.classification_feature not in  ["superpixel_extralayer","superpixel_extralayer_bilinear","pixel_extralayer"]) or  i < len(self.stages) -1:
+                if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
                     pixel_features, sp_features, sp_features_seg,attn_dict_list = stage(
                         pixel_features,
                         sp_features_last,
@@ -2220,6 +2225,95 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     raise ValueError()
 
             return sp_logits, pixel_logits
+        elif self.classification_feature == "both_extralayer": 
+            
+            #final info               
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            x_2d = einops.rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+            
+            info, pixel_feature, _ = last_sp_layer(pixel_feature,x_2d)
+            
+            if self.vis_sp:
+                
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)
+            
+            #classification for superpixel
+            if not self.seg_specific_classifier:
+                raise ValueError("No segmentation head is found.")
+            elif self.seg_specific_classifier=="Linear":
+                
+                x = self.seg_norm(x)
+                b, num, c = x.shape
+                x = x.reshape(b * num, c)
+
+                sp_logits = self.seg_head(x)
+                sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+            elif self.seg_specific_classifier=="Conv":
+                x = self.seg_norm(x)
+                b, num, c = x.shape
+
+
+
+                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(x)
+            pixel_logits = None
+            if return_pixel_logits:
+                if isinstance(last_sp_layer, nn.AvgPool2d):
+                    raise NotImplementedError()
+                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    if info is None:
+                        raise ValueError()
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
+                    # raise NotImplementedError(
+                    #     "TODO(meijier): use pixel similarities & not merge"
+                    # )
+
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                    similarities = prepare_similarities(
+                        last_sp_layer,
+                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                        scale_factor=scale_factor,
+                        resize_version = self.resize_version
+                    )
+                    similarities = similarities.softmax(1)
+                    similarities = einops.rearrange(
+                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                    )
+                    if self.use_similarity_head:
+                        similarities = self.similarity_head(similarities)
+                    # import h5py
+                    # with h5py.File("/data2/yunfei/vis/similarities.h5","a") as f:
+                    #     f.create_dataset("similarities",data=similarities.detach().cpu().numpy())
+                    sp_logits = superpixel_ops.expand_superpixel_features(
+                        sp_logits, similarities
+                    )
+                else:
+                    raise ValueError()
+            #classification for pixel
+
+            pixel_feature = F.interpolate(pixel_feature,size=sp_logits.shape[2:],mode='bilinear')
+            
+            pixel_feature = self.seg_norm_pixel(rearrange(pixel_feature,
+                                        "b c h w -> b (h w) c"))
+            pixel_logits = self.seg_head_pixel(pixel_feature)
+            pixel_logits = rearrange(pixel_logits,
+                                     "b (h w) c -> b c h w",
+                                     h = sp_logits.shape[2],w = sp_logits.shape[3])
+            pixel_logits = sp_logits + pixel_logits
+            return sp_logits, pixel_logits
+
         else:
             raise(NotImplementedError)
     def forward(
@@ -2310,7 +2404,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     ret={}
                     ret["seg"] = pixel_logits
                     return ret["seg"]
-        elif self.classification_feature in ["superpixel_extralayer",'superpixel_extralayer_similarity','pixel_extralayer']:
+        elif 'extralayer' in self.classification_feature:
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
