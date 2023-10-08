@@ -367,7 +367,8 @@ class LightGroupAttnBlock(nn.Module):
                  norm_cfg=dict(type='LN'),
                  key_is_query=False,
                  value_is_key=False,
-                 with_cp=False):
+                 with_cp=False,
+                 layer_scale_init_value = None):
         super().__init__()
 
         self.with_cp = with_cp
