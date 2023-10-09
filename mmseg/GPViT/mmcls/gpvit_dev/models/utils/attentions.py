@@ -639,7 +639,7 @@ class GPBlock(nn.Module):
             group_token = self.group_token.expand(x.size(0), -1, -1)
         if prev_token is None:
             gt = group_token
-        elif self.group_projector_methonds == "linear" or "conv":
+        elif self.group_projector_methonds in ["linear","conv"]:
             gt = group_token + self.group_projector(prev_token)
         elif self.group_projector_methonds == "cross" or self.group_projector_methonds == None:
             gt = group_token 
