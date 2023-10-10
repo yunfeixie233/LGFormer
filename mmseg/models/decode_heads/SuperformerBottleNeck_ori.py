@@ -1552,7 +1552,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         zero_init_group_token=True,
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
-                        group_token_init_method = _arch_settings["group_token_init_method"],)
+                        group_token_init_method = _arch_settings["group_token_init_method"],
+                        gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
             return merge_layer
@@ -1595,8 +1596,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
                         group_token_init_method = _arch_settings["group_token_init_method"],
-                        ls_init_value = _arch_settings["ls_init_value"],                     
-                        )
+                        ls_init_value = _arch_settings["ls_init_value"], 
+                        gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
 
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
