@@ -1553,7 +1553,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
                         group_token_init_method = _arch_settings["group_token_init_method"],
+                        ls_init_value = _arch_settings["ls_init_value"], 
                         gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
+
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
             return merge_layer
@@ -1624,7 +1626,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             endpoints = None
             assert len(self.stages) > 0
 
-            for i, stage in enumerate(self.stages):# skip final stage if use extra stage
+            for i, stage in enumerate(self.stages):# 
                     sp_features_last = stage.add_pos_embed(sp_features_last)  
                     sp_features_last = stage.forward_blocks_range(
                         sp_features_last,0,len(stage.blocks)
@@ -2853,7 +2855,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
 
             
-            GROUP_PALETTE = np.loadtxt('/data2/yunfei/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
+            GROUP_PALETTE = np.loadtxt('mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
             uni = np.unique(group_result)
             self.blend_result(
                 img=img.transpose(0, 2, 3, 1),
