@@ -1552,8 +1552,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         zero_init_group_token=True,
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
-                        group_token_init_method = _arch_settings["group_token_init_method"],
-                        all_ls = _arch_settings["all_ls"] if 'all_ls' in _arch_settings.keys() else False)
+                        group_token_init_method = _arch_settings["group_token_init_method"],)
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
             return merge_layer
@@ -1596,8 +1595,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         group_projector_methonds = _arch_settings["group_projector_methonds"],
                         association_embedding = _arch_settings["association_embedding"],
                         group_token_init_method = _arch_settings["group_token_init_method"],
-                        all_ls = _arch_settings["all_ls"] if 'all_ls' in _arch_settings.keys() else False,
-                        layer_scale_init_value = _arch_settings["layer_scale_init_value"])
+                        ls_init_value = _arch_settings["ls_init_value"],                     
+                        )
 
                 group_layer = GPBlock(**_layer_cfg)
                 merge_layer.append(group_layer)
@@ -1706,7 +1705,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
 
     def forward_segmentation(
         self, x: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
-        img = None,) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        img = None,attn_dict_list = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.classification_feature == "pixel":
             b, c, h, w = x.shape
             if self.pixel_projection:
@@ -2072,7 +2071,9 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             if self.vis_sp:
                 
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
-            
+            self.vis_spgt = False      
+            if self.vis_spgt:
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info)            
             #classification
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -2329,7 +2330,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 
         if self.vis_sp:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
-        
+
         if self.use_group_token == 'post':
             gt = None
             attn_dict_list = []
@@ -2339,7 +2340,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     sp_features_seg,hw_shape, attn_dict_list=attn_dict_list, prev_token=gt)
         if self.use_group_token in ['post','mix'] and  self.vis_gt:
             sp_shape = self.stages[-1].patch_embed.superpixel_shape
-            self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)              
+            self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)
         h = w = int(math.sqrt(sp_features_seg.shape[1]))
         if self.use_compact_loss:
             if self.classification_feature == "superpixel":
@@ -2408,7 +2409,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
-                    img = x
+                    img = x, attn_dict_list = attn_dict_list
                 )
                     ret={}
                     ret["seg"] = pixel_logits
@@ -2479,7 +2480,95 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             vis = colormap[labels % colormap.size(0)]
             res[key] = vis
         return res
-    
+    def visualize_spgt(self, img, sp_shape, attn_dict_list, info):
+        import os.path as osp
+        from PIL import Image
+        import os
+        out_file = osp.join(self.output_dir, 'vis_spgt', f'spgt.jpg')        
+        img = img.detach()
+        _, _, ih, iw = img.shape
+
+        std = [58.395, 57.12, 57.375]
+        mean = [123.675, 116.28, 103.53]
+        img = img* torch.tensor(std).reshape(1, 3, 1, 1).cuda() + torch.tensor(mean).reshape(1, 3, 1, 1).cuda()
+        img = img.cpu().numpy()
+        im_image = Image.fromarray(img.squeeze().transpose(1, 2, 0).astype(np.uint8))
+        res = {}
+        colormap = superpixel_ops.create_superpixel_colormap("random")        
+        patch_embed = self.stages[-1].patch_embed
+        scale_factor = img.shape[-1] // self.stages[-1].patch_embed.pixel_shape[0]
+        for key, similarities in info.items():
+            print(key)
+            if "feature" in key:
+                continue
+            if similarities.dim() == 5 and similarities.size(1) > 1:
+                # visualize each head
+                for i in range(similarities.size(1)):
+                    val = prepare_similarities(
+                        patch_embed,
+                        similarities[:, i],
+                        scale_factor,
+                        merge_multihead_similarities=False,
+                    )
+                    labels = superpixel_ops.compute_hard_association(val).cpu()
+                        
+                    attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)
+                    for layer_idx, attn_map in enumerate(attn_maps):
+                        attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+                        group_result = attn_map.argmax(dim=1).cpu().numpy()
+                        rows = labels // sp_shape[-1]
+                        cols = labels % sp_shape[-2]
+                        vis_labels = group_result[0, rows, cols]
+                        uni  = np.unique(vis_labels[0])
+
+                        vis = colormap[vis_labels % colormap.size(0)]
+                        # import h5py
+                        # with h5py.File(f'/data2/yunfei/{key}_head{i}_{layer_idx}.h5', 'a') as hf:
+                        #     hf.create_dataset('my_dataset', data=labels)
+                        res[f"{key}_head{i}_{layer_idx}"] = vis
+            similarities = prepare_similarities(
+                patch_embed, similarities, scale_factor, merge_multihead_similarities=True
+            )
+            labels = superpixel_ops.compute_hard_association(similarities).cpu()
+            # import h5py
+            # with h5py.File('embedding.h5', 'w') as f:
+            #     # Create datasets for each embedding
+            #     f.create_dataset('labels', data=labels.numpy())          
+            attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
+            for i, attn_map in enumerate(attn_maps):
+                layer_idx = i //2
+                head = i % 2
+                attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+                group_result = attn_map.argmax(dim=1).cpu().numpy()
+                rows = labels // sp_shape[-1]
+                cols = labels % sp_shape[-2]
+                vis_labels = group_result[0,rows, cols]
+                vis = colormap[vis_labels % colormap.size(0)]
+                
+                res[f"{key}_layer_idx{layer_idx}_head{head}"] = vis
+                
+        counter = 0
+        base_name, file_ext = osp.splitext(out_file)
+        for i,(key, val) in enumerate(res.items()):
+            
+            im = val.numpy().astype(np.uint8)
+            # resize_output = not resize_similarities or im.shape[0] != ih
+            resize_output = False
+            im = Image.fromarray(im)
+            if resize_output:
+                print('resize_output')
+                im = im.resize((ih, iw), Image.Resampling.NEAREST)
+                
+            alpha = 0.3
+            im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
+            im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
+            while osp.exists(f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"):
+                counter += 1
+            img_out_file = f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"
+            directory, _ = os.path.split(img_out_file)
+            if not os.path.exists(directory):
+                os.makedirs(directory)  # 创建目录
+            im_alpha.save(img_out_file)
     def visualize_superpixel(self, img, info = None,resize_similarities: bool = True):
         import os.path as osp
         from PIL import Image
@@ -2747,7 +2836,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             os.makedirs(directory)
         attn_maps = self.get_attn_maps(sp_shape, attn_dict_list) 
         num_groups = [attn_maps[layer_idx].shape[-1] for layer_idx in range(len(attn_maps))]
-        for layer_idx, attn_map in enumerate(attn_maps):
+        for i, attn_map in enumerate(attn_maps):
             attn_map = rearrange(attn_map, 'b h w g -> b g h w')
             attn_map = F.interpolate(
                 attn_map, size=img.shape[2:], mode='bilinear', align_corners=self.align_corners)
@@ -2755,13 +2844,15 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
 
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
-            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}{file_ext}"):
+            layer_idx = i //2
+            head = i % 2
+            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
                 counter += 1
 
-            layer_out_file = f"{base_name}_{counter}_layer{layer_idx}{file_ext}"
+            layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
 
             
-            GROUP_PALETTE = np.loadtxt('/root/autodl-tmp/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
+            GROUP_PALETTE = np.loadtxt('/data2/yunfei/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
             uni = np.unique(group_result)
             self.blend_result(
                 img=img.transpose(0, 2, 3, 1),
