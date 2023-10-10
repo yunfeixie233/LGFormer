@@ -22,6 +22,8 @@ import math
 from timm.models.vision_transformer import Block, _cfg
 from functools import partial
 import sys
+
+from timm.layers import Mlp
 # sys.path.append("/root/autodl-tmp/GroupViT/models")
 
 
@@ -347,7 +349,7 @@ class FullAttnCatBlock(nn.Module):
                  ffn_ratio=4.,
                  qkv_bias=False,
                  qk_scale=None,
-                 drop=0.,
+                 proj_drop=0.,
                  attn_drop=0.,
                  drop_path=0.,
                  act_cfg=dict(type='GELU'),
@@ -357,7 +359,7 @@ class FullAttnCatBlock(nn.Module):
                  q_project=True,
                  with_cp=False,
                  association_embedding = False,
-                 layer_scale_init_value = 1e-5,
+                 ls_init_value = 1e-5,
                  
                  **kwargs):
         super().__init__()
@@ -383,7 +385,7 @@ class FullAttnCatBlock(nn.Module):
             qkv_bias=qkv_bias,
             qk_scale=qk_scale,
             attn_drop=attn_drop,
-            proj_drop=drop,
+            proj_drop=proj_drop,
             q_project=q_project,
             association_embedding = association_embedding)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -392,10 +394,10 @@ class FullAttnCatBlock(nn.Module):
             'embed_dims': embed_dims,
             'feedforward_channels': int(embed_dims * ffn_ratio),
             'num_fcs': 2,
-            'ffn_drop': drop,
+            'ffn_drop': proj_drop,
             'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
             'act_cfg': act_cfg,
-            'layer_scale_init_value':layer_scale_init_value
+            'layer_scale_init_value':ls_init_value
         }
 
         self.ffn = FFN(**_ffn_cfgs)
@@ -443,7 +445,7 @@ class LightGroupAttnBlock(nn.Module):
                  key_is_query=False,
                  value_is_key=False,
                  with_cp=False,
-                 layer_scale_init_value = None):
+                 ls_init_value = None):
         super().__init__()
 
         self.with_cp = with_cp
@@ -469,10 +471,10 @@ class LightGroupAttnBlock(nn.Module):
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=drop,
-            q_project=False,
+            q_project=True,
             k_project=True,
-            v_project=False,
-            proj_after_att=False)
+            v_project=True,
+            proj_after_att=True)
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
@@ -490,6 +492,90 @@ class LightGroupAttnBlock(nn.Module):
             return cp.checkpoint(_inner_forward, query, key, value, att_bias,attn_dict_list)
         else:
             return _inner_forward(query, key, value, att_bias,attn_dict_list)
+class LayerScale(nn.Module):
+    def __init__(self, dim, init_values=1e-5, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+        self.gamma = nn.Parameter(init_values * torch.ones(dim))
+
+    def forward(self, x):
+        return x.mul_(self.gamma) if self.inplace else x * self.gamma
+
+
+class FullGroupAttnBlock(nn.Module):
+    def __init__(self,
+                 embed_dims,
+                 num_heads,
+                 ffn_ratio=4.,
+                 qkv_bias=False,
+                 qk_scale=None,
+                 attn_drop=0.,
+                 drop_path=0.,
+                 proj_drop=0.,
+                 act_layer=nn.GELU,
+                 norm_layer=nn.LayerNorm,
+                 key_is_query=False,
+                 value_is_key=False,
+                 with_cp=False,
+                 ls_init_value = None):
+        super().__init__()
+
+        self.with_cp = with_cp
+
+        self.norm_query = norm_layer(embed_dims)
+
+        if not key_is_query:
+            self.norm_key = norm_layer(embed_dims)
+        else:
+            self.norm_key = None
+        self.key_is_query = key_is_query
+
+        if not value_is_key:
+            self.norm_value = norm_layer(embed_dims)
+        else:
+            self.norm_value = None
+        self.norm2 = norm_layer(embed_dims)
+        self.value_is_key = value_is_key
+        self.ls1 = LayerScale(embed_dims, init_values=ls_init_value) if ls_init_value else nn.Identity()
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        
+        self.mlp = Mlp(
+            in_features=embed_dims,
+            hidden_features=int(embed_dims * ffn_ratio),
+            act_layer=act_layer,
+            drop=proj_drop,
+        )
+        self.ls2 = LayerScale(embed_dims, init_values=ls_init_value) if ls_init_value else nn.Identity()
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.attn = LightAttModule(
+            embed_dims,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            attn_drop=attn_drop,
+            proj_drop=proj_drop,
+            q_project=True,
+            k_project=True,
+            v_project=True,
+            proj_after_att=True)
+
+
+    def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
+        def _inner_forward(query, key, value, att_bias,attn_dict_list = None):
+            q = self.norm_query(query)
+            k = q if self.key_is_query else self.norm_key(key)
+            v = k if self.value_is_key else self.norm_value(value)
+            x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias, attn_dict_list = attn_dict_list)
+            x = x + self.drop_path1(self.ls1(x))
+            x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+            return x, attn_dict_list
+
+
+        if self.with_cp:
+            return cp.checkpoint(_inner_forward, query, key, value, att_bias,attn_dict_list)
+        else:
+            return _inner_forward(query, key, value, att_bias,attn_dict_list)
+
 
 class GPBlock(nn.Module):
     def __init__(self,
@@ -501,7 +587,7 @@ class GPBlock(nn.Module):
                  ffn_ratio=4.,
                  qkv_bias=True,
                  group_qk_scale=None,
-                 drop=0.,
+                 proj_drop=0.,
                  attn_drop=0.,
                  drop_path=0.,
                  with_cp=False,
@@ -516,8 +602,7 @@ class GPBlock(nn.Module):
                  init_kernel_size:int = -1,   
                  init_stride : int = -1, 
                  use_assign: bool = False,
-                 all_ls: bool = False,
-                 layer_scale_init_value = 1e-5,
+                 ls_init_value = 1e-5,
                  **kwargs):
 
         super().__init__()
@@ -586,18 +671,16 @@ class GPBlock(nn.Module):
             ffn_ratio=ffn_ratio,
             qkv_bias=qkv_bias,
             qk_scale=group_qk_scale,
-            drop=drop,
+            proj_drop=proj_drop,
             attn_drop=attn_drop,
             drop_path=0.,
             key_is_query=False,
             value_is_key=True,
             with_cp=with_cp,
-            layer_scale_init_value = layer_scale_init_value)
+            ls_init_value = ls_init_value)
         _group_att_cfg.update(group_att_cfg)
-        if all_ls:
-            self.group_layer = FullAttnCatBlock(**_group_att_cfg)
-        else:    
-            self.group_layer = LightGroupAttnBlock(**_group_att_cfg)
+        self.group_layer = FullGroupAttnBlock(**_group_att_cfg)
+
 
         _mixer_cfg = dict(
             num_patches=num_group_token,
@@ -607,7 +690,6 @@ class GPBlock(nn.Module):
             depth=depth,
             drop_path=drop_path)
         _mixer_cfg.update(fwd_att_cfg)
-        # self.mixer = MLPMixer(**_mixer_cfg)
 
         _ungroup_att_cfg = dict(
             embed_dims=embed_dims,
@@ -615,13 +697,13 @@ class GPBlock(nn.Module):
             ffn_ratio=ffn_ratio,
             qkv_bias=qkv_bias,
             qk_scale=None,
-            drop=drop,
+            drop=proj_drop,
             attn_drop=attn_drop,
             drop_path=drop_path,
             key_is_query=False,
             value_is_key=True,
             with_cp=with_cp,
-            layer_scale_init_value = layer_scale_init_value,)
+            ls_init_value = ls_init_value,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         self.use_assign = use_assign
         if self.use_assign:
@@ -639,11 +721,6 @@ class GPBlock(nn.Module):
         else:
             self.un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
 
-        self.dwconv = torch.nn.Sequential(
-            nn.Conv2d(embed_dims, embed_dims, kernel_size=(3,3), padding=(1,1), bias=False, groups=embed_dims),
-            nn.BatchNorm2d(num_features=embed_dims),
-            # nn.ReLU(True))
-            nn.GELU())
         self.blocks = nn.Sequential(
             *[
                 Block(
@@ -651,8 +728,7 @@ class GPBlock(nn.Module):
                     num_heads=2,
                     mlp_ratio=4,
                     qkv_bias=True,
-                    # drop=drop_rate,
-                    proj_drop=drop,
+                    proj_drop=proj_drop,
                     attn_drop=attn_drop,
                     drop_path=(
                         drop_path[i]
@@ -691,7 +767,7 @@ class GPBlock(nn.Module):
                                 'b (h w) c -> b c h w ',
                                 h = sh, w = sw)
             
-            with h5py.File("/root/autodl-tmp/vis_before.h5","a") as f:
+            with h5py.File("/data2/yunfei/vis_before.h5","a") as f:
                 keys = list(f.keys())
                 key = "sp_before"
                 original_key = key
@@ -719,7 +795,7 @@ class GPBlock(nn.Module):
             group_token = self.group_token.expand(x.size(0), -1, -1)
         if prev_token is None:
             gt = group_token
-        elif self.group_projector_methonds == "linear" or "conv":
+        elif self.group_projector_methonds in ["linear","conv"]:
             gt = group_token + self.group_projector(prev_token)
         elif self.group_projector_methonds == "cross" or self.group_projector_methonds == None:
             gt = group_token 
@@ -729,6 +805,22 @@ class GPBlock(nn.Module):
         gt, _ = self.group_layer(query=gt, key=x, value=x, attn_dict_list = None)
         gt = gt + self.pos_embed
         gt = self.blocks(gt)
+            # import h5py
+            # sp_before = x.detach()
+            # sp_before = rearrange(sp_before,
+            #                     'b (h w) c -> b c h w ',
+            #                     h = sh, w = sw)
+            
+            # with h5py.File("/data2/yunfei/vis_before.h5","a") as f:
+            #     keys = list(f.keys())
+            #     key = "sp_before"
+            #     original_key = key
+            #     count = int(0)
+            #     while key in keys:
+            #         count = int(count) + 1
+            #         key = original_key + str(count)
+            #     if int(count) < 5:
+            #         f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
         if self.group_projector_methonds == "cross" and prev_token is not None:
             gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
         if self.use_assign:
@@ -746,7 +838,7 @@ class GPBlock(nn.Module):
                                 'b (h w) c -> b c h w ',
                                 h = sh, w = sw)
             
-            with h5py.File("/root/autodl-tmp/vis_after.h5","a") as f:
+            with h5py.File("/data2/yunfei/vis_after.h5","a") as f:
                 keys = list(f.keys())
                 key = "sp_after"
                 original_key = key
@@ -760,7 +852,7 @@ class GPBlock(nn.Module):
             diff = sp_after - sp_before
 
             
-            with h5py.File("/root/autodl-tmp/diff.h5","a") as f:
+            with h5py.File("/data2/yunfei/diff.h5","a") as f:
                 keys = list(f.keys())
                 key = "sp_after"
                 original_key = key
