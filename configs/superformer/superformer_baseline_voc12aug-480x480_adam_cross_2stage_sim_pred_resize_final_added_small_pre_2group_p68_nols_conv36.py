@@ -28,8 +28,5 @@ model = dict(
         'init_kernel_sizes':(3,6,),
         'merge_pos':((),(6,8,),()),
         'ls_init_value':0.,            
-    },
-    
-),
-    test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
-
+    },    
+))
