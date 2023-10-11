@@ -25,7 +25,10 @@ import sys
 
 from timm.layers import Mlp
 # sys.path.append("/root/autodl-tmp/GroupViT/models")
-
+import os.path as osp
+from PIL import Image
+import os
+import h5py
 
 class SE(nn.Module):
     """
@@ -609,6 +612,9 @@ class GPBlock(nn.Module):
                  use_assign: bool = False,
                  ls_init_value = 1e-5,
                  gt_iter: int = 1,
+                 vis_gt_eff: bool = False,
+                 output_dir: str = None,
+                 layer_num : int = None,                                  
                  **kwargs):
 
         super().__init__()
@@ -617,6 +623,7 @@ class GPBlock(nn.Module):
         self.num_group_token = num_group_token
         self.with_cp = with_cp
         self.group_token_init_method = group_token_init_method
+        
         if  self.group_token_init_method =='learnable':
             self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
         elif self.group_token_init_method == 'conv_avgpool':
@@ -755,13 +762,15 @@ class GPBlock(nn.Module):
         #     sum_assign=False,
         #     assign_eps=1.)
         # else:
-
+        self.vis_gt_eff = vis_gt_eff
+        self.output_dir = output_dir
+        self.layer_num = layer_num
         self.init_weights()
     def init_weights(self):
         if self.pos_embeds is not None:
             for pos_embed in self.pos_embeds:
                 timm_layers.trunc_normal_(pos_embed, std=0.02)
-        
+       
     def forward(self, x, hw_shape, attn_dict_list = None,prev_token = None):
         """
         Args:
@@ -771,27 +780,11 @@ class GPBlock(nn.Module):
             proj_tokens: shape [B, L, C]
         """
         B, L, C = x.size()
-     
+    
         
         sw = sh = int(math.sqrt(L))
-        vis_gt_eff = False
-        if vis_gt_eff:
-            import h5py
-            sp_before = x.detach()
-            sp_before = rearrange(sp_before,
-                                'b (h w) c -> b c h w ',
-                                h = sh, w = sw)
-            
-            with h5py.File("/data2/yunfei/vis_before.h5","a") as f:
-                keys = list(f.keys())
-                key = "sp_before"
-                original_key = key
-                count = int(0)
-                while key in keys:
-                    count = int(count) + 1
-                    key = original_key + str(count)
-                if int(count) < 5:
-                    f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
+        if self.vis_gt_eff:
+            sp_before = x.clone()
             
         if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT']:
             x = rearrange(x,
@@ -823,63 +816,11 @@ class GPBlock(nn.Module):
             gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
             gt = gt + pos_embed
             gt = blocks(gt)
-                # import h5py
-                # sp_before = x.detach()
-                # sp_before = rearrange(sp_before,
-                #                     'b (h w) c -> b c h w ',
-                #                     h = sh, w = sw)
-                
-                # with h5py.File("/data2/yunfei/vis_before.h5","a") as f:
-                #     keys = list(f.keys())
-                #     key = "sp_before"
-                #     original_key = key
-                #     count = int(0)
-                #     while key in keys:
-                #         count = int(count) + 1
-                #         key = original_key + str(count)
-                #     if int(count) < 5:
-                #         f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
             if self.group_projector_methonds == "cross" and prev_token is not None:
                 gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
-            # if self.use_assign:
-            #     gt = self.pre_assign_attn(gt, x)
-            #     new_x, attn_dict_list = self.assign(query = x,key = gt, value = gt ,attn_dict_list = attn_dict_list)
-            #     x = new_x + x
-            #     return x,  attn_dict_list, gt
-            # else:
             proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
-            
-        if vis_gt_eff:
-            import h5py
-            sp_after = proj_tokens.detach()
-            sp_after = rearrange(sp_after,
-                                'b (h w) c -> b c h w ',
-                                h = sh, w = sw)
-            
-            with h5py.File("/data2/yunfei/vis_after.h5","a") as f:
-                keys = list(f.keys())
-                key = "sp_after"
-                original_key = key
-                count = int(0)
-                while key in keys:
-                    count = int(count) + 1
-                    key = original_key + str(count)
-                if int(count) < 5:
-                    f.create_dataset(key,data=sp_after.detach().cpu().numpy()) 
-            
-            diff = sp_after - sp_before
-
-            
-            with h5py.File("/data2/yunfei/diff.h5","a") as f:
-                keys = list(f.keys())
-                key = "sp_after"
-                original_key = key
-                count = int(0)
-                while key in keys:
-                    count = int(count) + 1
-                    key = original_key + str(count)
-                if int(count) < 5:
-                    f.create_dataset(key,data=diff.detach().cpu().numpy()) 
+        if self.vis_gt_eff:
+            self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt)
         return proj_tokens, attn_dict_list, gt
             
         # ungroup_tokens = ungroup_tokens.permute(0,2,1).contiguous().reshape(B, C, hw_shape[0], hw_shape[1])
@@ -905,4 +846,49 @@ class GPBlock(nn.Module):
         #             'b (h w) c -> b c h w',
         #             h = hw_shape[0],
         #             w = hw_shape[1]).detach().cpu().numpy())
+    def reshape_vis(self, tensor):
+        if tensor.dim() == 3:
+            B, L, C = tensor.size()
+            sw = sh = int(math.sqrt(L))
+            tensor = tensor.detach().cpu().numpy()
+            tensor = rearrange(tensor,
+                            'b (h w) c -> b c h w ',
+                            h=sh, w=sw)
+        return tensor
+    def write_vis(self, tensor,output_file,key):
+        with h5py.File(output_file, "a") as f:
+            keys = list(f.keys())
+            original_key = key
+            count = int(0)
+            while key in keys:
+                count += 1
+                key = original_key + str(count)
+            f.create_dataset(key, data=tensor)        
+    def visualize_gt_eff(self, sp_before, sp_after, gt):
+            sp_before =self.reshape_vis(sp_before)
+            sp_after = self.reshape_vis(sp_after)
+            sp_diff = sp_after - sp_before
+            sp_diff = self.reshape_vis(sp_after)
+            gt = self.reshape_vis(gt)         
+               
+            # Determine the highest count in the directory.
+            vis_gt_eff_path = osp.join(self.output_dir, 'vis_gt_eff')
+            if not os.path.exists(vis_gt_eff_path):
+                os.makedirs(vis_gt_eff_path)
+            existing_files = [f for f in os.listdir(vis_gt_eff_path) if f.startswith('gt') and f.endswith('.h5')]
+            counts = [int(f.split('gt')[1].split('.h5')[0]) for f in existing_files]
+            max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
 
+            output_file = osp.join(self.output_dir, 'vis_gt_eff', f'gt{max_count}.h5')  
+
+            keys = []
+            with h5py.File(output_file, "a") as f:
+                keys = list(f.keys())
+            if len(keys) >= self.layer_num:
+                max_count += 1
+                output_file = osp.join(self.output_dir, 'vis_gt_eff', f'gt{max_count}.h5') 
+                f.close()
+                
+            self.write_vis(sp_before,output_file,'sp_before')                
+            self.write_vis(sp_after,output_file,'sp_after')                
+            self.write_vis(gt,output_file,'gt')                
