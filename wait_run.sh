@@ -1,9 +1,14 @@
 #!/bin/bash
 
-PID=110744
-
-while kill -0 $PID 2> /dev/null; do
-    sleep 5  # 每5秒检查一次
+PID=29045
+while ps -p $PID > /dev/null; do
+    echo "Process $PID is still running"
+    sleep 10
 done
 
-bash /root/autodl-tmp/study/SpformerV1/tools/dist_train.sh /root/autodl-tmp/study/SpformerV1/configs/superformer/superformer_baseline_ade20k-512x512_adam_cross_2stage_sim_pred_resize_final_added_pre_v3_2group_conv_1iter.py 8 --cfg-options load_from=/root/autodl-tmp/v2.pth
+
+echo "Process $PID has terminated"
+
+
+sleep 30
+bash /root/autodl-tmp/SpformerV1/tools/dist_train.sh /root/autodl-tmp/SpformerV1/configs/superformer/superformer_baseline_voc12aug-480x480_adam_cross_2stage_sim_pred_resize_final_added_small_pre_2group_p68_nols_conv33_noproj.py 8 --cfg-options load_from=/root/autodl-tmp/best_pascal.pth

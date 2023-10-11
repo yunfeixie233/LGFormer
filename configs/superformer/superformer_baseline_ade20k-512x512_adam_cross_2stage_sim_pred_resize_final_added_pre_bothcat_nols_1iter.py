@@ -1,21 +1,28 @@
 _base_ = [
     '../_base_/default_runtime.py', 
-    './superformer_baseline.py',
-    '../_base_/datasets/pascal_context.py',
+    '../_base_/datasets/ade20k.py',
+    './superformer_baseline.py'
 ]
-norm_cfg = dict(type='SyncBN', requires_grad=True)
-crop_size = (480, 480)
-data_preprocessor = dict(
-    size=crop_size)
+crop_size = (512, 512)
+data_preprocessor = dict(size=crop_size)
 model = dict(
-    type='EncoderDecoder',
     data_preprocessor=data_preprocessor,
-    backbone=dict(
-        type='pseudo',),
     decode_head=dict(
-        img_size=(480,480),
-        seg_num_classes=60,),
-        test_cfg=dict(mode='slide', crop_size=(480, 480), stride=(320, 320)))
+    img_size=(512,512),
+    resize_similarity = False,
+    classification_feature = 'both_extralayer_cat',
+    depths=(2,10,0,),
+    dims=(384,384,384,),
+    heads=(6,6,-1,),
+    strides=(1,1,1,),
+    sp_sizes=(4,4,4,),
+    sp_heads=(2,2,1,),
+    sp_features_init_methods=("from_feature","from_feature","from_feature",),
+    ls_init_value = 1e-5,
+    extralayer_nols = True,
+    final_iter = 1,
+),
+    test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 optim_wrapper = dict(
     type='OptimWrapper',
@@ -46,22 +53,21 @@ param_scheduler = [
         type='PolyLR',
         power=1.0,
         begin=1500,
-        end=40000,
+        end=160000,
         eta_min=0.0,
         by_epoch=False,
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=40000, val_interval=2000)
+    type='IterBasedTrainLoop', max_iters=160000, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 
-# find_unused_parameters=True
-
+find_unused_parameters=True
