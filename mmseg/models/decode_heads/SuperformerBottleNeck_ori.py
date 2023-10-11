@@ -308,7 +308,7 @@ class SuperformerStage(nn.Module):
         use_pixel_similarities: bool = False,
         use_middle_pixel_features: bool = False,
         merge_layer = None,
-        merge_pos = None
+        merge_pos = None,
 
     ) -> None:
         super().__init__()
@@ -483,7 +483,6 @@ class SuperformerStage(nn.Module):
             ]
         )
         
-
         self.init_weights()
 
     def init_weights(self):
@@ -1069,11 +1068,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             'drop_path_rate': 0.2
         },
         use_gt_loss: bool = False,
-        #visualize param
+        #visualize hooker
         vis_sp: bool =False,
         output_dir:str = None,
         vis_gt: bool = False,
-
+        vis_gt_eff: bool = False,
         
         **kwargs
 
@@ -1257,14 +1256,15 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if use_group_token:
             assert use_group_token in ['post','mix']      
         self.use_group_token = use_group_token
-          
+        self.output_dir = output_dir
         if self.use_group_token:
             self.arch_settings = arch_settings
             if self.use_group_token == 'post':
                 self.merge_layer = self._make_merge_layer(
                     self.arch_settings
                 )
-            
+            self.vis_gt_eff = vis_gt_eff
+   
 
         num_stages = len(depths)
         stages = []
@@ -1413,7 +1413,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         delattr(self, 'head')        
         if self.use_patch_embed:
             delattr(self, 'sp_init')
-        self.output_dir = output_dir
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
     def init_weights(self, mode=""):
@@ -1521,95 +1520,54 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         stage: int = None,        
         
     ):
-        if self.use_group_token == 'post':
-            merge_layer = nn.ModuleList()
-            for i in range(_arch_settings['num_layers']):
-                if i >0 :
-                    if _arch_settings["group_projector_methonds"] == 'linear':
-                        group_projector =nn.Sequential(
-                            nn.LayerNorm(_arch_settings['embed_dims']),
-                            MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
-                            )
-                    elif _arch_settings["group_projector_methonds"] == 'cross':
-                        group_projector = FullAttnCatBlock(
-                            embed_dims=_arch_settings['embed_dims'],
-                            num_heads = _arch_settings['num_group_heads'],
-                            key_is_query=False,
-                            value_is_key=False,
-                        )
-                    elif _arch_settings["group_projector_methonds"]== None:
-                        group_projector=None
-                    else :
-                        raise(NotImplementedError)
-                else:
-                    group_projector=None
-                _layer_cfg = dict(
-                        embed_dims=_arch_settings['embed_dims'],
-                        depth=_arch_settings['mlpmixer_depth'],
-                        num_group_heads=_arch_settings['num_group_heads'],
-                        num_forward_heads=_arch_settings['num_group_forward_heads'],
-                        num_ungroup_heads=_arch_settings['num_ungroup_heads'],
-                        num_group_token=_arch_settings['group_layers'][i],
-                        ffn_ratio=_arch_settings['ffn_ratio'],
-                        init_stride = _arch_settings['init_strides'][i],
-                        init_kernel_size = _arch_settings['init_kernel_sizes'][i],
-                        with_cp=None,
-                        group_projector=group_projector,
-                        zero_init_group_token=True,
-                        group_projector_methonds = _arch_settings["group_projector_methonds"],
-                        association_embedding = _arch_settings["association_embedding"],
-                        group_token_init_method = _arch_settings["group_token_init_method"],
-                        ls_init_value = _arch_settings["ls_init_value"], 
-                        gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
 
-                group_layer = GPBlock(**_layer_cfg)
-                merge_layer.append(group_layer)
-            return merge_layer
-        elif self.use_group_token == 'mix':
-            depth = len(_arch_settings['merge_pos'][stage])
-            merge_layer = nn.ModuleList()
-            for i in range(depth):
-                if i >0 :
-                    if _arch_settings["group_projector_methonds"] == 'linear':
-                        group_projector =nn.Sequential(
-                            nn.LayerNorm(_arch_settings['embed_dims']),
-                            MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
-                            )
-                    elif _arch_settings["group_projector_methonds"] == 'cross':
-                        group_projector = FullAttnCatBlock(
-                            embed_dims=_arch_settings['embed_dims'],
-                            num_heads = _arch_settings['num_group_heads'],
-                            key_is_query=False,
-                            value_is_key=False,
+        depth = len(_arch_settings['group_layers'].keys())
+        merge_layer = nn.ModuleList()
+            
+        for i in range(depth):
+            if i >0 :
+                if _arch_settings["group_projector_methonds"] == 'linear':
+                    group_projector =nn.Sequential(
+                        nn.LayerNorm(_arch_settings['embed_dims']),
+                        MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
                         )
-                    elif _arch_settings["group_projector_methonds"]== None:
-                        group_projector=None
-                    else :
-                        raise(NotImplementedError)
-                else:
-                    group_projector=None
-                _layer_cfg = dict(
+                elif _arch_settings["group_projector_methonds"] == 'cross':
+                    group_projector = FullAttnCatBlock(
                         embed_dims=_arch_settings['embed_dims'],
-                        depth=_arch_settings['mlpmixer_depth'],
-                        num_group_heads=_arch_settings['num_group_heads'],
-                        num_forward_heads=_arch_settings['num_group_forward_heads'],
-                        num_ungroup_heads=_arch_settings['num_ungroup_heads'],
-                        num_group_token=_arch_settings['group_layers'][i],
-                        ffn_ratio=_arch_settings['ffn_ratio'],
-                        init_stride = _arch_settings['init_strides'][i],
-                        init_kernel_size = _arch_settings['init_kernel_sizes'][i],
-                        with_cp=None,
-                        group_projector=group_projector,
-                        zero_init_group_token=True,
-                        group_projector_methonds = _arch_settings["group_projector_methonds"],
-                        association_embedding = _arch_settings["association_embedding"],
-                        group_token_init_method = _arch_settings["group_token_init_method"],
-                        ls_init_value = _arch_settings["ls_init_value"], 
-                        gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
-
-                group_layer = GPBlock(**_layer_cfg)
-                merge_layer.append(group_layer)
-            return merge_layer
+                        num_heads = _arch_settings['num_group_heads'],
+                        key_is_query=False,
+                        value_is_key=False,
+                    )
+                elif _arch_settings["group_projector_methonds"]== None:
+                    group_projector=None
+                else :
+                    raise(NotImplementedError)
+            else:
+                group_projector=None
+            _layer_cfg = dict(
+                    embed_dims=_arch_settings['embed_dims'],
+                    depth=_arch_settings['mlpmixer_depth'],
+                    num_group_heads=_arch_settings['num_group_heads'],
+                    num_forward_heads=_arch_settings['num_group_forward_heads'],
+                    num_ungroup_heads=_arch_settings['num_ungroup_heads'],
+                    num_group_token=_arch_settings['group_layers'][i],
+                    ffn_ratio=_arch_settings['ffn_ratio'],
+                    init_stride = _arch_settings['init_strides'][i],
+                    init_kernel_size = _arch_settings['init_kernel_sizes'][i],
+                    with_cp=None,
+                    group_projector=group_projector,
+                    zero_init_group_token=True,
+                    group_projector_methonds = _arch_settings["group_projector_methonds"],
+                    association_embedding = _arch_settings["association_embedding"],
+                    group_token_init_method = _arch_settings["group_token_init_method"],
+                    ls_init_value = _arch_settings["ls_init_value"], 
+                    gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1,
+                    vis_gt_eff = self.vis_gt_eff,
+                    output_dir = self.output_dir,
+                    layer_num = depth)
+            group_layer = GPBlock(**_layer_cfg)
+            merge_layer.append(group_layer)
+        return merge_layer
     
     def init_superpixel_features(
         self, pixel_features: torch.Tensor
@@ -2426,11 +2384,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                       'b (h w) c -> b c h w',
                                       h = h_g,
                                       w = w_g)
+            else:
+                gt_logits = None
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
                     img = x, attn_dict_list = attn_dict_list
                 )
+                    
                     ret={}
                     ret["seg"] = pixel_logits
                     return ret["seg"], gt_logits
