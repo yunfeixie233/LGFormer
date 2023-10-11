@@ -16,7 +16,7 @@ from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
 from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
-from .decode_head import BaseDecodeHead
+from .decode_head import BaseDecodeHead, MultiLossBaseDecodeHead
 from ..builder import HEADS
 from mmcv.cnn import build_norm_layer
 
@@ -617,17 +617,16 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None,
+        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None
+
     ) -> torch.Tensor:
-        if self.merge_layer:
-            gt = None
         for i in range(start, end):
             x = self.blocks[i](x)
             if self.merge_layer and i in self.merge_pos:
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
                 )
-        return x,attn_dict_list
+        return x,attn_dict_list, gt
 
     def add_pos_embed(self, x):
         if self.no_embed_class:
@@ -819,6 +818,7 @@ class SuperformerStage(nn.Module):
         x: torch.Tensor,
         sp_features_last: Optional[torch.Tensor],
         attn_dict_list:list = None,
+        gt: torch.Tensor = None
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         
         
@@ -889,9 +889,9 @@ class SuperformerStage(nn.Module):
         if vis_sp_block:
             sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
-        sp_features_seg, attn_dict_list = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list)
-        sp_features, attn_dict_list = self.forward_blocks_range(
-            sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list
+        sp_features_seg, attn_dict_list, gt = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list, gt)
+        sp_features, attn_dict_list, gt = self.forward_blocks_range(
+            sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list, gt
         )
         
 
@@ -960,7 +960,8 @@ class SuperformerStage(nn.Module):
             updated_pixel_features,
             sp_features,
             sp_features_seg,
-            attn_dict_list
+            attn_dict_list,
+            gt
         )
 class Mlp(nn.Module):
 
@@ -991,7 +992,7 @@ class MixerMlp(Mlp):
 
 
 @HEADS.register_module()
-class SuperformerBottleNeck_ori(BaseDecodeHead):
+class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
     def __init__(
         self,
         img_size: Sequence[int] = (224,224),
@@ -1067,6 +1068,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
             'group_layers': {0:64,1:32,2:32,3:16},
             'drop_path_rate': 0.2
         },
+        use_gt_loss: bool = False,
         #visualize param
         vis_sp: bool =False,
         output_dir:str = None,
@@ -1402,6 +1404,10 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         self.use_pixel_similarities_upsample = use_pixel_similarities_upsample
         if self.use_pixel_similarities_upsample:
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
+        self.use_gt_loss = use_gt_loss 
+        if self.use_gt_loss:
+            self.gt_norm = norm_layer(self.embed_dim)
+            self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
@@ -1659,7 +1665,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 attn_dict_list = []
             else:
                 attn_dict_list = None
-                
+            
+            gt = None    
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                 vis_sp_stage = False
                 if vis_sp_stage:
@@ -1683,10 +1690,11 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                         if int(count) <6 :
                             f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
-                    pixel_features, sp_features, sp_features_seg,attn_dict_list = stage(
+                    pixel_features, sp_features, sp_features_seg,attn_dict_list, gt = stage(
                         pixel_features,
                         sp_features_last,
                         attn_dict_list,
+                        gt,
                     )
                     sp_features_last = sp_features_seg
                         
@@ -1694,7 +1702,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:
                 #     endpoints[f"pixel_features_stage{i}"] = pixel_features
-            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list
+            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.norm(x)
@@ -2329,7 +2337,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         
-        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list = self.forward_features(x)
+        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
                 
         if self.vis_sp:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
@@ -2344,6 +2352,8 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
         if self.use_group_token in ['post','mix'] and  self.vis_gt:
             sp_shape = self.stages[-1].patch_embed.superpixel_shape
             self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)
+        
+            
         h = w = int(math.sqrt(sp_features_seg.shape[1]))
         if self.use_compact_loss:
             if self.classification_feature == "superpixel":
@@ -2409,6 +2419,13 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                     ret["seg"] = pixel_logits
                     return ret["seg"]
         elif 'extralayer' in self.classification_feature:
+            h_g = w_g = int(math.sqrt(gt.shape[1]))
+            if self.use_gt_loss:
+                gt_logits = self.gt_head(self.gt_norm(gt))
+                gt_logits = rearrange(gt_logits,
+                                      'b (h w) c -> b c h w',
+                                      h = h_g,
+                                      w = w_g)
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
@@ -2416,7 +2433,7 @@ class SuperformerBottleNeck_ori(BaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret["seg"], gt_logits
         else:
             logits = self.forward_head(sp_features)
             return logits

@@ -603,6 +603,7 @@ class GPBlock(nn.Module):
                  init_stride : int = -1, 
                  use_assign: bool = False,
                  ls_init_value = 1e-5,
+                 gt_iter: int = 1,
                  **kwargs):
 
         super().__init__()
@@ -664,7 +665,10 @@ class GPBlock(nn.Module):
         if not zero_init_group_token:
                 trunc_normal_(self.group_token, std=.02)
         
-        self.pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02)      
+        self.group_layers = nn.ModuleList()
+        self.un_group_layers = nn.ModuleList()
+        self.gt_attn = nn.ModuleList()
+        self.pos_embeds =[]
         _group_att_cfg = dict(
             embed_dims=embed_dims,
             num_heads=num_group_heads,
@@ -679,18 +683,6 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             ls_init_value = ls_init_value)
         _group_att_cfg.update(group_att_cfg)
-        self.group_layer = FullGroupAttnBlock(**_group_att_cfg)
-
-
-        _mixer_cfg = dict(
-            num_patches=num_group_token,
-            embed_dims=embed_dims,
-            patch_expansion=0.5,
-            channel_expansion=4.0,
-            depth=depth,
-            drop_path=drop_path)
-        _mixer_cfg.update(fwd_att_cfg)
-
         _ungroup_att_cfg = dict(
             embed_dims=embed_dims,
             num_heads=num_ungroup_heads,
@@ -705,47 +697,65 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             ls_init_value = ls_init_value,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
-        self.use_assign = use_assign
-        if self.use_assign:
-            self.pre_assign_attn = CrossAttnBlock(
-                dim=embed_dims, num_heads=num_ungroup_heads, mlp_ratio=4, qkv_bias=True, norm_layer=nn.LayerNorm, post_norm=True)
-            self.assign = AssignAttention(
-            dim=embed_dims,
-            num_heads=1,
-            qkv_bias=True,
-            hard=True,
-            gumbel=True,
-            gumbel_tau=1.,
-            sum_assign=False,
-            assign_eps=1.)
-        else:
-            self.un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
+        _mixer_cfg = dict(
+            num_patches=num_group_token,
+            embed_dims=embed_dims,
+            patch_expansion=0.5,
+            channel_expansion=4.0,
+            depth=depth,
+            drop_path=drop_path)
+        _mixer_cfg.update(fwd_att_cfg)
+        
+        for i in range(gt_iter):
+        
+            pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02).cuda()      
+            group_layer = FullGroupAttnBlock(**_group_att_cfg)
+            un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
+            blocks = nn.Sequential(
+                *[
+                    Block(
+                        dim=embed_dims,
+                        num_heads=2,
+                        mlp_ratio=4,
+                        qkv_bias=True,
+                        proj_drop=proj_drop,
+                        attn_drop=attn_drop,
+                        drop_path=(
+                            drop_path[i]
+                            if isinstance(drop_path, Sequence)
+                            else drop_path
+                        ),
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                        act_layer=nn.GELU,
+                        init_values=1e-6,
+                    )
+                    for i in range(_mixer_cfg['depth'])
+                ]
+            )
+            self.pos_embeds.append(pos_embed)
+            self.group_layers.append(group_layer)
+            self.un_group_layers.append(un_group_layer)
+            self.gt_attn.append(blocks)
+        # self.use_assign = use_assign
+        # if self.use_assign:
+        #     self.pre_assign_attn = CrossAttnBlock(
+        #         dim=embed_dims, num_heads=num_ungroup_heads, mlp_ratio=4, qkv_bias=True, norm_layer=nn.LayerNorm, post_norm=True)
+        #     self.assign = AssignAttention(
+        #     dim=embed_dims,
+        #     num_heads=1,
+        #     qkv_bias=True,
+        #     hard=True,
+        #     gumbel=True,
+        #     gumbel_tau=1.,
+        #     sum_assign=False,
+        #     assign_eps=1.)
+        # else:
 
-        self.blocks = nn.Sequential(
-            *[
-                Block(
-                    dim=embed_dims,
-                    num_heads=2,
-                    mlp_ratio=4,
-                    qkv_bias=True,
-                    proj_drop=proj_drop,
-                    attn_drop=attn_drop,
-                    drop_path=(
-                        drop_path[i]
-                        if isinstance(drop_path, Sequence)
-                        else drop_path
-                    ),
-                    norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                    act_layer=nn.GELU,
-                    init_values=1e-6,
-                )
-                for i in range(_mixer_cfg['depth'])
-            ]
-        )
         self.init_weights()
     def init_weights(self):
-        if self.pos_embed is not None:
-            timm_layers.trunc_normal_(self.pos_embed, std=0.02)
+        if self.pos_embeds is not None:
+            for pos_embed in self.pos_embeds:
+                timm_layers.trunc_normal_(pos_embed, std=0.02)
         
     def forward(self, x, hw_shape, attn_dict_list = None,prev_token = None):
         """
@@ -802,35 +812,38 @@ class GPBlock(nn.Module):
         
         else:
             raise(NotImplementedError)
-        gt, _ = self.group_layer(query=gt, key=x, value=x, attn_dict_list = None)
-        gt = gt + self.pos_embed
-        gt = self.blocks(gt)
-            # import h5py
-            # sp_before = x.detach()
-            # sp_before = rearrange(sp_before,
-            #                     'b (h w) c -> b c h w ',
-            #                     h = sh, w = sw)
+        for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(zip (
+            self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn
+        )):
+            gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
+            gt = gt + pos_embed
+            gt = blocks(gt)
+                # import h5py
+                # sp_before = x.detach()
+                # sp_before = rearrange(sp_before,
+                #                     'b (h w) c -> b c h w ',
+                #                     h = sh, w = sw)
+                
+                # with h5py.File("/data2/yunfei/vis_before.h5","a") as f:
+                #     keys = list(f.keys())
+                #     key = "sp_before"
+                #     original_key = key
+                #     count = int(0)
+                #     while key in keys:
+                #         count = int(count) + 1
+                #         key = original_key + str(count)
+                #     if int(count) < 5:
+                #         f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
+            if self.group_projector_methonds == "cross" and prev_token is not None:
+                gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
+            # if self.use_assign:
+            #     gt = self.pre_assign_attn(gt, x)
+            #     new_x, attn_dict_list = self.assign(query = x,key = gt, value = gt ,attn_dict_list = attn_dict_list)
+            #     x = new_x + x
+            #     return x,  attn_dict_list, gt
+            # else:
+            proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
             
-            # with h5py.File("/data2/yunfei/vis_before.h5","a") as f:
-            #     keys = list(f.keys())
-            #     key = "sp_before"
-            #     original_key = key
-            #     count = int(0)
-            #     while key in keys:
-            #         count = int(count) + 1
-            #         key = original_key + str(count)
-            #     if int(count) < 5:
-            #         f.create_dataset(key,data=sp_before.detach().cpu().numpy()) 
-        if self.group_projector_methonds == "cross" and prev_token is not None:
-            gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
-        if self.use_assign:
-            gt = self.pre_assign_attn(gt, x)
-            new_x, attn_dict_list = self.assign(query = x,key = gt, value = gt ,attn_dict_list = attn_dict_list)
-            x = new_x + x
-            return x,  attn_dict_list, gt
-        else:
-            proj_tokens, attn_dict_list = self.un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
-        
         if vis_gt_eff:
             import h5py
             sp_after = proj_tokens.detach()
