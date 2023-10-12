@@ -4,6 +4,7 @@ LePE attention References: https://github.com/microsoft/CSWin-Transformer
 """
 from ast import Try
 from typing import Sequence
+from numpy import block
 
 import torch
 import torch.nn as nn
@@ -813,14 +814,19 @@ class GPBlock(nn.Module):
         
         else:
             raise(NotImplementedError)
-        for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(zip (
-            self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn
-        )):
+        
+
+        for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(
+            zip(self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn if self.gt_attn else [None]*len(self.group_layers))
+        ):
+ 
+
             if self.group_projector_methonds == "cross" and prev_token is not None:
                 gt, _= self.group_projector(query=gt, key=prev_token, value=prev_token)            
             gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
-            gt = gt + pos_embed
-            gt = blocks(gt)
+            if len(blocks) > 0 :
+                gt = gt + pos_embed
+                gt = blocks(gt)
             proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
         if self.vis_gt_eff:
             self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt)
