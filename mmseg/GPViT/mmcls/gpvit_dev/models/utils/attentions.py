@@ -631,16 +631,28 @@ class GPBlock(nn.Module):
             from timm.models import layers as timm_layers
 
             self.group_token_init = \
-            nn.Sequential(         
+            nn.Sequential(  
                 timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
-                 nn.AvgPool2d(kernel_size=5,stride=5)
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.GELU(),
+                nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                    
             )
+        elif self.group_token_init_method == 'avgpool_conv':
+            from timm.models import layers as timm_layers
+
+            self.group_token_init = \
+            nn.Sequential( 
+                nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                            
+                timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.GELU(),            
+            )            
         elif self.group_token_init_method == 'avgpool':
             from timm.models import layers as timm_layers
 
             self.group_token_init = \
             nn.Sequential(         
-                 nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
+                nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
                 timm_layers.LayerNorm2d(embed_dims),
                 nn.GELU(),
 
