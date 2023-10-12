@@ -446,7 +446,8 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                  sampler=None,
                  align_corners=False,
                  init_cfg=dict(
-                     type='Normal', std=0.01, override=dict(name='conv_seg'))):
+                     type='Normal', std=0.01, override=dict(name='conv_seg')),
+                 use_gt_cls = False,):
         super().__init__(init_cfg)
         self._init_inputs(in_channels, in_index, input_transform)
         self.channels = channels
@@ -458,7 +459,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
 
         self.ignore_index = ignore_index
         self.align_corners = align_corners
-
+        
         if out_channels is None:
             if num_classes == 2:
                 warnings.warn('For binary segmentation, we suggest using'
@@ -503,7 +504,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             self.dropout = nn.Dropout2d(dropout_ratio)
         else:
             self.dropout = None
-
+        self.use_gt_cls = use_gt_cls
     def extra_repr(self):
         """Extra repr."""
         s = f'input_transform={self.input_transform}, ' \
@@ -626,7 +627,12 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             Tensor: Outputs segmentation logits map.
         """
         seg_logits, gt_logits = self.forward(inputs)
-
+        if self.use_gt_cls:
+            if gt_logits.shape != seg_logits.shape:
+                import torch.nn.functional as F                
+                gt_logits = F.interpolate(gt_logits,size=seg_logits.shape[2:],mode='bilinear')
+                print("1")
+            seg_logits = seg_logits + gt_logits
         return self.predict_by_feat(seg_logits, batch_img_metas)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
