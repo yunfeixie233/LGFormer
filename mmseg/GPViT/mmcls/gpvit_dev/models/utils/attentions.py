@@ -665,6 +665,18 @@ class GPBlock(nn.Module):
                 )
             else:
                 raise(NotImplementedError)
+        elif self.group_token_init_method == 'conv_relu':
+            from timm.models import layers as timm_layers
+            if isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+                self.group_token_init = \
+                nn.Sequential(                         
+                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.ReLU(),
+                )
+            else:
+                raise(ValueError)
+            
         elif self.group_token_init_method == 'GCViT':
             self.group_token_init = \
             nn.Sequential(
@@ -790,7 +802,7 @@ class GPBlock(nn.Module):
         if self.vis_gt_eff:
             sp_before = x.clone()
             
-        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT']:
+        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu']:
             x = rearrange(x,
                           'b (h w) c -> b c h w',
                           h=sh, w=sw)
@@ -807,7 +819,7 @@ class GPBlock(nn.Module):
             group_token = self.group_token.expand(x.size(0), -1, -1)
         if prev_token is None:
             gt = group_token
-        elif self.group_projector_methonds in ["linear","conv"]:
+        elif self.group_projector_methonds in ["linear","conv",'conv_relu']:
             gt = group_token + self.group_projector(prev_token)
         elif self.group_projector_methonds == "cross" or self.group_projector_methonds == None:
             gt = group_token 
