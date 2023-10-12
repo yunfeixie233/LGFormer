@@ -1520,10 +1520,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         stage: int = None,        
         
     ):
-
-        depth = len(_arch_settings['group_layers'].keys())
+        if self.use_group_token == 'post':
+            depth = len(_arch_settings['group_layers'].keys())
+        elif self.use_group_token == 'mix':
+            depth = len(_arch_settings['merge_pos'][stage])
         merge_layer = nn.ModuleList()
-            
         for i in range(depth):
             if i >0 :
                 if _arch_settings["group_projector_methonds"] == 'linear':
@@ -1559,9 +1560,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     zero_init_group_token=True,
                     group_projector_methonds = _arch_settings["group_projector_methonds"],
                     association_embedding = _arch_settings["association_embedding"],
-                    group_token_init_method = _arch_settings["group_token_init_method"],
+                    group_token_init_method = _arch_settings["group_token_init_method"] \
+                                                if isinstance(_arch_settings["group_token_init_method"],str)
+                                                else _arch_settings["group_token_init_method"][i],
                     ls_init_value = _arch_settings["ls_init_value"], 
                     gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1,
+                    same_group_method = _arch_settings["same_group_method"] if "same_group_method" in _arch_settings.keys() else False,
                     vis_gt_eff = self.vis_gt_eff,
                     output_dir = self.output_dir,
                     layer_num = depth)
@@ -1655,7 +1659,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt,
                     )
                     sp_features_last = sp_features_seg
-                        
                 # # rank not consistent due to whether flatten or not
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:

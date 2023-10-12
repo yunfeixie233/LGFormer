@@ -29,10 +29,5 @@ model = dict(
         'merge_pos':((),(8,),()),
         'ls_init_value':0.,            
     },
-    loss_decode=[
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.5)]
     
 ))

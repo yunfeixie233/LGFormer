@@ -29,6 +29,11 @@ model = dict(
         'merge_pos':((),(8,),()),
         'ls_init_value':0.,            
     },
+    use_gt_loss = True,
+    vis_sp = True,
+    vis_gt = True,
+    vis_gt_eff = True,
+    output_dir = '/data2/yunfei/superformer_baseline_voc12aug-480x480_adam_cross_2stage_sim_pred_resize_final_added_small_pre_1group_p8_nols_conv3_loss',
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),

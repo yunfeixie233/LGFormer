@@ -613,7 +613,8 @@ class GPBlock(nn.Module):
                  gt_iter: int = 1,
                  vis_gt_eff: bool = False,
                  output_dir: str = None,
-                 layer_num : int = None,                                  
+                 layer_num : int = None,
+                 same_group_method: bool = False,                                  
                  **kwargs):
 
         super().__init__()
@@ -720,7 +721,10 @@ class GPBlock(nn.Module):
         for i in range(gt_iter):
         
             pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02).cuda()      
-            group_layer = FullGroupAttnBlock(**_group_att_cfg)
+            if same_group_method:
+                group_layer = FullAttnCatBlock(**_group_att_cfg)        
+            else:        
+                group_layer = FullGroupAttnBlock(**_group_att_cfg)
             un_group_layer = FullAttnCatBlock(**_ungroup_att_cfg)
             blocks = nn.Sequential(
                 *[
@@ -812,11 +816,11 @@ class GPBlock(nn.Module):
         for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(zip (
             self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn
         )):
+            if self.group_projector_methonds == "cross" and prev_token is not None:
+                gt, _= self.group_projector(query=gt, key=prev_token, value=prev_token)            
             gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
             gt = gt + pos_embed
             gt = blocks(gt)
-            if self.group_projector_methonds == "cross" and prev_token is not None:
-                gt= self.group_projector(query=gt, key=prev_token, value=prev_token)
             proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
         if self.vis_gt_eff:
             self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt)

@@ -27,12 +27,7 @@ model = dict(
         "init_strides":(3,),
         'init_kernel_sizes':(3,),
         'merge_pos':((),(8,),()),
-        'ls_init_value':0.,            
+        'ls_init_value':1e-5,            
     },
-    loss_decode=[
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.5)]
     
 ))
