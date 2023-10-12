@@ -1069,6 +1069,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             'drop_path_rate': 0.2
         },
         use_gt_loss: bool = False,
+        use_gt_cls: bool = False,
         #visualize hooker
         vis_sp: bool =False,
         output_dir:str = None,
@@ -1083,6 +1084,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         num_classes=seg_num_classes,
         out_channels=seg_num_classes,
         in_index=0,
+        use_gt_cls = use_gt_cls,
 **kwargs)
         self.extralayer_nols = extralayer_nols
         self.resize_version = resize_version

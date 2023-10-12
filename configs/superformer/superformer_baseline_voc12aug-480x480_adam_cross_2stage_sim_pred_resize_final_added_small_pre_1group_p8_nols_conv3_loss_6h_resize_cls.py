@@ -30,6 +30,7 @@ model = dict(
         'ls_init_value':0.,            
     },
     use_gt_loss = True,
+    use_gt_cls = True,
     gt_scale_factor = 3,
     loss_decode=[
             dict(
