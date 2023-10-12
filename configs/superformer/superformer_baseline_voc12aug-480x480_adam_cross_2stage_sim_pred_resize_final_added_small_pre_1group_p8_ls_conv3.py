@@ -26,8 +26,8 @@ model = dict(
         'group_token_init_method':'conv',
         "init_strides":(3,),
         'init_kernel_sizes':(3,),
-        'merge_pos':((),(6,8,),()),
-        'ls_init_value':0.,            
+        'merge_pos':((),(8,),()),
+        'ls_init_value':1e-5,            
     },
     
 ))
