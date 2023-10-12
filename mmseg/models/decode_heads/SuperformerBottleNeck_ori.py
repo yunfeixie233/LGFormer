@@ -1051,6 +1051,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         resize_version: str = 'v2',
         use_pixel_similarities_upsample: bool = False,
         use_group_token: str = None,
+        gt_scale_factor: int = 1,        
         extralayer_nols: bool = False,
         arch_settings: dict = {
             'embed_dims': 216,
@@ -1256,6 +1257,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if use_group_token:
             assert use_group_token in ['post','mix']      
         self.use_group_token = use_group_token
+        self.gt_scale_factor = gt_scale_factor
         self.output_dir = output_dir
         if self.use_group_token:
             self.arch_settings = arch_settings
@@ -2382,11 +2384,17 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         elif 'extralayer' in self.classification_feature:
             h_g = w_g = int(math.sqrt(gt.shape[1]))
             if self.use_gt_loss:
+                gt = rearrange(gt,'b (h w) c -> b c h w',
+                                      h = h_g,
+                                      w = w_g)
+                
+                gt = F.interpolate(gt,scale_factor=self.gt_scale_factor,mode='bilinear')
+                gt = rearrange(gt, 'b c h w -> b (h w) c')
                 gt_logits = self.gt_head(self.gt_norm(gt))
                 gt_logits = rearrange(gt_logits,
                                       'b (h w) c -> b c h w',
-                                      h = h_g,
-                                      w = w_g)
+                                      h = h_g * self.gt_scale_factor,
+                                      w = w_g * self.gt_scale_factor)
             else:
                 gt_logits = None
             if generate_seg:
