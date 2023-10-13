@@ -603,13 +603,8 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
-        ret = self.forward(inputs)
-        logits = []        
-        if isinstance(ret,dict):
-            for val in ret.values():
-                if val is not None:
-                    logits.append(val)
-        losses = self.loss_by_feat(logits, batch_data_samples)
+        ret = self.forward(inputs)   
+        losses = self.loss_by_feat(ret, batch_data_samples)
         return losses
 
     def predict(self, inputs: Tuple[Tensor], batch_img_metas: List[dict],
@@ -659,52 +654,53 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         """
 
         seg_label = self._stack_batch_gt(batch_data_samples)
+       
         loss = dict()
-        resize_logits = []  
-        for logit in logits:
+        if not isinstance(self.loss_decode, nn.ModuleList):
+            losses_decode = [self.loss_decode]
+        else:
+            losses_decode = self.loss_decode
+        
+        for i, (logit, loss_decode) in enumerate(zip(logits.values(),losses_decode)):
+            if logit is None:
+                continue
             logit = resize(
                 input=logit,
                 size=seg_label.shape[2:],
                 mode='bilinear',
                 align_corners=self.align_corners)
-            resize_logits.append(logit)
-        logits = resize_logits
-        
-        if self.sampler is not None:
-            seg_weight = self.sampler.sample(logits[0], seg_label)
-        else:
-            seg_weight = None
-        seg_label = seg_label.squeeze(1)
 
-        if not isinstance(self.loss_decode, nn.ModuleList):
-            losses_decode = [self.loss_decode]
-        else:
-            losses_decode = self.loss_decode
-        for i, (logit, loss_decode) in enumerate(zip(logits, losses_decode)):
+
+
+            if self.sampler is not None:
+                seg_weight = self.sampler.sample(logit[0], seg_label)
+            else:
+                seg_weight = None
+
+
             if loss_decode.loss_name not in loss:
                 loss[loss_decode.loss_name] = loss_decode(
                     logit,
-                    seg_label,
+                    seg_label.squeeze(1),
                     weight=seg_weight,
                     ignore_index=self.ignore_index)
             else:
                 loss[loss_decode.loss_name] += loss_decode(
                     logit,
-                    seg_label,
+                    seg_label.squeeze(1) ,
                     weight=seg_weight,
                     ignore_index=self.ignore_index)
-            if len(logits) == 2:
-                if i == 0:
-                    loss[f'acc_seg_gt'] = accuracy(
-                        logit, seg_label, ignore_index=self.ignore_index)
-                elif i == 1:
-                    loss[f'acc_seg_sp'] = accuracy(
-                        logit, seg_label, ignore_index=self.ignore_index)
-            elif len(logits) == 1:
-                loss[f'acc_seg_sp'] = accuracy(
-                    logit, seg_label, ignore_index=self.ignore_index)
-            else:
-                raise(ValueError)
+            #     if i == 0:
+            #         loss[f'acc_seg_gt'] = accuracy(
+            #             logit, seg_label, ignore_index=self.ignore_index)
+            #     elif i == 1:
+            #         loss[f'acc_seg_sp'] = accuracy(
+            #             logit, seg_label, ignore_index=self.ignore_index)
+            # elif len(logits) == 1:
+            #     loss[f'acc_seg_sp'] = accuracy(
+            #         logit, seg_label, ignore_index=self.ignore_index)
+            # else:
+            #     raise(ValueError)
         return loss
 
     def predict_by_feat(self, seg_logits: Tensor,
