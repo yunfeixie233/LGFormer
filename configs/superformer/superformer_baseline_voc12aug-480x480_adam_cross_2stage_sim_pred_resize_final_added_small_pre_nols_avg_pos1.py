@@ -6,7 +6,7 @@ model = dict(
     decode_head=dict(
     ls_init_value = 1e-5,
     resize_version = 'v2',
-    use_group_token = 'mix',
+    use_group_token = 'post',
     arch_settings = {
         'embed_dims': 384,
         'patch_size': 8,
@@ -23,18 +23,10 @@ model = dict(
         'drop_path_rate': 0.2,
         'group_projector_methonds':'linear',
         'association_embedding':False,
-        'group_token_init_method':'conv',
+        'group_token_init_method':'avg',
         "init_strides":(3,),
         'init_kernel_sizes':(3,),
-        'merge_pos':((),(8,),()),
         'ls_init_value':0.,            
     },
-    use_gt_loss = True,
-    
-    loss_decode=[
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.5)]
     
 ))

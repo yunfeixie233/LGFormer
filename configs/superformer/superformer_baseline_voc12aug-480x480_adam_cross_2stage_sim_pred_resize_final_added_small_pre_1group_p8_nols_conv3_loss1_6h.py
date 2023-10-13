@@ -12,10 +12,10 @@ model = dict(
         'patch_size': 8,
         'window_size': 2,
         'num_layers': 1,
-        'num_heads': 2,
-        'num_group_heads': 2,
-        'num_group_forward_heads': 2,
-        'num_ungroup_heads': 2,
+        'num_heads': 6,
+        'num_group_heads': 6,
+        'num_group_forward_heads': 6,
+        'num_ungroup_heads': 6,
         'ffn_ratio': 4.,
         'patch_embed': dict(type='ConvPatchEmbed', num_convs=0),
         'mlpmixer_depth': 1,
@@ -30,11 +30,10 @@ model = dict(
         'ls_init_value':0.,            
     },
     use_gt_loss = True,
-    
     loss_decode=[
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
+            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.1),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.5)]
+            type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.9)]
     
 ))

@@ -814,7 +814,7 @@ class GPBlock(nn.Module):
         if self.vis_gt_eff:
             sp_before = x.clone()
             
-        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu']:
+        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu','avgpool_conv']:
             x = rearrange(x,
                           'b (h w) c -> b c h w',
                           h=sh, w=sw)
