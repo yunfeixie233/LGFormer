@@ -2343,7 +2343,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret
         elif self.classification_feature == "pixel":
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
@@ -2351,7 +2351,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret
         elif self.classification_feature == "both":
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
@@ -2359,7 +2359,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret
         elif self.classification_feature == "both_dualhead":
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
@@ -2367,7 +2367,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret
         elif self.classification_feature == "superpixel_bilinear":
             if generate_seg:
                     pixel_logits = self.forward_segmentation(
@@ -2375,7 +2375,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret
         elif self.classification_feature == "superpixel_similarity":
             if generate_seg:
                     pixel_logits = self.forward_segmentation(
@@ -2383,7 +2383,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                     ret={}
                     ret["seg"] = pixel_logits
-                    return ret["seg"]
+                    return ret
         elif 'extralayer' in self.classification_feature:
             if self.use_gt_loss:
                 h_g = w_g = int(math.sqrt(gt.shape[1]))

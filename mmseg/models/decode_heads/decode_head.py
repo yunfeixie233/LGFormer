@@ -628,8 +628,10 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             Tensor: Outputs segmentation logits map.
         """
-        seg_logits, gt_logits = self.forward(inputs)
+        ret = self.forward(inputs)
+        seg_logits = ret['seg']               
         if self.use_gt_cls:
+            gt_logits = ret['gt']
             if gt_logits.shape != seg_logits.shape:
                 import torch.nn.functional as F                
                 gt_logits = F.interpolate(gt_logits,size=seg_logits.shape[2:],mode='bilinear')
