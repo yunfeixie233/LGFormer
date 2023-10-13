@@ -41,6 +41,7 @@ optim_wrapper = dict(
             'sp_project.1':dict(decay_mult=0.),
             'sp_init.1':dict(decay_mult=0.),
             'seg_norm': dict(decay_mult=0.),
+            'gamma': dict(decay_mult=0.),
         }))
 
 

@@ -694,7 +694,7 @@ class GPBlock(nn.Module):
         self.group_layers = nn.ModuleList()
         self.un_group_layers = nn.ModuleList()
         self.gt_attn = nn.ModuleList()
-        self.pos_embeds =[]
+        self.pos_embeds =nn.ParameterList()
         _group_att_cfg = dict(
             embed_dims=embed_dims,
             num_heads=num_group_heads,
@@ -734,7 +734,7 @@ class GPBlock(nn.Module):
         
         for i in range(gt_iter):
         
-            pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02).cuda()      
+            pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02)      
             if same_group_method:
                 group_layer = FullAttnCatBlock(**_group_att_cfg)        
             else:        
