@@ -16,7 +16,7 @@ from timm.models.registry import register_model
 from timm.models import layers as timm_layers
 
 from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
-from .decode_head import BaseDecodeHead, MultiLossBaseDecodeHead
+from .decode_head import BaseDecodeHead
 from ..builder import HEADS
 from mmcv.cnn import build_norm_layer
 
@@ -308,7 +308,7 @@ class SuperformerStage(nn.Module):
         use_pixel_similarities: bool = False,
         use_middle_pixel_features: bool = False,
         merge_layer = None,
-        merge_pos = None,
+        merge_pos = None
 
     ) -> None:
         super().__init__()
@@ -483,6 +483,7 @@ class SuperformerStage(nn.Module):
             ]
         )
         
+
         self.init_weights()
 
     def init_weights(self):
@@ -616,16 +617,17 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None
-
+        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None,
     ) -> torch.Tensor:
+        if self.merge_layer:
+            gt = None
         for i in range(start, end):
             x = self.blocks[i](x)
             if self.merge_layer and i in self.merge_pos:
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
                 )
-        return x,attn_dict_list, gt
+        return x,attn_dict_list
 
     def add_pos_embed(self, x):
         if self.no_embed_class:
@@ -817,7 +819,6 @@ class SuperformerStage(nn.Module):
         x: torch.Tensor,
         sp_features_last: Optional[torch.Tensor],
         attn_dict_list:list = None,
-        gt: torch.Tensor = None
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         
         
@@ -888,9 +889,9 @@ class SuperformerStage(nn.Module):
         if vis_sp_block:
             sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
-        sp_features_seg, attn_dict_list, gt = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list, gt)
-        sp_features, attn_dict_list, gt = self.forward_blocks_range(
-            sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list, gt
+        sp_features_seg, attn_dict_list = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list)
+        sp_features, attn_dict_list = self.forward_blocks_range(
+            sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list
         )
         
 
@@ -959,8 +960,7 @@ class SuperformerStage(nn.Module):
             updated_pixel_features,
             sp_features,
             sp_features_seg,
-            attn_dict_list,
-            gt
+            attn_dict_list
         )
 class Mlp(nn.Module):
 
@@ -991,7 +991,7 @@ class MixerMlp(Mlp):
 
 
 @HEADS.register_module()
-class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
+class Superformer(BaseDecodeHead):
     def __init__(
         self,
         img_size: Sequence[int] = (224,224),
@@ -1051,7 +1051,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         resize_version: str = 'v2',
         use_pixel_similarities_upsample: bool = False,
         use_group_token: str = None,
-        gt_scale_factor: int = 1,        
         extralayer_nols: bool = False,
         arch_settings: dict = {
             'embed_dims': 216,
@@ -1068,13 +1067,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             'group_layers': {0:64,1:32,2:32,3:16},
             'drop_path_rate': 0.2
         },
-        use_gt_loss: bool = False,
-        use_gt_cls: bool = False,
-        #visualize hooker
+        #visualize param
         vis_sp: bool =False,
         output_dir:str = None,
         vis_gt: bool = False,
-        vis_gt_eff: bool = False,
+
         
         **kwargs
 
@@ -1084,7 +1081,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         num_classes=seg_num_classes,
         out_channels=seg_num_classes,
         in_index=0,
-        use_gt_cls = use_gt_cls,
 **kwargs)
         self.extralayer_nols = extralayer_nols
         self.resize_version = resize_version
@@ -1259,16 +1255,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if use_group_token:
             assert use_group_token in ['post','mix']      
         self.use_group_token = use_group_token
-        self.gt_scale_factor = gt_scale_factor
-        self.output_dir = output_dir
+          
         if self.use_group_token:
             self.arch_settings = arch_settings
             if self.use_group_token == 'post':
                 self.merge_layer = self._make_merge_layer(
                     self.arch_settings
                 )
-            self.vis_gt_eff = vis_gt_eff
-   
+            
 
         num_stages = len(depths)
         stages = []
@@ -1408,15 +1402,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_pixel_similarities_upsample = use_pixel_similarities_upsample
         if self.use_pixel_similarities_upsample:
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
-        self.use_gt_loss = use_gt_loss 
-        if self.use_gt_loss:
-            self.gt_norm = norm_layer(self.embed_dim)
-            self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
         if self.use_patch_embed:
             delattr(self, 'sp_init')
+        self.output_dir = output_dir
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
     def init_weights(self, mode=""):
@@ -1525,57 +1516,92 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         
     ):
         if self.use_group_token == 'post':
-            depth = len(_arch_settings['group_layers'].keys())
+            merge_layer = nn.ModuleList()
+            for i in range(_arch_settings['num_layers']):
+                if i >0 :
+                    if _arch_settings["group_projector_methonds"] == 'linear':
+                        group_projector =nn.Sequential(
+                            nn.LayerNorm(_arch_settings['embed_dims']),
+                            MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
+                            )
+                    elif _arch_settings["group_projector_methonds"] == 'cross':
+                        group_projector = FullAttnCatBlock(
+                            embed_dims=_arch_settings['embed_dims'],
+                            num_heads = _arch_settings['num_group_heads'],
+                            key_is_query=False,
+                            value_is_key=False,
+                        )
+                    elif _arch_settings["group_projector_methonds"]== None:
+                        group_projector=None
+                    else :
+                        raise(NotImplementedError)
+                else:
+                    group_projector=None
+                _layer_cfg = dict(
+                        embed_dims=_arch_settings['embed_dims'],
+                        depth=_arch_settings['mlpmixer_depth'],
+                        num_group_heads=_arch_settings['num_group_heads'],
+                        num_forward_heads=_arch_settings['num_group_forward_heads'],
+                        num_ungroup_heads=_arch_settings['num_ungroup_heads'],
+                        num_group_token=_arch_settings['group_layers'][i],
+                        ffn_ratio=_arch_settings['ffn_ratio'],
+                        init_stride = _arch_settings['init_strides'][i],
+                        init_kernel_size = _arch_settings['init_kernel_sizes'][i],
+                        with_cp=None,
+                        group_projector=group_projector,
+                        zero_init_group_token=True,
+                        group_projector_methonds = _arch_settings["group_projector_methonds"],
+                        association_embedding = _arch_settings["association_embedding"],
+                        group_token_init_method = _arch_settings["group_token_init_method"],
+                        gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
+                group_layer = GPBlock(**_layer_cfg)
+                merge_layer.append(group_layer)
+            return merge_layer
         elif self.use_group_token == 'mix':
             depth = len(_arch_settings['merge_pos'][stage])
-        merge_layer = nn.ModuleList()
-        for i in range(depth):
-            if i >0 :
-                if _arch_settings["group_projector_methonds"] == 'linear':
-                    group_projector =nn.Sequential(
-                        nn.LayerNorm(_arch_settings['embed_dims']),
-                        MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
+            merge_layer = nn.ModuleList()
+            for i in range(depth):
+                if i >0 :
+                    if _arch_settings["group_projector_methonds"] == 'linear':
+                        group_projector =nn.Sequential(
+                            nn.LayerNorm(_arch_settings['embed_dims']),
+                            MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
+                            )
+                    elif _arch_settings["group_projector_methonds"] == 'cross':
+                        group_projector = FullAttnCatBlock(
+                            embed_dims=_arch_settings['embed_dims'],
+                            num_heads = _arch_settings['num_group_heads'],
+                            key_is_query=False,
+                            value_is_key=False,
                         )
-                elif _arch_settings["group_projector_methonds"] == 'cross':
-                    group_projector = FullAttnCatBlock(
-                        embed_dims=_arch_settings['embed_dims'],
-                        num_heads = _arch_settings['num_group_heads'],
-                        key_is_query=False,
-                        value_is_key=False,
-                    )
-                elif _arch_settings["group_projector_methonds"]== None:
+                    elif _arch_settings["group_projector_methonds"]== None:
+                        group_projector=None
+                    else :
+                        raise(NotImplementedError)
+                else:
                     group_projector=None
-                else :
-                    raise(NotImplementedError)
-            else:
-                group_projector=None
-            _layer_cfg = dict(
-                    embed_dims=_arch_settings['embed_dims'],
-                    depth=_arch_settings['mlpmixer_depth'],
-                    num_group_heads=_arch_settings['num_group_heads'],
-                    num_forward_heads=_arch_settings['num_group_forward_heads'],
-                    num_ungroup_heads=_arch_settings['num_ungroup_heads'],
-                    num_group_token=_arch_settings['group_layers'][i],
-                    ffn_ratio=_arch_settings['ffn_ratio'],
-                    init_stride = _arch_settings['init_strides'][i],
-                    init_kernel_size = _arch_settings['init_kernel_sizes'][i],
-                    with_cp=None,
-                    group_projector=group_projector,
-                    zero_init_group_token=True,
-                    group_projector_methonds = _arch_settings["group_projector_methonds"],
-                    association_embedding = _arch_settings["association_embedding"],
-                    group_token_init_method = _arch_settings["group_token_init_method"] \
-                                                if isinstance(_arch_settings["group_token_init_method"],str)
-                                                else _arch_settings["group_token_init_method"][i],
-                    ls_init_value = _arch_settings["ls_init_value"], 
-                    gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1,
-                    same_group_method = _arch_settings["same_group_method"] if "same_group_method" in _arch_settings.keys() else False,
-                    vis_gt_eff = self.vis_gt_eff,
-                    output_dir = self.output_dir,
-                    layer_num = depth)
-            group_layer = GPBlock(**_layer_cfg)
-            merge_layer.append(group_layer)
-        return merge_layer
+                _layer_cfg = dict(
+                        embed_dims=_arch_settings['embed_dims'],
+                        depth=_arch_settings['mlpmixer_depth'],
+                        num_group_heads=_arch_settings['num_group_heads'],
+                        num_forward_heads=_arch_settings['num_group_forward_heads'],
+                        num_ungroup_heads=_arch_settings['num_ungroup_heads'],
+                        num_group_token=_arch_settings['group_layers'][i],
+                        ffn_ratio=_arch_settings['ffn_ratio'],
+                        init_stride = _arch_settings['init_strides'][i],
+                        init_kernel_size = _arch_settings['init_kernel_sizes'][i],
+                        with_cp=None,
+                        group_projector=group_projector,
+                        zero_init_group_token=True,
+                        group_projector_methonds = _arch_settings["group_projector_methonds"],
+                        association_embedding = _arch_settings["association_embedding"],
+                        group_token_init_method = _arch_settings["group_token_init_method"],
+                        ls_init_value = _arch_settings["ls_init_value"], 
+                        gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1)
+
+                group_layer = GPBlock(**_layer_cfg)
+                merge_layer.append(group_layer)
+            return merge_layer
     
     def init_superpixel_features(
         self, pixel_features: torch.Tensor
@@ -1598,7 +1624,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             endpoints = None
             assert len(self.stages) > 0
 
-            for i, stage in enumerate(self.stages):# 
+            for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                     sp_features_last = stage.add_pos_embed(sp_features_last)  
                     sp_features_last = stage.forward_blocks_range(
                         sp_features_last,0,len(stage.blocks)
@@ -1626,14 +1652,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #     f.create_dataset(key, data=sp_features_last.detach().cpu().numpy())
 
             assert len(self.stages) > 0
-
-            gt = None   
             if self.use_group_token == 'mix':
+                
                 attn_dict_list = []
             else:
                 attn_dict_list = None
-            
- 
+                
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                 vis_sp_stage = False
                 if vis_sp_stage:
@@ -1657,18 +1681,18 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         if int(count) <6 :
                             f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
-                    pixel_features, sp_features, sp_features_seg,attn_dict_list, gt = stage(
+                    pixel_features, sp_features, sp_features_seg,attn_dict_list = stage(
                         pixel_features,
                         sp_features_last,
                         attn_dict_list,
-                        gt 
                     )
                     sp_features_last = sp_features_seg
+                        
                 # # rank not consistent due to whether flatten or not
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:
                 #     endpoints[f"pixel_features_stage{i}"] = pixel_features
-            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt
+            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.norm(x)
@@ -2050,7 +2074,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
             self.vis_spgt = False      
             if self.vis_spgt:
-                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)            
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info)            
             #classification
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -2303,116 +2327,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         
-        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
+        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list = self.forward_features(x)
                 
         if self.vis_sp:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
-
-        if self.use_group_token == 'post':
-            gt = None
-            attn_dict_list = []
-            hw_shape = self.stages[-1].patch_embed.superpixel_shape
-            for merge_layer in self.merge_layer:
-                sp_features_seg, attn_dict_list ,gt =merge_layer(
-                    sp_features_seg,hw_shape, attn_dict_list=attn_dict_list, prev_token=gt)
-        if self.use_group_token in ['post','mix'] and  self.vis_gt:
-            sp_shape = self.stages[-1].patch_embed.superpixel_shape
-            self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)
-        
-            
-        h = w = int(math.sqrt(sp_features_seg.shape[1]))
-        if self.use_compact_loss:
-            if self.classification_feature == "superpixel":
-                restruct_pixel_features = self.compute_compact_loss(pixel_features,sp_features_seg)
-                if generate_seg:
-                        sp_logits, pixel_logits = self.forward_segmentation(
-                        sp_features_seg, return_pixel_logits, stride=seg_stride
-                    )
-                        ret={}
-                        ret["seg"] = pixel_logits
-                        ret['restruct'] = restruct_pixel_features
-                        ret['pixel_feature'] = rearrange(sp_features_seg,
-                                                         'b (h w) c -> b c h w',
-                                                         h = h, w =w)
-                        
-                        return ret
-        elif self.classification_feature == "superpixel":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret["seg"]
-        elif self.classification_feature == "pixel":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    pixel_features, return_pixel_logits, stride=seg_stride
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret["seg"]
-        elif self.classification_feature == "both":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret["seg"]
-        elif self.classification_feature == "both_dualhead":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret["seg"]
-        elif self.classification_feature == "superpixel_bilinear":
-            if generate_seg:
-                    pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret["seg"]
-        elif self.classification_feature == "superpixel_similarity":
-            if generate_seg:
-                    pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret["seg"]
-        elif 'extralayer' in self.classification_feature:
-            if self.use_gt_loss:
-                h_g = w_g = int(math.sqrt(gt.shape[1]))
-                gt = rearrange(gt,'b (h w) c -> b c h w',
-                                      h = h_g,
-                                      w = w_g)
-                
-                gt = F.interpolate(gt,scale_factor=self.gt_scale_factor,mode='bilinear')
-                gt = rearrange(gt, 'b c h w -> b (h w) c')
-                gt_logits = self.gt_head(self.gt_norm(gt))
-                gt_logits = rearrange(gt_logits,
-                                      'b (h w) c -> b c h w',
-                                      h = h_g * self.gt_scale_factor,
-                                      w = w_g * self.gt_scale_factor)
-            else:
-                gt_logits = None
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
-                    img = x, attn_dict_list = attn_dict_list
-                )
-                    
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    ret["gt"] = gt_logits
-                    return ret
-        else:
-            logits = self.forward_head(sp_features)
-            return logits
+        return sp_features_seg, endpoints, pixel_features, attn_dict_list
     def compute_compact_loss(self, x: torch.Tensor,sp_features: torch.Tensor):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
@@ -2476,7 +2395,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             vis = colormap[labels % colormap.size(0)]
             res[key] = vis
         return res
-    def visualize_spgt(self, img, sp_shape, attn_dict_list, info, soft = True):
+    def visualize_spgt(self, img, sp_shape, attn_dict_list, info):
         import os.path as osp
         from PIL import Image
         import os
@@ -2493,121 +2412,55 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         colormap = superpixel_ops.create_superpixel_colormap("random")        
         patch_embed = self.stages[-1].patch_embed
         scale_factor = img.shape[-1] // self.stages[-1].patch_embed.pixel_shape[0]
-        
-        if soft:
-            for key, similarities in info.items():
-                if "feature" in key:
-                    continue
-                    # visualize each head
-                if similarities.dim() == 5 and similarities.size(1) > 1:
-                    for i in range(similarities.size(1)):
-                        val = prepare_similarities(
-                            patch_embed,
-                            similarities[:, i],
-                            scale_factor = 1,
-                            merge_multihead_similarities=False,
-                        )
-                        association_glob = superpixel_ops.compute_soft_association(val)
-                        _, h, w, _, _ = association_glob.shape
-                        association_glob = rearrange(
-                            association_glob,
-                            'b h w sh sw-> b (h w) (sh sw)'
-                        )
+        for key, similarities in info.items():
+            print(key)
+            if "feature" in key:
+                continue
+            if similarities.dim() == 5 and similarities.size(1) > 1:
+                # visualize each head
+                for i in range(similarities.size(1)):
+                    val = prepare_similarities(
+                        patch_embed,
+                        similarities[:, i],
+                        scale_factor,
+                        merge_multihead_similarities=False,
+                    )
+                    labels = superpixel_ops.compute_hard_association(val).cpu()
                         
-                        attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
-                        for layer_idx, attn_map in enumerate(attn_maps):
-                            attn_map = rearrange(attn_map, 'b sh sw g -> b (sh sw) g')
-                            group_result = association_glob @ attn_map
-                            group_result = rearrange(
-                                group_result,
-                                'b (h w) g-> b g h w',
-                                h = h, w = w
-                            )
-                            group_result = F.interpolate(group_result,size = (640,640),mode="bilinear")
-                            group_result = rearrange(
-                                group_result,
-                                'b g h w -> b h w g',
-                            )
-                            print(group_result.shape)
-                            group_result = group_result.argmax(dim=-1).cpu().numpy()
+                    attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)
+                    for layer_idx, attn_map in enumerate(attn_maps):
+                        attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+                        group_result = attn_map.argmax(dim=1).cpu().numpy()
+                        rows = labels // sp_shape[-1]
+                        cols = labels % sp_shape[-2]
+                        vis_labels = group_result[0, rows, cols]
+                        uni  = np.unique(vis_labels[0])
 
-                            vis = colormap[group_result % colormap.size(0)]
-                            res[f"{key}_head{i}_{layer_idx}"] = vis
-                similarities = prepare_similarities(
-                    patch_embed, similarities, scale_factor = 1, merge_multihead_similarities=True
-                )
-                association_glob = superpixel_ops.compute_soft_association(similarities)
-                _, h, w, _, _ = association_glob.shape
-                association_glob = rearrange(
-                    association_glob,
-                    'b h w sh sw-> b (h w) (sh sw)'
-                )
-                attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
-                for i, attn_map in enumerate(attn_maps):
-                    layer_idx = i //6
-                    head = i % 6
-                    
-                    attn_map = rearrange(attn_map, 'b sh sw g -> b (sh sw) g')
-                    group_result = association_glob @ attn_map
-                    group_result = rearrange(
-                        group_result,
-                        'b (h w) g-> b g h w',
-                        h = h, w = w
-                    )
-                    group_result = F.interpolate(group_result,scale_factor = 4,mode="bilinear")
-                    group_result = rearrange(
-                        group_result,
-                        'b g h w -> b h w g',
-                    )
-                    group_result = group_result.argmax(dim=-1).cpu().numpy()
-
-                    vis = colormap[group_result % colormap.size(0)]
-                    res[f"{key}_head{i}_{layer_idx}"] = vis
-        else:
-            for key, similarities in info.items():
-                if "feature" in key:
-                    continue
-                if similarities.dim() == 5 and similarities.size(1) > 1:
-                    # visualize each head
-                    for i in range(similarities.size(1)):
-                        val = prepare_similarities(
-                            patch_embed,
-                            similarities[:, i],
-                            scale_factor,
-                            merge_multihead_similarities=False,
-                        )
-                        labels = superpixel_ops.compute_hard_association(val).cpu()
-                            
-                        attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)
-                        for layer_idx, attn_map in enumerate(attn_maps):
-                            attn_map = rearrange(attn_map, 'b h w g -> b g h w')
-                            group_result = attn_map.argmax(dim=1).cpu().numpy()
-                            rows = labels // sp_shape[-1]
-                            cols = labels % sp_shape[-2]
-                            vis_labels = group_result[0, rows, cols]
-                            uni  = np.unique(vis_labels[0])
-
-                            vis = colormap[vis_labels % colormap.size(0)]
-                            # import h5py
-                            # with h5py.File(f'/data2/yunfei/{key}_head{i}_{layer_idx}.h5', 'a') as hf:
-                            #     hf.create_dataset('my_dataset', data=labels)
-                            res[f"{key}_head{i}_{layer_idx}"] = vis
-                similarities = prepare_similarities(
-                    patch_embed, similarities, scale_factor, merge_multihead_similarities=True
-                )
-                labels = superpixel_ops.compute_hard_association(similarities).cpu()
-                attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
-                for i, attn_map in enumerate(attn_maps):
-                    layer_idx = i //6
-                    head = i % 6
-                    attn_map = rearrange(attn_map, 'b h w g -> b g h w')
-                    group_result = attn_map.argmax(dim=1).cpu().numpy()
-                    rows = labels // sp_shape[-1]
-                    cols = labels % sp_shape[-2]
-                    vis_labels = group_result[0,rows, cols]
-                    vis = colormap[vis_labels % colormap.size(0)]
-                    
-                    res[f"{key}_layer_idx{layer_idx}_head{head}"] = vis
+                        vis = colormap[vis_labels % colormap.size(0)]
+                        # import h5py
+                        # with h5py.File(f'/data2/yunfei/{key}_head{i}_{layer_idx}.h5', 'a') as hf:
+                        #     hf.create_dataset('my_dataset', data=labels)
+                        res[f"{key}_head{i}_{layer_idx}"] = vis
+            similarities = prepare_similarities(
+                patch_embed, similarities, scale_factor, merge_multihead_similarities=True
+            )
+            labels = superpixel_ops.compute_hard_association(similarities).cpu()
+            # import h5py
+            # with h5py.File('embedding.h5', 'w') as f:
+            #     # Create datasets for each embedding
+            #     f.create_dataset('labels', data=labels.numpy())          
+            attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
+            for i, attn_map in enumerate(attn_maps):
+                layer_idx = i //2
+                head = i % 2
+                attn_map = rearrange(attn_map, 'b h w g -> b g h w')
+                group_result = attn_map.argmax(dim=1).cpu().numpy()
+                rows = labels // sp_shape[-1]
+                cols = labels % sp_shape[-2]
+                vis_labels = group_result[0,rows, cols]
+                vis = colormap[vis_labels % colormap.size(0)]
+                
+                res[f"{key}_layer_idx{layer_idx}_head{head}"] = vis
                 
         counter = 0
         base_name, file_ext = osp.splitext(out_file)
@@ -2914,7 +2767,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
 
             
-            GROUP_PALETTE = np.loadtxt('mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
+            GROUP_PALETTE = np.loadtxt('/data2/yunfei/SpformerV1/mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
             uni = np.unique(group_result)
             self.blend_result(
                 img=img.transpose(0, 2, 3, 1),

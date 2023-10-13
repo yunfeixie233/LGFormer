@@ -471,14 +471,12 @@ def compute_soft_association(
     #rows.shape = cols.shape = 160,160,9
     # rows = torch.where(rows < 0, torch.tensor(0,device=rows.device), rows)
     # rows = torch.where(rows > 39, torch.tensor(39,device=rows.device), rows)
-    rows = torch.clamp(rows, 0, 39)  # Clamping rows instead of using torch.where
-    cols = torch.clamp(cols, 0, 39)  # Clamping cols instead of using torch.where
-    import time
-    start = time.time()
+    rows = torch.clamp(rows, 0, sw -1)  # Clamping rows instead of using torch.where
+    cols = torch.clamp(cols, 0, sh -1)  # Clamping cols instead of using torch.where
+
     association_glob = torch.zeros(size=(b, sh * ph, sw * pw, sh, sw), dtype=association.dtype, device=association.device)
     association[torch.isinf(association)] = 0.0
 
-# Vectorized code
     association_reshaped = association.reshape([b, sh * ph, sw * pw, c])
     rows_expanded = rows[None, ...]  # shape becomes (1, sh * ph, sw * pw, sh)
     cols_expanded = cols[None, ...]  # shape becomes (1, sh * ph, sw * pw, sw)
@@ -486,23 +484,7 @@ def compute_soft_association(
     index_source = torch.arange(b, device=association.device)[:, None, None, None]
     association_glob[index_source, torch.arange(sh * ph)[None, :, None, None], torch.arange(sw * pw)[None, None, :, None], rows_expanded, cols_expanded] = association_reshaped   
     
-    # end = time.time()
-    # print(end-start)
-    # start = time.time()
 
-    # for batch in range(b):
-    #     for i in range(sh * ph):
-    #         for j in range(sw * pw):
-    #             for k in range(c):
-    #                 association_glob_[batch, i, j, rows[i,j,k],  cols[i,j,k]] = (association.reshape([b, sh * ph, sw * pw,c]))[batch, i, j,  k]
-    # end = time.time()
-    # print(end-start)
-    # import h5py
-    # with h5py.File(f'/data2/yunfei/test.h5', 'a') as hf:
-    #     hf.create_dataset('association_glob', data=association_glob.detach().cpu().numpy())
-    #     hf.create_dataset('association_glob_', data=association_glob_.detach().cpu().numpy())
-    #     hf.create_dataset('diff', data=(association_glob_-association_glob).detach().cpu().numpy())
-    # is_equal = torch.allclose(association_glob, association_glob_)
 
     return association_glob
 

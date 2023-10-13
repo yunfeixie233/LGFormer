@@ -411,22 +411,11 @@ class FullAttnCatBlock(nn.Module):
 
     def forward(self, query, key, value, att_bias=None,attn_dict_list = None):
         def _inner_forward(query, key, value, att_bias,attn_dict_list):
-            # q = self.norm_query(query)
-            # k = q if self.key_is_query else self.norm_key(key)
-            # v = k if self.value_is_key else self.norm_value(value)
-            # new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            # new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
-            # new_x = self.proj(new_x)
-            # x = self.ffn(self.norm2(new_x), identity=query)
             
             q = self.norm_query(query)
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
-
-            # new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            # new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
-            # new_x = self.proj(new_x)
-            # x = self.ffn(self.norm2(new_x), identity=query)     
+           
             x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
             x = torch.cat((query, self.drop_path(x)),dim=-1)
             x = self.proj(x)
@@ -718,7 +707,7 @@ class GPBlock(nn.Module):
             key_is_query=False,
             value_is_key=True,
             with_cp=with_cp,
-            ls_init_value = ls_init_value)
+            ls_init_value = None)
         _group_att_cfg.update(group_att_cfg)
         _ungroup_att_cfg = dict(
             embed_dims=embed_dims,
@@ -901,7 +890,6 @@ class GPBlock(nn.Module):
             sp_before =self.reshape_vis(sp_before)
             sp_after = self.reshape_vis(sp_after)
             sp_diff = sp_after - sp_before
-            sp_diff = self.reshape_vis(sp_after)
             gt = self.reshape_vis(gt)         
                
             # Determine the highest count in the directory.
@@ -925,3 +913,4 @@ class GPBlock(nn.Module):
             self.write_vis(sp_before,output_file,'sp_before')                
             self.write_vis(sp_after,output_file,'sp_after')                
             self.write_vis(gt,output_file,'gt')                
+            self.write_vis(sp_diff,output_file,'sp_diff')                

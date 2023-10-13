@@ -603,10 +603,12 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
-        seg_logits, gt_logits = self.forward(inputs)
-        logits = []
-        logits.append(gt_logits)
-        logits.append(seg_logits)
+        ret = self.forward(inputs)
+        logits = []        
+        if isinstance(ret,dict):
+            for val in ret.values():
+                if val is not None:
+                    logits.append(val)
         losses = self.loss_by_feat(logits, batch_data_samples)
         return losses
 
@@ -631,7 +633,6 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             if gt_logits.shape != seg_logits.shape:
                 import torch.nn.functional as F                
                 gt_logits = F.interpolate(gt_logits,size=seg_logits.shape[2:],mode='bilinear')
-                print("1")
             seg_logits = seg_logits + gt_logits
         return self.predict_by_feat(seg_logits, batch_img_metas)
 
@@ -690,12 +691,18 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                     seg_label,
                     weight=seg_weight,
                     ignore_index=self.ignore_index)
-            if i == 0:
-                loss[f'acc_seg_gt'] = accuracy(
-                    logit, seg_label, ignore_index=self.ignore_index)
-            elif i == 1:
+            if len(logits) == 2:
+                if i == 0:
+                    loss[f'acc_seg_gt'] = accuracy(
+                        logit, seg_label, ignore_index=self.ignore_index)
+                elif i == 1:
+                    loss[f'acc_seg_sp'] = accuracy(
+                        logit, seg_label, ignore_index=self.ignore_index)
+            elif len(logits) == 1:
                 loss[f'acc_seg_sp'] = accuracy(
-                    logit, seg_label, ignore_index=self.ignore_index)                
+                    logit, seg_label, ignore_index=self.ignore_index)
+            else:
+                raise(ValueError)
         return loss
 
     def predict_by_feat(self, seg_logits: Tensor,
