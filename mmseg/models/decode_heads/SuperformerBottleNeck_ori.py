@@ -30,6 +30,26 @@ SKIP_CONFIRM = False
 from ..utils import PatchEmbed, resize
 from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
 
+class Reweight(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self.reweight = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * (0.5 + torch.sigmoid(self.reweight))
+
+
+class ReweightSigmoid(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self.weight = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(self.weight)
+
+
 def positionalencoding1d(d_model, length,device):
     """
     :param d_model: dimension of the model
@@ -309,6 +329,7 @@ class SuperformerStage(nn.Module):
         use_middle_pixel_features: bool = False,
         merge_layer = None,
         merge_pos = None,
+        reweight: bool = False
 
     ) -> None:
         super().__init__()
@@ -482,7 +503,10 @@ class SuperformerStage(nn.Module):
                 for i in range(depth)
             ]
         )
-        
+        if reweight:
+            self.reweight = Reweight()
+        else:
+            self.reweight = nn.Identity()
         self.init_weights()
 
     def init_weights(self):
@@ -574,7 +598,8 @@ class SuperformerStage(nn.Module):
         #         key = original_key + str(count)
         #     if count <10:
         #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
-        res = x + self.pixel_delta_ls(pixel_delta)
+        res = x + self.reweight(self.pixel_delta_ls(pixel_delta))
+        
         res = self.pixel_refine(res)
         # import h5py
         # with h5py.File("/root/autodl-tmp/vis.h5","a") as f:
@@ -1070,6 +1095,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         },
         use_gt_loss: bool = False,
         use_gt_cls: bool = False,
+        reweight : bool = False,
         #visualize hooker
         vis_sp: bool =False,
         output_dir:str = None,
@@ -1334,7 +1360,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_pixel_similarities=use_pixel_similarities,
                     use_middle_pixel_features=use_middle_pixel_features,
                     merge_layer = merge_layer,
-                    merge_pos = merge_pos
+                    merge_pos = merge_pos,
+                    reweight = reweight,
                 )
             )
             cur_depth += depth

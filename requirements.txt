@@ -1,2 +1,4 @@
 timm
 fvcore
+h5py
+tensorboard
