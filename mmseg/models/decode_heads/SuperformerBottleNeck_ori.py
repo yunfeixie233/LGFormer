@@ -1,3 +1,4 @@
+from fileinput import filename
 from tkinter import N
 from typing import Any, Callable, Dict, MutableMapping, Optional, Sequence, Tuple, Union
 import warnings
@@ -29,6 +30,35 @@ LayerScale2d = st.LayerScale2d
 SKIP_CONFIRM = False
 from ..utils import PatchEmbed, resize
 from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
+def to_h5(**kwargs):
+    """
+    Save input tensors or numpy arrays to an H5 file.
+    
+    Usage:
+    >>> a = torch.tensor([1,2,3])
+    >>> b = np.array([4,5,6])
+    >>> save_tensors_to_h5(a=a, b=b, filename="output.h5")
+    
+    Arguments:
+    **kwargs : Tensors or numpy arrays to save.
+    filename : Name of the H5 file to save to.
+    
+    Returns:
+    None
+    """
+    filename = kwargs.pop('filename', 'default_output.h5')
+    if os.path.exists(filename):
+        os.remove(filename)
+    with h5py.File(filename, 'a') as f:
+        for key, value in kwargs.items():
+            # If it's a tensor on GPU, detach and move it to CPU.
+            if torch.is_tensor(value) and value.device.type == 'cuda':
+                value = value.detach().cpu().numpy()
+            # If it's a tensor (not on GPU), just detach and convert.
+            elif torch.is_tensor(value):
+                value = value.detach().numpy()               
+            # Else, it's assumed to be a numpy array.
+            f.create_dataset(key, data=value)
 
 class Reweight(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
@@ -1095,6 +1125,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         },
         use_gt_loss: bool = False,
         use_gt_cls: bool = False,
+        expand_gt: bool = False,
         reweight : bool = False,
         #visualize hooker
         vis_sp: bool =False,
@@ -1436,6 +1467,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if self.use_pixel_similarities_upsample:
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
         self.use_gt_loss = use_gt_loss 
+        self.expand_gt = expand_gt
         if self.use_gt_loss:
             self.gt_norm = norm_layer(self.embed_dim)
             self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1709,7 +1741,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
     def forward_segmentation(
         self, x: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
-        img = None,attn_dict_list = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        img = None,attn_dict_list = None, gt = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        ret = {}
         if self.classification_feature == "pixel":
             b, c, h, w = x.shape
             if self.pixel_projection:
@@ -2073,11 +2106,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
             
             if self.vis_sp:
-                
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
             self.vis_spgt = False      
             if self.vis_spgt:
-                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)            
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
+                
+
+                
             #classification
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -2133,31 +2168,40 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-            # import h5py
-            # with h5py.File('/data2/yunfei/pixel_logits.h5','a') as f:
-            #     keys = list(f.keys())
-            #     key = "pixel_logits"
-            #     original_key = key
-            #     count = int(0)
-            #     while key in keys:
-            #         print(f"Dataset with key {key} already exists. Updating key name.")
-            #         count = int(count) + 1
-            #         key = original_key + str(count)
-            #     if int(count) < 2 :
-            #         f.create_dataset(key, data=pixel_logits.detach().cpu().numpy())     
-                
-            # with h5py.File('/data2/yunfei/sp_logits.h5','a') as f:
-            #     keys = list(f.keys())
-            #     key = "sp_logits"
-            #     original_key = key
-            #     count = int(0)
-            #     while key in keys:
-            #         print(f"Dataset with key {key} already exists. Updating key name.")
-            #         count = int(count) + 1
-            #         key = original_key + str(count)
-            #     if int(count) <5 :
-            #         f.create_dataset(key, data=sp_logits.detach().cpu().numpy())
-            return sp_logits, pixel_logits
+            
+            if self.use_gt_loss:
+                h_g = w_g = int(math.sqrt(gt.shape[1]))
+                if self.expand_gt:
+                    # b head n g 
+                    attn_map = attn_dict_list[-1]
+                    attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
+                    attn_map = attn_map.squeeze(1)
+                    gt = attn_map.transpose(-1,-2) @ gt
+                    h_g = w_g = int(math.sqrt(gt.shape[1]))
+                    gt = rearrange(gt,'b (h w) c -> b c h w',
+                                        h = h_g,
+                                        w = w_g)                    
+                    gt =superpixel_ops.expand_superpixel_features(
+                        gt, similarities
+                    ) 
+                if gt.dim() == 3:    
+                    gt = rearrange(gt,'b (h w) c -> b c h w',
+                                        h = h_g,
+                                        w = w_g)
+                h_g = w_g = gt.shape[2]
+                # gt_ = gt.clone()
+                gt = rearrange(gt, 'b c h w -> b (h w) c')
+                gt_logits = self.gt_head(self.gt_norm(gt))
+                gt_logits = rearrange(gt_logits,
+                                      'b (h w) c -> b c h w',
+                                      h = h_g,
+                                      w = w_g)
+            else:
+                gt_logits = None
+            # to_h5(gt = gt_[:,0,...], sp =x.view(b,sh,sw,-1).permute(0, 3, 1, 2),filename= '/data2/yunfei/vis.h5')                
+            ret['seg'] = pixel_logits
+            ret['gt'] =  gt_logits            
+            return ret
         elif self.classification_feature == "superpixel_extralayer_similarity": 
             #final info               
             last_stage = self.stages[-1]
@@ -2412,30 +2456,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     ret["seg"] = pixel_logits
                     return ret
         elif 'extralayer' in self.classification_feature:
-            if self.use_gt_loss:
-                h_g = w_g = int(math.sqrt(gt.shape[1]))
-                gt = rearrange(gt,'b (h w) c -> b c h w',
-                                      h = h_g,
-                                      w = w_g)
-                
-                gt = F.interpolate(gt,scale_factor=self.gt_scale_factor,mode='bilinear')
-                gt = rearrange(gt, 'b c h w -> b (h w) c')
-                gt_logits = self.gt_head(self.gt_norm(gt))
-                gt_logits = rearrange(gt_logits,
-                                      'b (h w) c -> b c h w',
-                                      h = h_g * self.gt_scale_factor,
-                                      w = w_g * self.gt_scale_factor)
-            else:
-                gt_logits = None
+
             if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
+                    ret = self.forward_segmentation(
                     x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
-                    img = x, attn_dict_list = attn_dict_list
+                    img = x, attn_dict_list = attn_dict_list, gt = gt
                 )
                     
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    ret["gt"] = gt_logits
+
                     return ret
         else:
             logits = self.forward_head(sp_features)

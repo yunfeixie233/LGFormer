@@ -27,7 +27,7 @@ model = dict(
         "init_strides":(4,),
         'init_kernel_sizes':(4,),
         'merge_pos':((),(8,),()),
-        'ls_init_value':1e-5.,            
+        'ls_init_value':1e-5,            
     },
     use_gt_loss = True,
     loss_decode=[

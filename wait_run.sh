@@ -1,7 +1,5 @@
 #!/bin/bash
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 PID=29045
 =======
 PID=629197
