@@ -3,5 +3,5 @@ _base_ = [
 ]
 model = dict(
     decode_head=dict(
-        reweight = True
+        reweight_sp_update = True
 ))

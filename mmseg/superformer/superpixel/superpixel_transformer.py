@@ -704,6 +704,9 @@ class SuperPixelTokenizationCrossAttentionAsymmetry(SuperPixelTokenization):
         return_final_pixel_features: bool = False,
         pixel_qkv_method: str = "linear",
         layer_kwargs=None,
+        reweight_sp: bool = False,
+        reweight_pixel: bool = False,
+        
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -743,7 +746,8 @@ class SuperPixelTokenizationCrossAttentionAsymmetry(SuperPixelTokenization):
                 and self.pixel_features_update_method == "residual",
                 # hard_assign=True if i == self.num_blocks - 1 else False,
                 hard_assign = False,
-                
+                reweight_sp = reweight_sp,
+                reweight_pixel = reweight_pixel, 
                 **layer_kwargs,
             )
             for i in range(self.num_blocks)

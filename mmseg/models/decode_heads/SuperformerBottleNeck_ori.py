@@ -628,6 +628,8 @@ class SuperformerStage(nn.Module):
         #         key = original_key + str(count)
         #     if count <10:
         #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
+        
+        
         res = x + self.reweight(self.pixel_delta_ls(pixel_delta))
         
         res = self.pixel_refine(res)
@@ -1126,7 +1128,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_gt_loss: bool = False,
         use_gt_cls: bool = False,
         expand_gt: bool = False,
-        reweight : bool = False,
+        reweight_pixel_update:bool = False,
+        reweight_sp_update: bool = False,
+        reweight_pixel_sim: bool = False,
+        
         #visualize hooker
         vis_sp: bool =False,
         output_dir:str = None,
@@ -1143,6 +1148,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         in_index=0,
         use_gt_cls = use_gt_cls,
 **kwargs)
+        self.reweight_sp_update = reweight_sp_update
+        self.reweight_pixel_sim = reweight_pixel_sim
+        self.reweight_pixel_update = reweight_pixel_update
         self.extralayer_nols = extralayer_nols
         self.resize_version = resize_version
         self.final_iter = final_iter
@@ -1392,7 +1400,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_middle_pixel_features=use_middle_pixel_features,
                     merge_layer = merge_layer,
                     merge_pos = merge_pos,
-                    reweight = reweight,
+                    reweight = reweight_pixel_update,
                 )
             )
             cur_depth += depth
@@ -1468,6 +1476,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
         self.use_gt_loss = use_gt_loss 
         self.expand_gt = expand_gt
+        
         if self.use_gt_loss:
             self.gt_norm = norm_layer(self.embed_dim)
             self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1570,6 +1579,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     "ls_init_value": sp_ls_init_value,
                     "norm_layer": self.norm_layer_2d,
                 },
+                reweight_sp = self.reweight_sp_update,
+                reweight_pixel = self.reweight_pixel_sim,              
+                               
                 **self.sp_kwargs,
             )
         elif method == "patch":

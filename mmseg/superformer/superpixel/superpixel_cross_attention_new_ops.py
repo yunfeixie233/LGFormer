@@ -19,7 +19,15 @@ from .dual_path_transformer_ops import (
 ThreeInt = Tuple[int, int, int]
 
 
+class Reweight(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
+        self.reweight = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * (0.5 + torch.sigmoid(self.reweight))
+    
 class LayerScale2d(nn.Module):
     def __init__(self, dim, init_values=1e-5, inplace=False):
         super().__init__()
@@ -53,6 +61,9 @@ class DualPathCrossAttentionLayer(BaseModule):
         pixelify: bool = True,
         always_return_similarity_pixel: bool = False,
         hard_assign: bool = True,
+        reweight_sp: bool = False,
+        reweight_pixel: bool = False,
+        
     ):
         """Initializes a DualPathTransformerSimpleLayer."""
         super().__init__()
@@ -150,7 +161,10 @@ class DualPathCrossAttentionLayer(BaseModule):
         else:
             self.sp_ls1 = nn.Identity()
             self.pixel_ls1 = nn.Identity()
-
+            
+        
+        self.reweight_sp = Reweight() if reweight_sp else nn.Identity()
+        self.reweight_pixel = Reweight() if reweight_sp else nn.Identity()
         self.hard_assign = hard_assign
     def _create_pos_embed(self, dim, shape, stride) -> torch.Tensor:
         pos_embed_shape = [int(math.ceil(val / stride)) for val in shape]
@@ -285,13 +299,13 @@ class DualPathCrossAttentionLayer(BaseModule):
             similarities_multi_head_pixel,
         ) = self._superpixel_assign_step(pixel_query, sp_key, sp_value)
         if self._pixelify:
-            pixel_return = pixel_features + self.pixel_ls1(pixel_features_delta)
+            pixel_return = pixel_features + self.reweight_pixel(self.pixel_ls1(pixel_features_delta))
         else:
             pixel_return = None
 
         return (
             pixel_return,
-            sp_features + self.sp_ls1(sp_feature_delta),
+            sp_features + self.reweight_pixel(self.sp_ls1(sp_feature_delta)),
             similarities_multi_head,
             similarities_multi_head_pixel,
         )
