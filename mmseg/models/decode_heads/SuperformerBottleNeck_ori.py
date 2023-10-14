@@ -678,6 +678,7 @@ class SuperformerStage(nn.Module):
     ) -> torch.Tensor:
         for i in range(start, end):
             x = self.blocks[i](x)
+
             if self.merge_layer and i in self.merge_pos:
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
@@ -878,7 +879,7 @@ class SuperformerStage(nn.Module):
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         
         
-        
+        s = time.time()
         if sp_features_last.dim() == 3:
             b, n, c = sp_features_last.shape
             h_w = int(math.sqrt(n))
@@ -893,10 +894,15 @@ class SuperformerStage(nn.Module):
                 w=h_w
                 
             )
-        
+        e = time.time()
+        # print(f'{e-s}_rear')
+        s = time.time()
+
         info, sp_features, pixel_features_middle = self.forward_patchify(
             x, sp_features_last
         )
+        e = time.time()
+        # print(f'{e-s}_patch')
         vis_sp_patchify = False
         if vis_sp_patchify:
             import h5py
@@ -945,12 +951,13 @@ class SuperformerStage(nn.Module):
         if vis_sp_block:
             sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
+        s = time.time()
         sp_features_seg, attn_dict_list, gt = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list, gt)
         sp_features, attn_dict_list, gt = self.forward_blocks_range(
             sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list, gt
         )
-        
-
+        e = time.time()
+        # print(f'{e-s}_block')
         if vis_sp_block:
             import h5py
             sp_vis = sp_before
@@ -992,6 +999,7 @@ class SuperformerStage(nn.Module):
                     f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
         sp_features_unflatten = None
         updated_pixel_features = None
+        s = time.time()
         if self.return_updated_pixel_features:
             sp_features_unflatten = self.forward_unflatten_sp_features(sp_features)
             sp_features_unflatten_projected = self.sp_project(sp_features_unflatten)
@@ -1011,7 +1019,8 @@ class SuperformerStage(nn.Module):
             if sp_features_unflatten is None:
                 sp_features_unflatten = self.forward_unflatten_sp_features(sp_features)
             sp_features = sp_features_unflatten
-
+        e = time.time()
+        # print(f'{e-s}_update')
         return (
             updated_pixel_features,
             sp_features,
@@ -2385,9 +2394,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         seg_stride: int = 1,
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
-        
+        import time
+        s = time.time()
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
-                
+        e = time.time()
+        # print('forward_features',e - s)
         if self.vis_sp:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
 
