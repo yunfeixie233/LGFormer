@@ -1,6 +1,21 @@
 #!/bin/bash
 unset LD_LIBRARY_PATH
 
+desired_env="yunfei_v2"
+
+
+current_env=$(conda env list | grep '*' | awk '{print $1}')
+
+if [[ "$current_env" != "$desired_env" ]]; then
+
+    eval "$(conda shell.bash hook)"
+    conda activate $desired_env
+    current_env=$(conda env list | grep '*' | awk '{print $1}')
+    echo switch to env $current_env
+fi
+
+
+
 PID=1951438
 
 while ps -p $PID > /dev/null; do
@@ -12,8 +27,7 @@ sleep 1
 echo "Process $PID has terminated"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_avg4_loss_6h_expandgt_multi.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_avg4_loss_6h_expandgt_nob.py"
+    "/data1/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_avg2_loss_6h_expandgt_multi.py"
 )
 
 while true; do  
