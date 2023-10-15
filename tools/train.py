@@ -9,7 +9,9 @@ from mmengine.logging import print_log
 from mmengine.runner import Runner
 
 from mmseg.registry import RUNNERS
-
+import torch
+import numpy as np
+import random
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a segmentor')
@@ -99,6 +101,15 @@ def main():
     # start training
     runner.train()
 
-
+def seed_everything(TORCH_SEED=3407):
+	random.seed(TORCH_SEED)
+	os.environ['PYTHONHASHSEED'] = str(TORCH_SEED)
+	np.random.seed(TORCH_SEED)
+	torch.manual_seed(TORCH_SEED)
+	torch.cuda.manual_seed_all(TORCH_SEED)
+	torch.backends.cudnn.deterministic = True
+	torch.backends.cudnn.benchmark = False
+ 
 if __name__ == '__main__':
+    seed_everything(1539460459)
     main()

@@ -1171,6 +1171,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         output_dir:str = None,
         vis_gt: bool = False,
         vis_gt_eff: bool = False,
+        vis_spgt: bool = False,
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
@@ -1524,6 +1525,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             delattr(self, 'sp_init')
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
+        self.vis_spgt = vis_spgt
         self.log_reweight = log_reweight
         if self.log_reweight:
             self.writer = SummaryWriter()
@@ -2161,7 +2163,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
             
             if self.vis_sp:
-                self.visualize_superpixel(img = img, info = info, resize_similarities= True)     
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                 
             if self.vis_spgt:
                 self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
                 
