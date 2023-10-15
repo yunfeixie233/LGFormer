@@ -30,6 +30,10 @@ LayerScale2d = st.LayerScale2d
 SKIP_CONFIRM = False
 from ..utils import PatchEmbed, resize
 from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
+from torch.utils.tensorboard import SummaryWriter
+import torch.distributed as dist
+writer = SummaryWriter()
+
 def to_h5(**kwargs):
     """
     Save input tensors or numpy arrays to an H5 file.
@@ -628,7 +632,7 @@ class SuperformerStage(nn.Module):
         #         key = original_key + str(count)
         #     if count <10:
         #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
-        
+
         
         res = x + self.reweight(self.pixel_delta_ls(pixel_delta))
         
@@ -1137,6 +1141,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         output_dir:str = None,
         vis_gt: bool = False,
         vis_gt_eff: bool = False,
+        #log reweight
+        log_reweight: bool = False,
+        log_interval: int = 50,
         
         **kwargs
 
@@ -1487,6 +1494,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             delattr(self, 'sp_init')
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
+        self.log_reweight = log_reweight
+        if self.log_reweight:
+            self.writer = SummaryWriter()
+            self.forward_counter = 0
+            self.log_interval = log_interval
+        
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
@@ -2386,6 +2399,15 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         
+        #visualize reweight
+        if self.log_reweight:
+            self.forward_counter += 1
+            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
+                for i, stage in enumerate(self.stages):
+                    param =  (0.5 + torch.sigmoid(stage.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                    self.writer.add_scalar(f'{i}_stage_reweight', param, self.forward_counter)
+            
+                    
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
                 
         if self.vis_sp:
