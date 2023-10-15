@@ -19,10 +19,10 @@ configs=(
 while true; do  
     for config in "${configs[@]}"; do
 
-        bash /data2/yunfei/SpformerV1/tools/dist_train.sh \
-        "$config" 8 --cfg-options load_from=/data2/yunfei/best_ade.pth \
+        bash tools/dist_train.sh \
+        "$config" 8 --cfg-options load_from=best_ade.pth \
         randomness.diff_rank_seed=False \
-        randomness.seed=3407 &
+        randomness.seed=1539460459 &
 
         PID=$!
 
@@ -38,10 +38,10 @@ while true; do
     done
 
     last_config=${configs[-1]}
-    bash /data2/yunfei/SpformerV1/tools/dist_train.sh \
-    "$config" 8 --cfg-options load_from=/data2/yunfei/best_ade.pth \
+    bash tools/dist_train.sh \
+    "$config" 8 --cfg-options load_from=best_ade.pth \
     randomness.diff_rank_seed=False \
-    randomness.seed=3407 &
+    randomness.seed=1539460459 &
 
     PID=$!
 
