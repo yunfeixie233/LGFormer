@@ -226,12 +226,14 @@ class LightAttModule(nn.Module):
                  q_project=True,
                  k_project=True,
                  v_project=True,
-                 proj_after_att=True):
+                 proj_after_att=True,
+                 keep_multihead = True,):
         super().__init__()
         if out_dim is None:
             out_dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
+        self.keep_multihead = keep_multihead
         self.scale = qk_scale or head_dim ** -0.5
 
         self.q_proj = nn.Linear(dim, dim, bias=qkv_bias) if q_project else None
@@ -241,7 +243,10 @@ class LightAttModule(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
 
         if proj_after_att:
-            self.proj = nn.Sequential(nn.Linear(dim, out_dim), nn.Dropout(proj_drop))
+            if self.keep_multihead:
+                self.proj = nn.Sequential(nn.Linear(head_dim, out_dim // self.num_heads), nn.Dropout(proj_drop))
+            else:
+                self.proj = nn.Sequential(nn.Linear(dim, out_dim), nn.Dropout(proj_drop))
         else:
             self.proj = None
 
@@ -279,9 +284,14 @@ class LightAttModule(nn.Module):
 
         # [B, nh, N, C//nh] -> [B, N, C]
         # out = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        out = rearrange(attn @ v, 'b h n c -> b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
+        if self.keep_multihead:
+            out = rearrange(attn @ v, 'b h n c -> b (n h) c', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
+        else:
+            out = rearrange(attn @ v, 'b h n c -> b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
         if self.proj:
             out = self.proj(out)
+        if self.keep_multihead:
+            out = rearrange(out, 'b (n h) c ->  b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
         return out,attn_dict_list
 
 
@@ -295,20 +305,24 @@ class FullAttnModule(nn.Module):
                  attn_drop=0.,
                  proj_drop=0.,
                  q_project=True,
-                 association_embedding = False):
+                 association_embedding = False,
+                 keep_multihead = True):
         super().__init__()
         if out_dim is None:
             out_dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim**-0.5
-
+        self.keep_multihead = keep_multihead
         self.q_proj = nn.Linear(dim, dim, bias=qkv_bias) if q_project else None
         self.k_proj = nn.Linear(dim, dim, bias=qkv_bias)
         self.v_proj = nn.Linear(dim, dim, bias=qkv_bias)
 
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, out_dim)
+        if self.keep_multihead:
+            self.proj = nn.Sequential(nn.Linear(head_dim, out_dim // self.num_heads), nn.Dropout(proj_drop))
+        else:
+            self.proj = nn.Sequential(nn.Linear(dim, out_dim), nn.Dropout(proj_drop))
         self.proj_drop = nn.Dropout(proj_drop)
         self.association_embedding = association_embedding
         
@@ -341,8 +355,13 @@ class FullAttnModule(nn.Module):
             attn_dict_list.append(attn.transpose(-2, -1))
         # [B, nh, N, C//nh] -> [B, N, C]
         # out = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        out = rearrange(attn @ v, 'b h n c -> b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
+        if self.keep_multihead:
+            out = rearrange(attn @ v, 'b h n c -> b (n h) c', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
+        else:
+            out = rearrange(attn @ v, 'b h n c -> b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)        
         out = self.proj(out)
+        if self.keep_multihead:
+            out = rearrange(out, 'b (n h) c ->  b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)        
         out = self.proj_drop(out)
         return out,attn_dict_list
 
@@ -604,7 +623,8 @@ class GPBlock(nn.Module):
                  vis_gt_eff: bool = False,
                  output_dir: str = None,
                  layer_num : int = None,
-                 same_group_method: bool = False,                                  
+                 same_group_method: bool = False,
+                 keep_multihead: bool = False,                                  
                  **kwargs):
 
         super().__init__()
@@ -840,6 +860,8 @@ class GPBlock(nn.Module):
             if len(blocks) > 0 :
                 gt = gt + pos_embed
                 gt = blocks(gt)
+            
+            
             proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
         if self.vis_gt_eff:
             self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt)

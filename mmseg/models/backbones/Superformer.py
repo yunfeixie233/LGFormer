@@ -168,7 +168,7 @@ def prepare_similarities(
             scale_factor=scale_factor,
             resize_version = resize_version,
         )
-        similarities = superpixel_ops.maskout_boundary(similarities)
+        # similarities = superpixel_ops.maskout_boundary(similarities)
     return similarities
 
 

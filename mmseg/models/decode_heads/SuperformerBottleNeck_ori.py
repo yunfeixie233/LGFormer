@@ -30,6 +30,10 @@ LayerScale2d = st.LayerScale2d
 SKIP_CONFIRM = False
 from ..utils import PatchEmbed, resize
 from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
+from torch.utils.tensorboard import SummaryWriter
+import torch.distributed as dist
+writer = SummaryWriter()
+
 def to_h5(**kwargs):
     """
     Save input tensors or numpy arrays to an H5 file.
@@ -79,6 +83,36 @@ class ReweightSigmoid(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.sigmoid(self.weight)
 
+
+def to_h5(**kwargs):
+    """
+    Save input tensors or numpy arrays to an H5 file.
+    
+    Usage:
+    >>> a = torch.tensor([1,2,3])
+    >>> b = np.array([4,5,6])
+    >>> save_tensors_to_h5(a=a, b=b, filename="output.h5")
+    
+    Arguments:
+    **kwargs : Tensors or numpy arrays to save.
+    filename : Name of the H5 file to save to.
+    
+    Returns:
+    None
+    """
+    filename = kwargs.pop('filename', 'default_output.h5')
+    if os.path.exists(filename):
+        os.remove(filename)
+    with h5py.File(filename, 'a') as f:
+        for key, value in kwargs.items():
+            # If it's a tensor on GPU, detach and move it to CPU.
+            if torch.is_tensor(value) and value.device.type == 'cuda':
+                value = value.detach().cpu().numpy()
+            # If it's a tensor (not on GPU), just detach and convert.
+            elif torch.is_tensor(value):
+                value = value.detach().numpy()
+            # Else, it's assumed to be a numpy array.
+            f.create_dataset(key, data=value)
 
 def positionalencoding1d(d_model, length,device):
     """
@@ -628,7 +662,7 @@ class SuperformerStage(nn.Module):
         #         key = original_key + str(count)
         #     if count <10:
         #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
-        
+
         
         res = x + self.reweight(self.pixel_delta_ls(pixel_delta))
         
@@ -1140,12 +1174,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         reweight_pixel_update:bool = False,
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
-        
+        keep_multihead: bool = False,
         #visualize hooker
         vis_sp: bool =False,
         output_dir:str = None,
         vis_gt: bool = False,
         vis_gt_eff: bool = False,
+        vis_spgt: bool = False,
+        #log reweight
+        log_reweight: bool = False,
+        log_interval: int = 50,
         
         **kwargs
 
@@ -1337,12 +1375,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.output_dir = output_dir
         if self.use_group_token:
             self.arch_settings = arch_settings
+            self.keep_multihead = keep_multihead            
             if self.use_group_token == 'post':
                 self.merge_layer = self._make_merge_layer(
                     self.arch_settings
                 )
             self.vis_gt_eff = vis_gt_eff
-   
 
         num_stages = len(depths)
         stages = []
@@ -1485,7 +1523,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
         self.use_gt_loss = use_gt_loss 
         self.expand_gt = expand_gt
-        
         if self.use_gt_loss:
             self.gt_norm = norm_layer(self.embed_dim)
             self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1496,6 +1533,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             delattr(self, 'sp_init')
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
+        self.vis_spgt = vis_spgt
+        self.log_reweight = log_reweight
+        if self.log_reweight:
+            self.writer = SummaryWriter()
+            self.forward_counter = 0
+            self.log_interval = log_interval
+        
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
@@ -1652,7 +1696,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     same_group_method = _arch_settings["same_group_method"] if "same_group_method" in _arch_settings.keys() else False,
                     vis_gt_eff = self.vis_gt_eff,
                     output_dir = self.output_dir,
-                    layer_num = depth)
+                    layer_num = depth,
+                    keep_multihead = self.keep_multihead,)
             group_layer = GPBlock(**_layer_cfg)
             merge_layer.append(group_layer)
         return merge_layer
@@ -2127,8 +2172,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
             
             if self.vis_sp:
-                self.visualize_superpixel(img = img, info = info, resize_similarities= True)
-            self.vis_spgt = False      
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                 
             if self.vis_spgt:
                 self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
                 
@@ -2195,9 +2240,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 if self.expand_gt:
                     # b head n g 
                     attn_map = attn_dict_list[-1]
-                    attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
-                    attn_map = attn_map.squeeze(1)
-                    gt = attn_map.transpose(-1,-2) @ gt
+                    if self.keep_multihead:
+                        num_heads = self.arch_settings['num_ungroup_heads']
+                        _, n, hc = gt.shape             
+                        gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )        
+                        gt = attn_map.transpose(-1,-2) @ gt
+                        gt = rearrange(gt, ' b h n c ->  b n (h c)')        
+                    else:
+                        attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
+                        attn_map = attn_map.squeeze(1)
+                        gt = attn_map.transpose(-1,-2) @ gt
                     h_g = w_g = int(math.sqrt(gt.shape[1]))
                     gt = rearrange(gt,'b (h w) c -> b c h w',
                                         h = h_g,
@@ -2394,11 +2446,18 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         seg_stride: int = 1,
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
-        import time
-        s = time.time()
+        
+        #visualize reweight
+        if self.log_reweight:
+            self.forward_counter += 1
+            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
+                for i, stage in enumerate(self.stages):
+                    param =  (0.5 + torch.sigmoid(stage.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                    self.writer.add_scalar(f'{i}_stage_reweight', param, self.forward_counter)
+            
+                    
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
-        e = time.time()
-        # print('forward_features',e - s)
+                
         if self.vis_sp:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
 
@@ -2592,7 +2651,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             'b h w sh sw-> b (h w) (sh sw)'
                         )
                         
-                        attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
+                        attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)
                         for layer_idx, attn_map in enumerate(attn_maps):
                             attn_map = rearrange(attn_map, 'b sh sw g -> b (sh sw) g')
                             group_result = association_glob @ attn_map
@@ -2601,7 +2660,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                 'b (h w) g-> b g h w',
                                 h = h, w = w
                             )
-                            group_result = F.interpolate(group_result,size = (640,640),mode="bilinear")
+                            group_result = F.interpolate(group_result,scale_factor = 4,mode="bilinear")
                             group_result = rearrange(
                                 group_result,
                                 'b g h w -> b h w g',
@@ -2616,22 +2675,29 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
                 association_glob = superpixel_ops.compute_soft_association(similarities)
                 _, h, w, _, _ = association_glob.shape
+                association_glob_ = association_glob.clone()
                 association_glob = rearrange(
                     association_glob,
-                    'b h w sh sw-> b (h w) (sh sw)'
+                    'b h w sh sw-> b h w (sh sw)'
                 )
                 attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
+
+
                 for i, attn_map in enumerate(attn_maps):
                     layer_idx = i //6
                     head = i % 6
-                    
+                    threshold = 1e-2                    
+                    attn_map[torch.abs(attn_map) < threshold] = 0                    
+                    attn_map_ = attn_map.clone()
                     attn_map = rearrange(attn_map, 'b sh sw g -> b (sh sw) g')
                     group_result = association_glob @ attn_map
+
+
                     group_result = rearrange(
                         group_result,
-                        'b (h w) g-> b g h w',
-                        h = h, w = w
+                        'b h w g-> b g h w',
                     )
+
                     group_result = F.interpolate(group_result,scale_factor = 4,mode="bilinear")
                     group_result = rearrange(
                         group_result,
@@ -2640,6 +2706,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     group_result = group_result.argmax(dim=-1).cpu().numpy()
 
                     vis = colormap[group_result % colormap.size(0)]
+
+
                     res[f"{key}_head{i}_{layer_idx}"] = vis
         else:
             for key, similarities in info.items():
