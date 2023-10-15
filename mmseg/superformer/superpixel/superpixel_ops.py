@@ -1,10 +1,12 @@
 """SuperPixel Transformer ops."""
 
+from fileinput import filename
 import functools
 from typing import Optional
 import warnings
 import itertools
 import einops
+from matplotlib.offsetbox import HPacker
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -14,7 +16,7 @@ import mmcv
 rearrange = einops.rearrange
 
 SOFTMAX_IN_FLOAT32 = False
-
+from ...models.decode_heads.SuperformerBottleNeck_ori import to_h5
 def hard_softmax(logits, dim):
     y_soft = logits.softmax(dim)
     # Straight through.
@@ -445,6 +447,93 @@ def compute_hard_association(
             raise RuntimeError()
     return res
 
+# def compute_soft_association(
+#     association: torch.Tensor, validate: bool = True, eps: float = 1e-5
+# ) -> torch.Tensor:
+#     """Computes hard association from soft association."""
+#     b, c, sh, ph, sw, pw = association.shape
+#     if c != 9:
+#         raise ValueError(f"Unexpected channel: {c}")
+#     if torch.isnan(association).any().item():
+#         raise ValueError("NaN detected")
+
+#     # If all superpixels have the same weights, choose the middle one.
+#     association = association.clone()
+#     association[:, 4] += eps
+
+#     offset = torch.tensor([-1, 0, 1], device=association.device)
+#     offset = (offset[None, :] + (offset * sw)[:, None]).flatten()
+#     grid_id = compute_grid_segments_id(sh, sw, ph, pw, device=association.device)[None, :, :].squeeze(0).unsqueeze(-1).expand(-1, -1, 9).to(torch.long)
+    
+#     # 提前计算加和结果
+#     sum_result = (grid_id + offset).to(torch.long)
+#     sum_result_ = sum_result.clone()
+#     # 创建mask，其中元素值小于0或大于grid_id.max()
+#     mask_lower = sum_result < 0
+#     mask_upper = sum_result > grid_id.max()
+
+#     # 使用mask来恢复元素到相加之前的值
+#     sum_result[mask_lower] = grid_id[mask_lower]
+#     sum_result[mask_upper] = grid_id[mask_upper]
+#     to_h5(sum_result = sum_result,
+#           sp_id = sum_result_,
+#           diff = sum_result_ - sum_result,
+#           filename='/data2/yunfei/id.h5')
+#     sp_id = sum_result
+
+         
+#     rows = sp_id // sw
+#     cols = sp_id % sh
+
+#     association_glob = torch.zeros(size=(b, sh * ph, sw * pw, sh, sw), dtype=association.dtype, device=association.device)
+#     # association[torch.isinf(association)] = 0.0
+
+#     association_reshaped = association.reshape([b, sh * ph, sw * pw, c])
+#     rows_expanded = rows[None, ...]  # shape becomes (1, sh * ph, sw * pw, sh)
+#     cols_expanded = cols[None, ...]  # shape becomes (1, sh * ph, sw * pw, sw)
+
+#     index_source = torch.arange(b, device=association.device)[:, None, None, None, None]
+#     association_glob[index_source, torch.arange(sh * ph)[None, :, None, None, None], torch.arange(sw * pw)[None, None, :, None, None], rows_expanded, cols_expanded] = association_reshaped           
+
+
+#     return association_glob
+
+# def compute_soft_association(
+#     association: torch.Tensor, validate: bool = True, eps: float = 1e-5
+# ) -> torch.Tensor:
+#     """Computes hard association from soft association."""
+#     b, c, sh, ph, sw, pw = association.shape
+#     if c != 9:
+#         raise ValueError(f"Unexpected channel: {c}")
+#     if torch.isnan(association).any().item():
+#         raise ValueError("NaN detected")
+
+#     association = association.clone()
+#     association[:, 4] += eps
+
+#     offset = torch.tensor([-1, 0, 1], device=association.device)
+#     offset = (offset[None, :] + (offset * sw)[:, None]).flatten()
+#     grid_id = compute_grid_segments_id(sh, sw, ph, pw, device=association.device)[None, :, :].squeeze(0).unsqueeze(-1).expand(-1, -1, 9).to(torch.long)
+
+#     sum_result = (grid_id + offset).to(torch.long)
+#     mask_lower = sum_result < 0
+#     mask_upper = sum_result > grid_id.max()
+#     sum_result[mask_lower] = grid_id[mask_lower]
+#     sum_result[mask_upper] = grid_id[mask_upper]
+#     sp_id = sum_result
+
+#     rows = sp_id // sw
+#     cols = sp_id % sh
+
+#     association_glob = torch.zeros(size=(b, sh * ph, sw * pw, sh, sw), dtype=association.dtype, device=association.device)
+
+#     # No need to reshape the association tensor
+#     for i in range(sh * ph):
+#         for j in range(sw * pw):
+#             for k in range(c):
+#                 association_glob[b -1, i, j, rows[i, j, k], cols[i, j, k]] = association[b -1 , k, i//ph, i%ph, j//pw, j%pw]
+
+#     return association_glob
 def compute_soft_association(
     association: torch.Tensor, validate: bool = True, eps: float = 1e-5
 ) -> torch.Tensor:
@@ -455,39 +544,43 @@ def compute_soft_association(
     if torch.isnan(association).any().item():
         raise ValueError("NaN detected")
 
-    # If all superpixels have the same weights, choose the middle one.
     association = association.clone()
     association[:, 4] += eps
 
     offset = torch.tensor([-1, 0, 1], device=association.device)
     offset = (offset[None, :] + (offset * sw)[:, None]).flatten()
-    sp_offsets = offset[association.argmax(dim=1)]
-    grid_id = compute_grid_segments_id(sh, sw, ph, pw, device=association.device)[None, :, :].squeeze(0).unsqueeze(-1).expand(-1, -1, 9)
-    # grid_id.shape: 160, 160, 9
-    
-    sp_id = grid_id + offset
+    grid_id = compute_grid_segments_id(sh, sw, ph, pw, device=association.device)[None, :, :].squeeze(0).unsqueeze(-1).expand(-1, -1, 9).to(torch.long)
+
+    sum_result = (grid_id + offset).to(torch.long)
+    mask_lower = sum_result < 0
+    mask_upper = sum_result > grid_id.max()
+    sum_result[mask_lower] = grid_id[mask_lower]
+    sum_result[mask_upper] = grid_id[mask_upper]
+    sp_id = sum_result
+
     rows = sp_id // sw
     cols = sp_id % sh
-    #rows.shape = cols.shape = 160,160,9
-    # rows = torch.where(rows < 0, torch.tensor(0,device=rows.device), rows)
-    # rows = torch.where(rows > 39, torch.tensor(39,device=rows.device), rows)
-    rows = torch.clamp(rows, 0, sw -1)  # Clamping rows instead of using torch.where
-    cols = torch.clamp(cols, 0, sh -1)  # Clamping cols instead of using torch.where
 
     association_glob = torch.zeros(size=(b, sh * ph, sw * pw, sh, sw), dtype=association.dtype, device=association.device)
     association[torch.isinf(association)] = 0.0
+    association = rearrange(
+        association,
+        'b c sh ph sw pw -> b (sh ph) (sw pw) c'
+    )
 
-    association_reshaped = association.reshape([b, sh * ph, sw * pw, c])
-    rows_expanded = rows[None, ...]  # shape becomes (1, sh * ph, sw * pw, sh)
-    cols_expanded = cols[None, ...]  # shape becomes (1, sh * ph, sw * pw, sw)
+    # to_h5(association = association,filename='/data2/yunfei/ass.h5')
+    # Create expanded indices
+    rows_expanded = rows.unsqueeze(0).expand(b, sh*ph, sw*pw, c).reshape(b, sh*ph, sw*pw, c)
+    cols_expanded = cols.unsqueeze(0).expand(b, sh*ph, sw*pw, c).reshape(b, sh*ph, sw*pw, c)
+    # Create target indices
+    i_indices = torch.arange(sh * ph, device=association.device).unsqueeze(1).expand(sh*ph, sw*pw).unsqueeze(0).expand(b, sh*ph, sw*pw)
+    j_indices = torch.arange(sw * pw, device=association.device).unsqueeze(0).expand(sh*ph, sw*pw).unsqueeze(0).expand(b, sh*ph, sw*pw)    # Directly set values using efficient indexing
+    for k in range(c):
+            association_glob[:, i_indices, j_indices, rows_expanded[..., k], cols_expanded[..., k]] = association[..., k]
+    association_glob[...,0] = 0
+    association_glob[...,31] = 0
 
-    index_source = torch.arange(b, device=association.device)[:, None, None, None]
-    association_glob[index_source, torch.arange(sh * ph)[None, :, None, None], torch.arange(sw * pw)[None, None, :, None], rows_expanded, cols_expanded] = association_reshaped   
-    
-
-
-    return association_glob
-
+    return association_glob 
 
 def resize_similarities_v1(
     similarities: torch.Tensor,
