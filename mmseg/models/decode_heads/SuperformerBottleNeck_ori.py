@@ -33,7 +33,7 @@ from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
 from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 writer = SummaryWriter()
-
+import time
 def to_h5(**kwargs):
     """
     Save input tensors or numpy arrays to an H5 file.
@@ -913,7 +913,6 @@ class SuperformerStage(nn.Module):
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         
         
-        s = time.time()
         if sp_features_last.dim() == 3:
             b, n, c = sp_features_last.shape
             h_w = int(math.sqrt(n))
@@ -2450,10 +2449,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #visualize reweight
         if self.log_reweight:
             self.forward_counter += 1
-            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
+            # if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
+            if self.forward_counter % self.log_interval == 0:
                 for i, stage in enumerate(self.stages):
                     param =  (0.5 + torch.sigmoid(stage.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
-                    self.writer.add_scalar(f'{i}_stage_reweight', param, self.forward_counter)
+                    self.writer.add_scalar(f'{i}_stage_reweight', param, self.forward_counter)                    
+                    for j, block in enumerate(stage.patch_embed.blocks):
+                        param = (0.5 + torch.sigmoid(block.reweight_pixel.reweight)).detach().cpu().numpy().astype(np.float32)
+                        self.writer.add_scalar(f'{i}_stage_{j}_block_reweight', param, self.forward_counter)                    
             
                     
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)

@@ -164,7 +164,7 @@ class DualPathCrossAttentionLayer(BaseModule):
             
         
         self.reweight_sp = Reweight() if reweight_sp else nn.Identity()
-        self.reweight_pixel = Reweight() if reweight_sp else nn.Identity()
+        self.reweight_pixel = Reweight() if reweight_pixel else nn.Identity()
         self.hard_assign = hard_assign
     def _create_pos_embed(self, dim, shape, stride) -> torch.Tensor:
         pos_embed_shape = [int(math.ceil(val / stride)) for val in shape]
