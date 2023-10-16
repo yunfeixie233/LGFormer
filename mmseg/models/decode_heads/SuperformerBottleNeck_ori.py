@@ -2449,14 +2449,19 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #visualize reweight
         if self.log_reweight:
             self.forward_counter += 1
-            # if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
-            if self.forward_counter % self.log_interval == 0:
+            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0 and self.training:
+            # if self.forward_counter % self.log_interval == 0:
                 for i, stage in enumerate(self.stages):
-                    param =  (0.5 + torch.sigmoid(stage.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
-                    self.writer.add_scalar(f'{i}_stage_reweight', param, self.forward_counter)                    
+                    if hasattr(stage.reweight, 'reweight'):     
+                        param =  (0.5 + torch.sigmoid(stage.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                        self.writer.add_scalar(f'{i}_stage_reweight', param, self.forward_counter)                    
                     for j, block in enumerate(stage.patch_embed.blocks):
-                        param = (0.5 + torch.sigmoid(block.reweight_pixel.reweight)).detach().cpu().numpy().astype(np.float32)
-                        self.writer.add_scalar(f'{i}_stage_{j}_block_reweight', param, self.forward_counter)                    
+                        if hasattr(block.reweight_pixel, 'reweight'):  
+                            param = (0.5 + torch.sigmoid(block.reweight_pixel.reweight)).detach().cpu().numpy().astype(np.float32)
+                            self.writer.add_scalar(f'{i}_stage_{j}_block_reweight_pixel', param, self.forward_counter)
+                        if hasattr(block.reweight_sp, 'reweight'): 
+                            param = (0.5 + torch.sigmoid(block.reweight_sp.reweight)).detach().cpu().numpy().astype(np.float32)
+                            self.writer.add_scalar(f'{i}_stage_{j}_block_reweight_sp', param, self.forward_counter)
             
                     
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)

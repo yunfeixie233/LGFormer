@@ -305,7 +305,7 @@ class DualPathCrossAttentionLayer(BaseModule):
 
         return (
             pixel_return,
-            sp_features + self.reweight_pixel(self.sp_ls1(sp_feature_delta)),
+            sp_features + self.reweight_sp(self.sp_ls1(sp_feature_delta)),
             similarities_multi_head,
             similarities_multi_head_pixel,
         )
