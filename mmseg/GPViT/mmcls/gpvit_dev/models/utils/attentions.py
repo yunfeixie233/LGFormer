@@ -30,6 +30,7 @@ import os.path as osp
 from PIL import Image
 import os
 import h5py
+from timm.models import layers as timm_layers
 
 class SE(nn.Module):
     """
@@ -637,7 +638,6 @@ class GPBlock(nn.Module):
         if  self.group_token_init_method =='learnable':
             self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
         elif self.group_token_init_method == 'conv_avgpool':
-            from timm.models import layers as timm_layers
 
             self.group_token_init = \
             nn.Sequential(  
@@ -647,7 +647,6 @@ class GPBlock(nn.Module):
                 nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                    
             )
         elif self.group_token_init_method == 'avgpool_conv':
-            from timm.models import layers as timm_layers
 
             self.group_token_init = \
             nn.Sequential( 
@@ -657,7 +656,6 @@ class GPBlock(nn.Module):
                 nn.GELU(),            
             )            
         elif self.group_token_init_method == 'avgpool':
-            from timm.models import layers as timm_layers
 
             self.group_token_init = \
             nn.Sequential(         
@@ -666,8 +664,14 @@ class GPBlock(nn.Module):
                 nn.GELU(),
 
             )
+        elif self.group_token_init_method == 'depthwise':
+                self.group_token_init = \
+                nn.Sequential(                         
+                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same",groups = embed_dims),
+                timm_layers.LayerNorm2d(embed_dims),
+                nn.GELU(),
+                )
         elif self.group_token_init_method == 'conv':
-            from timm.models import layers as timm_layers
             if isinstance(init_kernel_size, tuple) and isinstance(init_stride, tuple):
                 layers = []
                 for k_size, stride in zip(init_kernel_size, init_stride):
@@ -687,7 +691,6 @@ class GPBlock(nn.Module):
             else:
                 raise(NotImplementedError)
         elif self.group_token_init_method == 'conv_relu':
-            from timm.models import layers as timm_layers
             if isinstance(init_kernel_size, int) and isinstance(init_stride, int):
                 self.group_token_init = \
                 nn.Sequential(                         
@@ -823,7 +826,7 @@ class GPBlock(nn.Module):
         if self.vis_gt_eff:
             sp_before = x.clone()
             
-        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu','avgpool_conv']:
+        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu','avgpool_conv','depthwise']:
             x = rearrange(x,
                           'b (h w) c -> b c h w',
                           h=sh, w=sw)
