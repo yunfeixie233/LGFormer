@@ -16,18 +16,18 @@ fi
 
 
 
-PID=1951438
+PID=595532
 
 while ps -p $PID > /dev/null; do
     echo "Process $PID is still running"
     sleep 10
 done
 
-sleep 1
+sleep 20
 echo "Process $PID has terminated"
 
 configs=(
-    "/data1/yunfei/SpformerV1/configs/superformer/ade/nogt/sp_extra_small_pre_reweight_spfeat.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/nogt/sp_extra_small_pre_reweight_psim_log.py"
 )
 
 while true; do  
