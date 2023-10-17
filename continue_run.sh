@@ -1,18 +1,18 @@
 #!/bin/bash
 unset LD_LIBRARY_PATH
 
-desired_env="yunfei_v2"
+# desired_env="yunfei_v2"
 
 
-current_env=$(conda env list | grep '*' | awk '{print $1}')
+# current_env=$(conda env list | grep '*' | awk '{print $1}')
 
-if [[ "$current_env" != "$desired_env" ]]; then
+# if [[ "$current_env" != "$desired_env" ]]; then
 
-    eval "$(conda shell.bash hook)"
-    conda activate $desired_env
-    current_env=$(conda env list | grep '*' | awk '{print $1}')
-    echo switch to env $current_env
-fi
+#     eval "$(conda shell.bash hook)"
+#     conda activate $desired_env
+#     current_env=$(conda env list | grep '*' | awk '{print $1}')
+#     echo switch to env $current_env
+# fi
 
 
 
@@ -23,11 +23,11 @@ while ps -p $PID > /dev/null; do
     sleep 10
 done
 
-sleep 20
+sleep 1
 echo "Process $PID has terminated"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/nogt/pixel_extra_small_pre_reweight_pfeat.py"
+    "/root/autodl-tmp/SpformerV1/configs/superformer/ade/nogt/sp_regproxy_small_pre.py"
 )
 
 while true; do  

@@ -1504,11 +1504,23 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             elif self.classification_feature =='both':
                 self.seg_norm = norm_layer(stem_channels_list[-1] + self.embed_dim)
                 self.seg_head = nn.Linear(stem_channels_list[-1] + self.embed_dim, self.seg_num_classes)
-            elif self.classification_feature in 'both_dualhead' or 'both_extralayer' :     
+            elif self.classification_feature in ['both_dualhead','both_extralayer'] :     
                 self.seg_norm_pixel = norm_layer(stem_channels_list[-1])
                 self.seg_head_pixel = nn.Linear(stem_channels_list[-1], self.seg_num_classes)
                 self.seg_norm = norm_layer(self.embed_dim)
                 self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+            elif self.classification_feature == 'regproxy':
+                from mmcv.cnn import ConvModule, DepthwiseSeparableConvModule
+                self.region_res= (4, 4)                
+                self.affinity_head = nn.Sequential(         
+                DepthwiseSeparableConvModule(
+                    self.embed_dim, self.embed_dim, kernel_size=3, padding=1, act_cfg=dict(type='GELU'), norm_cfg=dict(type='LN', eps=1e-6),),
+                ConvModule(
+                    self.embed_dim, 9 * self.region_res[0] * self.region_res[1], kernel_size=1, act_cfg=None)
+            )
+                self.seg_norm = norm_layer(self.embed_dim)
+                self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+                
             else:
                 raise(NotImplementedError)
             
@@ -1813,7 +1825,26 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             x = x[:, 0]
         x = self.fc_norm(x)
         return x if pre_logits else self.head(x)
+    def forward_affinity(self, x):
+        self._device = x.device
+        B, _, H, W = x.shape
 
+
+        # get affinity
+        x = x.contiguous()
+        affinity = self.affinity_head(x)
+        affinity = affinity.reshape(B, 9, *self.region_res, H, W)  # (B, 9, h, w, H, W)
+
+
+        # handle borders
+        affinity[:, :3, :, :, 0, :] = float('-inf')  # top
+        affinity[:, -3:, :, :, -1, :] = float('-inf')  # bottom
+        affinity[:, ::3, :, :, :, 0] = float('-inf')  # left
+        affinity[:, 2::3, :, :, :, -1] = float('-inf')  # right
+
+
+        affinity = affinity.softmax(dim=1)
+        return affinity
     def forward_segmentation(
         self, x: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
         img = None,attn_dict_list = None, gt = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -2446,7 +2477,38 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                      h = sp_logits.shape[2],w = sp_logits.shape[3])
             pixel_logits = sp_logits + pixel_logits
             return sp_logits, pixel_logits
+        elif self.classification_feature == 'regproxy':
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
 
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape
+            else:
+                raise ValueError()
+            x =  rearrange(x,
+                          'B (H W) C -> B C H W',
+                          H = sh, W= sw)
+            affinity = self.forward_affinity(x)
+            B, C, H, W = x.shape
+            x = rearrange(x,
+                          'B C H W -> B (H W) C')
+            sp_logits = self.seg_head(self.seg_norm(x))
+            sp_logits = rearrange(sp_logits,
+                                  'B (H W) C -> B C H W',
+                                   H = sh, W= sw)
+
+            sp_logits = F.unfold(sp_logits, kernel_size=3, padding=1).reshape(B, -1, 9, H, W)
+            sp_logits = einops.rearrange(sp_logits, 'B C n H W -> B H W n C')  # (B, H, W, 9, C)
+
+
+            affinity = einops.rearrange(affinity, 'B n h w H W -> B H W (h w) n')  # (B, H, W, h * w, 9)
+            pixel_logits = (affinity @ sp_logits).reshape(B, H, W, *self.region_res, -1)  # (B, H, W, h, w, C)
+            pixel_logits = einops.rearrange(pixel_logits, 'B H W h w C -> B C (H h) (W w)')  # (B, C, H * h, W * w)
+
+
+            return sp_logits, pixel_logits
         else:
             raise(NotImplementedError)
     def forward(
@@ -2511,7 +2573,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                                          h = h, w =w)
                         
                         return ret
-        elif self.classification_feature == "superpixel":
+        elif self.classification_feature in ["superpixel",'regproxy']:
             if generate_seg:
                     sp_logits, pixel_logits = self.forward_segmentation(
                     sp_features_seg, return_pixel_logits, stride=seg_stride
