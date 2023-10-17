@@ -1590,7 +1590,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         assert self.img_size[0] % pixel_stride == 0
         pixel_shape = [self.img_size[i] // pixel_stride for i in range(2)]
         sp_shape = [val // sp_size for val in pixel_shape]
-
+        self.sp_shape = sp_shape
         if (
             i != len(self.sp_features_init_methods) - 1
             and self.use_middle_pixel_features
@@ -1718,7 +1718,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     vis_gt_eff = self.vis_gt_eff,
                     output_dir = self.output_dir,
                     layer_num = depth,
-                    keep_multihead = self.keep_multihead,)
+                    keep_multihead = self.keep_multihead,
+                    group_pe_method = _arch_settings["group_pe_method"] if "group_pe_method" in _arch_settings.keys() 
+                                                                        else None,
+                    superpixel_shape = self.sp_shape)
             group_layer = GPBlock(**_layer_cfg)
             merge_layer.append(group_layer)
         return merge_layer

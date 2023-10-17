@@ -625,7 +625,9 @@ class GPBlock(nn.Module):
                  output_dir: str = None,
                  layer_num : int = None,
                  same_group_method: bool = False,
-                 keep_multihead: bool = False,                                  
+                 keep_multihead: bool = False, 
+                 group_pe_method = None,
+                 superpixel_shape = None,              
                  **kwargs):
 
         super().__init__()
@@ -634,7 +636,14 @@ class GPBlock(nn.Module):
         self.num_group_token = num_group_token
         self.with_cp = with_cp
         self.group_token_init_method = group_token_init_method
-        
+        self.group_pe_method = group_pe_method
+        if self.group_pe_method == "learnable":
+            self.sp_pos_embed = self._create_pos_embed(
+                embed_dims, superpixel_shape
+            )
+            self.gt_pos_embed = self._create_pos_embed(
+                embed_dims, num_group_token
+            )
         if  self.group_token_init_method =='learnable':
             self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
         elif self.group_token_init_method == 'conv_avgpool':
@@ -810,7 +819,17 @@ class GPBlock(nn.Module):
         if self.pos_embeds is not None:
             for pos_embed in self.pos_embeds:
                 timm_layers.trunc_normal_(pos_embed, std=0.02)
-       
+    def _create_pos_embed(self, dim, shape,) -> torch.Tensor:
+        if isinstance(shape, list) :
+            pos_embed = nn.Parameter(torch.zeros(1, shape[0]*shape[1],dim))
+                                  
+        elif isinstance(shape, int):
+            pos_embed_shape = shape
+            pos_embed = nn.Parameter(torch.zeros(1, shape,dim ))
+        else:
+            raise(TypeError)
+        return pos_embed
+    
     def forward(self, x, hw_shape, attn_dict_list = None,prev_token = None):
         """
         Args:
@@ -851,7 +870,9 @@ class GPBlock(nn.Module):
         else:
             raise(NotImplementedError)
         
-
+        if self.group_pe_method:
+            gt = gt + self.gt_pos_embed
+            x = x + self.sp_pos_embed
         for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(
             zip(self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn if self.gt_attn else [None]*len(self.group_layers))
         ):
