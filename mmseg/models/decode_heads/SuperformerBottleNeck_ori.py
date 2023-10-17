@@ -40,31 +40,28 @@ import torch
 import numpy as np
 import os.path as osp
 
-def to_h5(directory, max_keys_per_file=None, **kwargs):
+
+def to_h5(output_directory, max_keys_per_file=None, **kwargs):
     """
     Save input tensors or numpy arrays to an H5 file in a specified directory with automatic numbering.
+    Each key from kwargs gets its own sub-directory.
     
     Usage:
     >>> a = torch.tensor([1,2,3])
     >>> b = np.array([4,5,6])
-    >>> to_h5(directory='./output', a=a, b=b)
+    >>> to_h5(output_directory='./output', a=a, b=b)
     
     Arguments:
-    directory: The directory where the H5 file should be saved.
+    output_directory: The main directory where the sub-directories and H5 files should be saved.
     max_keys_per_file: Maximum number of keys (datasets) allowed in each H5 file.
     **kwargs : Tensors or numpy arrays to save.
     
     Returns:
     None
     """
-    if not os.path.exists(directory):
-        os.makedirs(directory)
     
-    # Determine the highest count in the directory.
-    existing_files = [f for f in os.listdir(directory) if f.startswith('data') and f.endswith('.h5')]
-    counts = [int(f.split('data')[1].split('.h5')[0]) for f in existing_files]
-    max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
-    output_file = osp.join(directory, f'data{max_count}.h5')
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
 
     # Helper function to handle data writing
     def write_data(f, key, value):
@@ -74,22 +71,29 @@ def to_h5(directory, max_keys_per_file=None, **kwargs):
             value = value.detach().numpy()
         f.create_dataset(key, data=value)
     
-    with h5py.File(output_file, "a") as f:
-        keys = list(f.keys())
+    for key, value in kwargs.items():
+        sub_directory = osp.join(output_directory, key)
         
-        for key, value in kwargs.items():
-            # If we exceed max_keys_per_file, create a new file and reset the key counter
-            if max_keys_per_file is not None and len(keys) >= max_keys_per_file:
+        if not os.path.exists(sub_directory):
+            os.makedirs(sub_directory)
+        
+        existing_files = [f for f in os.listdir(sub_directory) if f.startswith(key) and f.endswith('.h5')]
+        counts = [int(f.split(key)[1].split('.h5')[0]) for f in existing_files]
+        max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
+        
+        output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
+        
+        with h5py.File(output_file, "a") as f:
+            keys_in_file = list(f.keys())
+            
+            if max_keys_per_file is not None and len(keys_in_file) >= max_keys_per_file:
                 max_count += 1
-                output_file = osp.join(directory, f'data{max_count}.h5')
+                output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
                 f.close()
                 f = h5py.File(output_file, "a")
-                keys = []
                 
             write_data(f, key, value)
-            keys.append(key)
-
-        f.close()
+            f.close()
         
 class Reweight(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
@@ -1169,11 +1173,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_gt_cls: bool = False,
         expand_gt: bool = False,
         reweight_pixel_update:bool = False,
+        reweight_pixel_update_last:bool = False,
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
         keep_multihead: bool = False,
-        #visualize hooker
-        vis_sp: bool =False,
+        #visualize param
+        vis_sp_id: bool =False,
+        vis_sp: bool = False,
         output_dir:str = None,
         vis_gt: bool = False,
         vis_gt_eff: bool = False,
@@ -1195,7 +1201,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 **kwargs)
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
+        assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
+        self.reweight_pixel_update_last = reweight_pixel_update_last
+        
         self.extralayer_nols = extralayer_nols
         self.resize_version = resize_version
         self.final_iter = final_iter
@@ -1529,6 +1538,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         delattr(self, 'head')        
         if self.use_patch_embed:
             delattr(self, 'sp_init')
+        self.vis_sp_id = vis_sp_id
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
         self.vis_spgt = vis_spgt
@@ -1841,7 +1851,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             pixel_logits = rearrange(pixel_logits,
                                      "b (h w) c -> b c h w",
                                      h = h,w = w)
-            return None, pixel_logits
+            ret['seg'] = pixel_logits
+            ret['gt'] =  None            
+            return ret
         elif self.classification_feature == "superpixel":
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -2170,7 +2182,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
             
-            if self.vis_sp:
+            if self.vis_sp_id:
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
                  
             if self.vis_spgt:
@@ -2289,7 +2301,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                           h = sh, w = sw)
             
             info, _, _ = last_sp_layer(pixel_feature,x_2d)
-            if self.vis_sp:
+            if self.vis_sp_id:
                 
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
             
@@ -2363,7 +2375,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             
             info, pixel_feature, _ = last_sp_layer(pixel_feature,x_2d)
             
-            if self.vis_sp:
+            if self.vis_sp_id:
                 
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)
             
@@ -2467,9 +2479,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
-        if self.vis_sp:
+        if self.vis_sp_id:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
-
+        if self.vis_sp:
+            to_h5(self.output_dir,max_keys_per_file = 1, sp_features = sp_features)        
         if self.use_group_token == 'post':
             gt = None
             attn_dict_list = []
