@@ -16,7 +16,7 @@ model = dict(
         'ffn_ratio': 4.,
         'patch_embed': dict(type='ConvPatchEmbed', num_convs=0),
         'mlpmixer_depth': 1,
-        'group_layers': {0:64,},
+        'group_layers': {0:64,1:64,},
         'drop_path_rate': 0.2,
         'group_projector_methonds':'linear',
         'association_embedding':False,

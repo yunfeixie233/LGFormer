@@ -27,7 +27,7 @@ sleep 20
 echo "Process $PID has terminated"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/nogt/sp_extra_small_pre_reweight_psim_log.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p89_ls_avg4_loss_6h_expandgt_multi.py"
 )
 
 while true; do  

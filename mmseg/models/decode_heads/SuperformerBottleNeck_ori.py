@@ -34,36 +34,63 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 writer = SummaryWriter()
 import time
-def to_h5(**kwargs):
+import os
+import h5py
+import torch
+import numpy as np
+import os.path as osp
+
+def to_h5(directory, max_keys_per_file=None, **kwargs):
     """
-    Save input tensors or numpy arrays to an H5 file.
+    Save input tensors or numpy arrays to an H5 file in a specified directory with automatic numbering.
     
     Usage:
     >>> a = torch.tensor([1,2,3])
     >>> b = np.array([4,5,6])
-    >>> save_tensors_to_h5(a=a, b=b, filename="output.h5")
+    >>> to_h5(directory='./output', a=a, b=b)
     
     Arguments:
+    directory: The directory where the H5 file should be saved.
+    max_keys_per_file: Maximum number of keys (datasets) allowed in each H5 file.
     **kwargs : Tensors or numpy arrays to save.
-    filename : Name of the H5 file to save to.
     
     Returns:
     None
     """
-    filename = kwargs.pop('filename', 'default_output.h5')
-    if os.path.exists(filename):
-        os.remove(filename)
-    with h5py.File(filename, 'a') as f:
-        for key, value in kwargs.items():
-            # If it's a tensor on GPU, detach and move it to CPU.
-            if torch.is_tensor(value) and value.device.type == 'cuda':
-                value = value.detach().cpu().numpy()
-            # If it's a tensor (not on GPU), just detach and convert.
-            elif torch.is_tensor(value):
-                value = value.detach().numpy()               
-            # Else, it's assumed to be a numpy array.
-            f.create_dataset(key, data=value)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    
+    # Determine the highest count in the directory.
+    existing_files = [f for f in os.listdir(directory) if f.startswith('data') and f.endswith('.h5')]
+    counts = [int(f.split('data')[1].split('.h5')[0]) for f in existing_files]
+    max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
+    output_file = osp.join(directory, f'data{max_count}.h5')
 
+    # Helper function to handle data writing
+    def write_data(f, key, value):
+        if torch.is_tensor(value) and value.device.type == 'cuda':
+            value = value.detach().cpu().numpy()
+        elif torch.is_tensor(value):
+            value = value.detach().numpy()
+        f.create_dataset(key, data=value)
+    
+    with h5py.File(output_file, "a") as f:
+        keys = list(f.keys())
+        
+        for key, value in kwargs.items():
+            # If we exceed max_keys_per_file, create a new file and reset the key counter
+            if max_keys_per_file is not None and len(keys) >= max_keys_per_file:
+                max_count += 1
+                output_file = osp.join(directory, f'data{max_count}.h5')
+                f.close()
+                f = h5py.File(output_file, "a")
+                keys = []
+                
+            write_data(f, key, value)
+            keys.append(key)
+
+        f.close()
+        
 class Reweight(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -84,35 +111,6 @@ class ReweightSigmoid(nn.Module):
         return x * torch.sigmoid(self.weight)
 
 
-def to_h5(**kwargs):
-    """
-    Save input tensors or numpy arrays to an H5 file.
-    
-    Usage:
-    >>> a = torch.tensor([1,2,3])
-    >>> b = np.array([4,5,6])
-    >>> save_tensors_to_h5(a=a, b=b, filename="output.h5")
-    
-    Arguments:
-    **kwargs : Tensors or numpy arrays to save.
-    filename : Name of the H5 file to save to.
-    
-    Returns:
-    None
-    """
-    filename = kwargs.pop('filename', 'default_output.h5')
-    if os.path.exists(filename):
-        os.remove(filename)
-    with h5py.File(filename, 'a') as f:
-        for key, value in kwargs.items():
-            # If it's a tensor on GPU, detach and move it to CPU.
-            if torch.is_tensor(value) and value.device.type == 'cuda':
-                value = value.detach().cpu().numpy()
-            # If it's a tensor (not on GPU), just detach and convert.
-            elif torch.is_tensor(value):
-                value = value.detach().numpy()
-            # Else, it's assumed to be a numpy array.
-            f.create_dataset(key, data=value)
 
 def positionalencoding1d(d_model, length,device):
     """
@@ -1180,6 +1178,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         vis_gt: bool = False,
         vis_gt_eff: bool = False,
         vis_spgt: bool = False,
+        vis_pixel: bool = False,
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
@@ -1533,6 +1532,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.vis_sp = vis_sp
         self.vis_gt = vis_gt
         self.vis_spgt = vis_spgt
+        self.vis_pixel = vis_pixel
         self.log_reweight = log_reweight
         if self.log_reweight:
             self.writer = SummaryWriter()
@@ -2465,7 +2465,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             
                     
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt = self.forward_features(x)
-                
+        if self.vis_pixel:
+            to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
         if self.vis_sp:
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
 
