@@ -69,7 +69,7 @@ model = dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
             out_channels=256,
-            featmap_strides=[4, 8, 16, 32]),
+            featmap_strides=[4, 4, 16, 16]),
         bbox_head=dict(
             type='Shared2FCBBoxHead',
             in_channels=256,
@@ -88,7 +88,7 @@ model = dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=14, sampling_ratio=0),
             out_channels=256,
-            featmap_strides=[4, 8, 16, 32]),
+            featmap_strides=[4, 4, 16, 16]),
         mask_head=dict(
             type='FCNMaskHead',
             num_convs=4,
@@ -101,7 +101,7 @@ model = dict(
 
 train_cfg = dict(
     _delete_ = True,
-    type='IterBasedTrainLoop', max_iters=160000, val_interval=1000)
+    type='IterBasedTrainLoop', max_iters=160000, val_interval=100)
 
 
 val_cfg = dict(type='ValLoop')
