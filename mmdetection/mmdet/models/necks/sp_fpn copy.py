@@ -76,7 +76,6 @@ class SpFPN(BaseModule):
                  pixel_channels: int,
                  sp_channels: int,
                  out_channels: int,
-                 downsample_method: str ='maxpool',
                  conv_cfg: OptConfigType = None,
                  norm_cfg: OptConfigType = None,
                  act_cfg: OptConfigType = None,
@@ -85,19 +84,14 @@ class SpFPN(BaseModule):
         self.pixel_channels = pixel_channels
         self.sp_channels = sp_channels        
         self.out_channels = out_channels
-        self.downsample_method = downsample_method
-        if self.downsample_method == 'maxpool':
-            self.fpn1 = nn.Sequential(nn.Identity())
 
-            self.fpn2 = nn.Sequential(nn.MaxPool2d(kernel_size=2, stride=2))
-            self.fpn3 = nn.Sequential(nn.Identity())
-            self.fpn4 = nn.Sequential(nn.MaxPool2d(kernel_size=2, stride=2))
-        elif self.downsample_method == 'conv':
-            self.fpn1 = nn.Sequential(nn.Identity())
 
-            self.fpn2 = nn.Sequential(nn.Conv2d(pixel_channels, pixel_channels,kernel_size=2, stride=2))
-            self.fpn3 = nn.Sequential(nn.Identity())
-            self.fpn4 = nn.Sequential(nn.Conv2d(sp_channels, sp_channels, kernel_size=2, stride=2))
+        self.fpn1 = nn.Sequential(nn.Identity())
+
+        self.fpn2 = nn.Sequential(nn.MaxPool2d(kernel_size=2, stride=2))
+        self.fpn3 = nn.Sequential(nn.Identity())
+        self.fpn4 = nn.Sequential(nn.MaxPool2d(kernel_size=2, stride=2))
+
         self.lateral_convs = nn.ModuleList()
         self.fpn_convs = nn.ModuleList()
         self.num_ins = 4
