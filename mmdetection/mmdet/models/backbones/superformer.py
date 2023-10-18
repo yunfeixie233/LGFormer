@@ -39,6 +39,25 @@ import torch
 import numpy as np
 import os.path as osp
 
+@MODELS.register_module()
+class LN2d(nn.Module):
+    """A LayerNorm variant, popularized by Transformers, that performs
+    pointwise mean and variance normalization over the channel dimension for
+    inputs that have shape (batch_size, channels, height, width)."""
+
+    def __init__(self, normalized_shape, eps=1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.bias = nn.Parameter(torch.zeros(normalized_shape))
+        self.eps = eps
+        self.normalized_shape = (normalized_shape, )
+
+    def forward(self, x):
+        u = x.mean(1, keepdim=True)
+        s = (x - u).pow(2).mean(1, keepdim=True)
+        x = (x - u) / torch.sqrt(s + self.eps)
+        x = self.weight[:, None, None] * x + self.bias[:, None, None]
+        return x
 
 def to_h5(output_directory, max_keys_per_file=None, **kwargs):
     """
@@ -2601,7 +2620,7 @@ class SuperformerBottleNeck_ori(BaseModule):
                         'b (h w) c -> b c h w',
                         h = sh, w = sw)
         
-        info, pixel_features, sp_features = last_sp_layer(pixel_features,x_2d)
+        info, pixel_features, _ = last_sp_layer(pixel_features,x_2d)
 
         
         
@@ -2611,16 +2630,16 @@ class SuperformerBottleNeck_ori(BaseModule):
             self.visualize_superpixel(img = x, info = None, resize_similarities= True)
         if self.vis_sp:
             to_h5(self.output_dir,max_keys_per_file = 1, sp_features = sp_features)        
-        results = []
+        # results = []
 
-        results.append(pixel_features)
-        results.append(pixel_features)
+        # # results.append(pixel_features)
+        # # results.append(pixel_features)
         
-        results.append(sp_features)
-        results.append(sp_features)
+        # # results.append(sp_features)
+        # # results.append(sp_features)
         # for i,stage in enumerate(self.to_multiscale):
         #     results.append(stage(sp_features))
-        return results
+        return [pixel_features, x_2d]
             
     def compute_compact_loss(self, x: torch.Tensor,sp_features: torch.Tensor):
         last_stage = self.stages[-1]

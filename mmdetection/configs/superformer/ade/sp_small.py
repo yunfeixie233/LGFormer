@@ -46,7 +46,7 @@ model = dict(
         sp_iter=2,
         drop_path_rate = 0.1,
         ls_init_value = 1e-5,),
-    neck=dict(in_channels=[64,64,384,384,]),
+    neck=dict(in_channels=[256,256,256,256,]),
     rpn_head=dict(
         type='RPNHead',
         in_channels=256,
@@ -62,14 +62,14 @@ model = dict(
             target_stds=[1.0, 1.0, 1.0, 1.0]),
         loss_cls=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_bbox=dict(type='L1Loss', loss_weight=1.0)),    
+        loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
     roi_head=dict(
         type='StandardRoIHead',
         bbox_roi_extractor=dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
             out_channels=256,
-            featmap_strides=[4, 4, 16, 16]),
+            featmap_strides=[4, 8, 16, 32]),
         bbox_head=dict(
             type='Shared2FCBBoxHead',
             in_channels=256,
@@ -88,7 +88,7 @@ model = dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=14, sampling_ratio=0),
             out_channels=256,
-            featmap_strides=[4, 4, 16, 16]),
+            featmap_strides=[4, 8, 16, 32]),
         mask_head=dict(
             type='FCNMaskHead',
             num_convs=4,
@@ -101,18 +101,17 @@ model = dict(
 
 train_cfg = dict(
     _delete_ = True,
-    type='IterBasedTrainLoop', max_iters=160000, val_interval=100)
+    type='IterBasedTrainLoop', max_iters=160000, val_interval=1000)
 
 
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
-optimizer_config=dict(grad_clip=dict(max_norm=10, norm_type=2))
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
     _delete_ = True,
     type='AdamW',
-    lr=0.000006,
+    lr=0.00006,
     betas=(0.9, 0.999),
     weight_decay=0.01),
 
@@ -135,7 +134,7 @@ optim_wrapper = dict(
 
 param_scheduler = [
     dict(
-        type='LinearLR', start_factor=1e-6, by_epoch=False, begin=0, end=2000),
+        type='LinearLR', start_factor=1e-6, by_epoch=False, begin=0, end=1500),
     dict(
         type='PolyLR',
         power=1.0,
@@ -145,6 +144,6 @@ param_scheduler = [
         by_epoch=False,
     )
 ]
-default_hooks = dict(checkpoint=dict(by_epoch=False, interval=1000))
+default_hooks = dict(checkpoint=dict(by_epoch=False, interval=4000))
 log_processor = dict(by_epoch=False)
 find_unused_parameters=True

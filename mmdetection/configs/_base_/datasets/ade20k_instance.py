@@ -50,11 +50,7 @@ test_pipeline = [
     dict(
         type='Resize',
         scale=(512, 512),
-        keep_ratio=True), 
-    dict(
-        type='Pad',
-        pad_to_square=True,
-        pad_val=dict(img=(114.0, 114.0, 114.0))),
+        keep_ratio=False), 
     dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
 
     # If you don't have a gt annotation, delete the pipeline    
@@ -78,11 +74,26 @@ val_dataloader = dict(
         test_mode=True,
         pipeline=test_pipeline,
         backend_args=backend_args))
+# val_dataloader = dict(
+#     batch_size=1,
+#     num_workers=2,
+#     persistent_workers=True,
+#     drop_last=False,
+#     sampler=dict(type='DefaultSampler', shuffle=False),
+#     dataset=dict(
+#         type=dataset_type,
+#         data_root=data_root,
+#         ann_file='ade20k_instance_train.json',
+#         data_prefix=dict(img='images/training'),
+#         test_mode=False,
+#         pipeline=train_pipeline,
+#         backend_args=backend_args))
 test_dataloader = val_dataloader
 
 val_evaluator = dict(
     type='CocoMetric',
     ann_file=data_root + 'ade20k_instance_val.json',
+    # ann_file=data_root + 'ade20k_instance_train.json',
     metric=['bbox', 'segm'],
     format_only=False,
     backend_args=backend_args)
