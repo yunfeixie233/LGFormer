@@ -16,22 +16,38 @@ data_root = '/data2/yunfei/SpformerV1/data/ade/ADEChallengeData2016/'
 #         'data/': 's3://openmmlab/datasets/detection/'
 #     }))
 backend_args = None
-crop_size = (512,512)
+image_size = (512, 512)
 train_pipeline = [
-    dict(type='LoadImageFromFile'),
+    dict(type='LoadImageFromFile', backend_args=backend_args),
     dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
+    dict(type='RandomFlip', prob=0.5),
     dict(
         type='RandomResize',
-        scale=(2048, 512),
+        scale=image_size,
         ratio_range=(0.5, 2.0),
         keep_ratio=True),
-    dict(type='RandomCrop', crop_size=crop_size),
-    dict(type='RandomFlip', prob=0.5),
+    dict(
+        type='RandomCrop',
+        crop_type='absolute_range',
+        crop_size=image_size,
+        recompute_bbox=True,
+        allow_negative_crop=True),
+    dict(type='FilterAnnotations', min_gt_bbox_wh=(1e-2, 1e-2)),
+    dict(type='Pad', size=image_size, pad_val=dict(img=(114, 114, 114))),
+    dict(type='PackDetInputs')
+]
+
+test_pipeline = [
+    dict(type='LoadImageFromFile', backend_args=backend_args),
+    dict(type='Resize', scale=image_size, keep_ratio=True),
+    dict(type='Pad', size=image_size, pad_val=dict(img=(114, 114, 114))),
+    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
     dict(
         type='PackDetInputs',
         meta_keys=('img_id', 'img_path', 'ori_shape', 'img_shape',
                    'scale_factor'))
 ]
+
 train_dataloader = dict(
     batch_size=2,
     num_workers=8,
@@ -44,22 +60,6 @@ train_dataloader = dict(
         test_mode=False,
         pipeline=train_pipeline,
         backend_args=backend_args))
-
-test_pipeline = [
-    dict(type='LoadImageFromFile', backend_args=backend_args),
-    dict(
-        type='Resize',
-        scale=(512, 512),
-        keep_ratio=False), 
-    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
-
-    # If you don't have a gt annotation, delete the pipeline    
-    dict(
-        type='PackDetInputs',
-        meta_keys=('img_id', 'img_path', 'ori_shape', 'img_shape',
-                   'scale_factor'))
-]
-
 val_dataloader = dict(
     batch_size=1,
     num_workers=2,
