@@ -41,7 +41,7 @@ test_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=4,
+    batch_size=2,
     num_workers=8,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
@@ -111,7 +111,7 @@ param_scheduler = [
 train_cfg = dict(
     type='IterBasedTrainLoop',
     max_iters=max_iters,
-    val_interval=interval,
+    val_interval=1000,
     dynamic_intervals=dynamic_intervals)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
@@ -122,7 +122,7 @@ default_hooks = dict(
         type='CheckpointHook',
         by_epoch=False,
         save_last=True,
-        interval=interval,
+        interval=1000,
         max_keep_ckpts=5))
 vis_backends = [
     dict(type='LocalVisBackend'),

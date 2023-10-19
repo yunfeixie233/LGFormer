@@ -39,7 +39,7 @@ import torch
 import numpy as np
 import os.path as osp
 
-@MODELS.register_module()
+# @MODELS.register_module()
 class LN2d(nn.Module):
     """A LayerNorm variant, popularized by Transformers, that performs
     pointwise mean and variance normalization over the channel dimension for
@@ -2639,8 +2639,8 @@ class SuperformerBottleNeck_ori(BaseModule):
         # # results.append(sp_features)
         # for i,stage in enumerate(self.to_multiscale):
         #     results.append(stage(sp_features))
-        return [pixel_features, x_2d]
-            
+        # return [pixel_features, x_2d]
+        return x_2d
     def compute_compact_loss(self, x: torch.Tensor,sp_features: torch.Tensor):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed

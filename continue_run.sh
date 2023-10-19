@@ -27,14 +27,14 @@ sleep 1
 echo "Process $PID has terminated"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_avg4_loss_6h_expandgt_multi_l1.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/nogt/sp_extra_small_pre_convstem.py"
 )
 
 while true; do  
     for config in "${configs[@]}"; do
 
         bash tools/dist_train.sh \
-        "$config" 8 --cfg-options load_from=best_ade.pth \
+        "$config" 8 --cfg-options load_from=best_ade_stem.pth \
         randomness.diff_rank_seed=False \
         randomness.seed=1539460459 &
 
@@ -53,7 +53,7 @@ while true; do
 
     last_config=${configs[-1]}
     bash tools/dist_train.sh \
-    "$config" 8 --cfg-options load_from=best_ade.pth \
+    "$config" 8 --cfg-options load_from=best_ade_stem.pth \
     randomness.diff_rank_seed=False \
     randomness.seed=1539460459 &
 
