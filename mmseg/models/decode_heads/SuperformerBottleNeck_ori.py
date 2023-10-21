@@ -39,6 +39,7 @@ import h5py
 import torch
 import numpy as np
 import os.path as osp
+from timm.models import layers as timm_layers
 
 
 def to_h5(output_directory, max_keys_per_file=None, **kwargs):
@@ -395,7 +396,8 @@ class SuperformerStage(nn.Module):
         use_middle_pixel_features: bool = False,
         merge_layer = None,
         merge_pos = None,
-        reweight: bool = False
+        reweight: bool = False,
+        use_gt_concat: bool = False,
 
     ) -> None:
         super().__init__()
@@ -573,6 +575,25 @@ class SuperformerStage(nn.Module):
             self.reweight = Reweight()
         else:
             self.reweight = nn.Identity()
+        self.use_gt_concat = use_gt_concat
+        if use_gt_concat and len(merge_layer)>0:
+            print('len',len(merge_layer))
+            self.group_token_init_method = merge_layer[0].group_token_init_method
+            self.num_group_token = merge_layer[0].num_group_token
+            self.embed_dims =  merge_layer[0].embed_dims
+            self.init_stride = merge_layer[0].init_stride
+            if  self.group_token_init_method =='learnable':
+                self.group_token = nn.Parameter(torch.zeros(1, self.num_group_token , self.embed_dims))
+            elif self.group_token_init_method == 'avgpool':
+                self.group_token_init = \
+                nn.Sequential(         
+                    nn.AvgPool2d(kernel_size=self.init_stride,stride=self.init_stride),
+                    timm_layers.LayerNorm2d(self.embed_dims),
+                    nn.GELU(),
+                )
+            else:
+                raise(NotImplementedError)
+            
         self.init_weights()
 
     def init_weights(self):
@@ -709,16 +730,42 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None
+        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None,
 
     ) -> torch.Tensor:
+        
+        if self.use_gt_concat and len(self.merge_layer) > 0:
+            sh ,sw = self.patch_embed.superpixel_shape
+            x_2d = rearrange(x,
+                        'b (h w) c -> b c h w',
+                        h=sh, w=sw)                
+            if self.group_token_init_method == 'learnable':    
+                gt = nn.Parameter(torch.zeros(1, self.num_group_token, self.embed_dims))
+            else:            
+                gt = self.group_token_init(x_2d)
+                gt = rearrange(
+                    gt,
+                    'b c h w -> b (h w) c'
+                )
+            
+            x, ps = einops.pack([x, gt], 'b * d ')
+        else:
+            gt = None
+        
         for i in range(start, end):
             x = self.blocks[i](x)
 
             if self.merge_layer and i in self.merge_pos:
+                #unpack when cross attention
+                x, gt = einops.unpack(x, ps, 'b * d')                
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
                 )
+                x, ps = einops.pack([x, gt], 'b * d ')
+                
+        if self.use_gt_concat and len(self.merge_layer) > 0:
+            x, gt = einops.unpack(x, ps, 'b * d')
+                
         return x,attn_dict_list, gt
 
     def add_pos_embed(self, x):
@@ -929,15 +976,9 @@ class SuperformerStage(nn.Module):
                 w=h_w
                 
             )
-        e = time.time()
-        # print(f'{e-s}_rear')
-        s = time.time()
-
         info, sp_features, pixel_features_middle = self.forward_patchify(
             x, sp_features_last
         )
-        e = time.time()
-        # print(f'{e-s}_patch')
         vis_sp_patchify = False
         if vis_sp_patchify:
             import h5py
@@ -986,13 +1027,12 @@ class SuperformerStage(nn.Module):
         if vis_sp_block:
             sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
-        s = time.time()
-        sp_features_seg, attn_dict_list, gt = self.forward_blocks_range(sp_features, 0, self.seg_block_idx, attn_dict_list, gt)
+        sp_features_seg, attn_dict_list, gt = self.forward_blocks_range(
+            sp_features, 0, self.seg_block_idx, attn_dict_list, gt,
+        )
         sp_features, attn_dict_list, gt = self.forward_blocks_range(
             sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list, gt
         )
-        e = time.time()
-        # print(f'{e-s}_block')
         if vis_sp_block:
             import h5py
             sp_vis = sp_before
@@ -1034,7 +1074,6 @@ class SuperformerStage(nn.Module):
                     f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
         sp_features_unflatten = None
         updated_pixel_features = None
-        s = time.time()
         if self.return_updated_pixel_features:
             sp_features_unflatten = self.forward_unflatten_sp_features(sp_features)
             sp_features_unflatten_projected = self.sp_project(sp_features_unflatten)
@@ -1054,8 +1093,7 @@ class SuperformerStage(nn.Module):
             if sp_features_unflatten is None:
                 sp_features_unflatten = self.forward_unflatten_sp_features(sp_features)
             sp_features = sp_features_unflatten
-        e = time.time()
-        # print(f'{e-s}_update')
+
         return (
             updated_pixel_features,
             sp_features,
@@ -1177,6 +1215,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
         keep_multihead: bool = False,
+        use_gt_concat: bool = False,
         #visualize param
         vis_sp_id: bool =False,
         vis_sp: bool = False,
@@ -1199,6 +1238,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         in_index=0,
         use_gt_cls = use_gt_cls,
 **kwargs)
+        self.use_gt_concat = use_gt_concat
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
@@ -1455,6 +1495,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     merge_layer = merge_layer,
                     merge_pos = merge_pos,
                     reweight = reweight_pixel_update,
+                    use_gt_concat = use_gt_concat,
                 )
             )
             cur_depth += depth
@@ -1721,7 +1762,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     keep_multihead = self.keep_multihead,
                     group_pe_method = _arch_settings["group_pe_method"] if "group_pe_method" in _arch_settings.keys() 
                                                                         else None,
-                    superpixel_shape = self.sp_shape)
+                    superpixel_shape = self.sp_shape,
+                    use_gt_concat = self.use_gt_concat)
             group_layer = GPBlock(**_layer_cfg)
             merge_layer.append(group_layer)
         return merge_layer

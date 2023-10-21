@@ -33,7 +33,7 @@ def convert_v2(args):
                 ' b c h w -> b (h w) c',
             )
 
-        new_key = 'backbone.' + key
+        new_key = 'decode_head.' + key
         
 
 

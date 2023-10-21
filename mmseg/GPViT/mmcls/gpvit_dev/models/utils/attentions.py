@@ -627,7 +627,8 @@ class GPBlock(nn.Module):
                  same_group_method: bool = False,
                  keep_multihead: bool = False, 
                  group_pe_method = None,
-                 superpixel_shape = None,              
+                 superpixel_shape = None, 
+                 use_gt_concat: bool = False,                 
                  **kwargs):
 
         super().__init__()
@@ -637,6 +638,8 @@ class GPBlock(nn.Module):
         self.with_cp = with_cp
         self.group_token_init_method = group_token_init_method
         self.group_pe_method = group_pe_method
+        self.init_stride = init_stride
+        self.use_gt_concat = use_gt_concat
         if self.group_pe_method == "learnable":
             self.sp_pos_embed = self._create_pos_embed(
                 embed_dims, superpixel_shape
@@ -644,80 +647,82 @@ class GPBlock(nn.Module):
             self.gt_pos_embed = self._create_pos_embed(
                 embed_dims, num_group_token
             )
-        if  self.group_token_init_method =='learnable':
-            self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
-        elif self.group_token_init_method == 'conv_avgpool':
+        
+        if use_gt_concat is False:
+            if  self.group_token_init_method =='learnable':
+                self.group_token = nn.Parameter(torch.zeros(1, num_group_token, embed_dims))
+            elif self.group_token_init_method == 'conv_avgpool':
 
-            self.group_token_init = \
-            nn.Sequential(  
-                timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
-                timm_layers.LayerNorm2d(embed_dims),
-                nn.GELU(),
-                nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                    
-            )
-        elif self.group_token_init_method == 'avgpool_conv':
-
-            self.group_token_init = \
-            nn.Sequential( 
-                nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                            
-                timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
-                timm_layers.LayerNorm2d(embed_dims),
-                nn.GELU(),            
-            )            
-        elif self.group_token_init_method == 'avgpool':
-
-            self.group_token_init = \
-            nn.Sequential(         
-                nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
-                timm_layers.LayerNorm2d(embed_dims),
-                nn.GELU(),
-
-            )
-        elif self.group_token_init_method == 'depthwise':
                 self.group_token_init = \
-                nn.Sequential(                         
-                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same",groups = embed_dims),
-                timm_layers.LayerNorm2d(embed_dims),
-                nn.GELU(),
+                nn.Sequential(  
+                    timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
+                    timm_layers.LayerNorm2d(embed_dims),
+                    nn.GELU(),
+                    nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                    
                 )
-        elif self.group_token_init_method == 'conv':
-            if isinstance(init_kernel_size, tuple) and isinstance(init_stride, tuple):
-                layers = []
-                for k_size, stride in zip(init_kernel_size, init_stride):
-                    layers.extend([
-                        timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size=k_size, stride=stride, padding="same"),
-                        timm_layers.LayerNorm2d(embed_dims),
-                        nn.GELU()
-                    ])
-                self.group_token_init = nn.Sequential(*layers)
-            elif isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+            elif self.group_token_init_method == 'avgpool_conv':
+
                 self.group_token_init = \
-                nn.Sequential(                         
-                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
-                timm_layers.LayerNorm2d(embed_dims),
-                nn.GELU(),
+                nn.Sequential( 
+                    nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),                            
+                    timm_layers.create_conv2d(embed_dims, embed_dims, 1, padding="same"),
+                    timm_layers.LayerNorm2d(embed_dims),
+                    nn.GELU(),            
+                )            
+            elif self.group_token_init_method == 'avgpool':
+
+                self.group_token_init = \
+                nn.Sequential(         
+                    nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
+                    timm_layers.LayerNorm2d(embed_dims),
+                    nn.GELU(),
+
+                )
+            elif self.group_token_init_method == 'depthwise':
+                    self.group_token_init = \
+                    nn.Sequential(                         
+                    timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same",groups = embed_dims),
+                    timm_layers.LayerNorm2d(embed_dims),
+                    nn.GELU(),
+                    )
+            elif self.group_token_init_method == 'conv':
+                if isinstance(init_kernel_size, tuple) and isinstance(init_stride, tuple):
+                    layers = []
+                    for k_size, stride in zip(init_kernel_size, init_stride):
+                        layers.extend([
+                            timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size=k_size, stride=stride, padding="same"),
+                            timm_layers.LayerNorm2d(embed_dims),
+                            nn.GELU()
+                        ])
+                    self.group_token_init = nn.Sequential(*layers)
+                elif isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+                    self.group_token_init = \
+                    nn.Sequential(                         
+                    timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
+                    timm_layers.LayerNorm2d(embed_dims),
+                    nn.GELU(),
+                    )
+                else:
+                    raise(NotImplementedError)
+            elif self.group_token_init_method == 'conv_relu':
+                if isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+                    self.group_token_init = \
+                    nn.Sequential(                         
+                    timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
+                    timm_layers.LayerNorm2d(embed_dims),
+                    nn.ReLU(),
+                    )
+                else:
+                    raise(ValueError)
+            
+            elif self.group_token_init_method == 'GCViT':
+                self.group_token_init = \
+                nn.Sequential(
+                    FeatExtract(embed_dims, keep_dim=False),
+                    FeatExtract(embed_dims, keep_dim=False),
                 )
             else:
                 raise(NotImplementedError)
-        elif self.group_token_init_method == 'conv_relu':
-            if isinstance(init_kernel_size, int) and isinstance(init_stride, int):
-                self.group_token_init = \
-                nn.Sequential(                         
-                timm_layers.create_conv2d(embed_dims, embed_dims, kernel_size = init_kernel_size, stride = init_stride, padding = "same"),
-                timm_layers.LayerNorm2d(embed_dims),
-                nn.ReLU(),
-                )
-            else:
-                raise(ValueError)
-            
-        elif self.group_token_init_method == 'GCViT':
-            self.group_token_init = \
-            nn.Sequential(
-                FeatExtract(embed_dims, keep_dim=False),
-                FeatExtract(embed_dims, keep_dim=False),
-            )
-        else:
-            raise(NotImplementedError)
         self.group_projector = group_projector
         self.group_projector_methonds = group_projector_methonds
         if not zero_init_group_token:
@@ -844,22 +849,25 @@ class GPBlock(nn.Module):
         sw = sh = int(math.sqrt(L))
         if self.vis_gt_eff:
             sp_before = x.clone()
-            
-        if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu','avgpool_conv','depthwise']:
-            x = rearrange(x,
-                          'b (h w) c -> b c h w',
-                          h=sh, w=sw)
-            group_token = self.group_token_init(x)
-            group_token = rearrange(
-                group_token,
-                'b c h w -> b (h w) c'
-            )
-            x = rearrange(x,
-                'b c h w -> b (h w) c ',
-                h=sh, w=sw)
- 
-        elif self.group_token_init_method == "learnable":
-            group_token = self.group_token.expand(x.size(0), -1, -1)
+        if self.use_gt_concat is False:
+            if self.group_token_init_method in["avgpool",'conv_avgpool','conv','GCViT','conv_relu','avgpool_conv','depthwise']:
+                x = rearrange(x,
+                            'b (h w) c -> b c h w',
+                            h=sh, w=sw)
+                group_token = self.group_token_init(x)
+                group_token = rearrange(
+                    group_token,
+                    'b c h w -> b (h w) c'
+                )
+                x = rearrange(x,
+                    'b c h w -> b (h w) c ',
+                    h=sh, w=sw)
+    
+            elif self.group_token_init_method == "learnable":
+                group_token = self.group_token.expand(x.size(0), -1, -1)
+
+        else:
+            group_token = prev_token
         if prev_token is None:
             gt = group_token
         elif self.group_projector_methonds in ["linear","conv",'conv_relu']:

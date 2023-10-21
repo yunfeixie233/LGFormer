@@ -116,6 +116,6 @@ data
 work_dirs/
 mmseg/.mim
 runs
-.sh
+continue_run.sh
 # Pytorch
 *.pth
