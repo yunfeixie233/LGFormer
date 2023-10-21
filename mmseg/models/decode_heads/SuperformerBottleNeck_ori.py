@@ -1030,9 +1030,7 @@ class SuperformerStage(nn.Module):
         sp_features_seg, attn_dict_list, gt = self.forward_blocks_range(
             sp_features, 0, self.seg_block_idx, attn_dict_list, gt,
         )
-        sp_features, attn_dict_list, gt = self.forward_blocks_range(
-            sp_features_seg, self.seg_block_idx, len(self.blocks), attn_dict_list, gt
-        )
+        sp_features = sp_features_seg
         if vis_sp_block:
             import h5py
             sp_vis = sp_before
