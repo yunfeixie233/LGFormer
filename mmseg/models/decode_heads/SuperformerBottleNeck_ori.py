@@ -583,7 +583,7 @@ class SuperformerStage(nn.Module):
             self.embed_dims =  merge_layer[0].embed_dims
             self.init_stride = merge_layer[0].init_stride
             if  self.group_token_init_method =='learnable':
-                self.group_token = nn.Parameter(torch.zeros(1, self.num_group_token , self.embed_dims))
+                self.group_token = nn.Parameter(torch.randn(self.num_group_token , self.embed_dims))
             elif self.group_token_init_method == 'avgpool':
                 self.group_token_init = \
                 nn.Sequential(         
@@ -740,7 +740,12 @@ class SuperformerStage(nn.Module):
                         'b (h w) c -> b c h w',
                         h=sh, w=sw)                
             if self.group_token_init_method == 'learnable':    
-                gt = nn.Parameter(torch.zeros(1, self.num_group_token, self.embed_dims))
+                gt = self.group_token
+                gt = einops.repeat(
+                    gt,
+                    'n d -> b n d',
+                    b=x.shape[0]
+                )
             else:            
                 gt = self.group_token_init(x_2d)
                 gt = rearrange(
