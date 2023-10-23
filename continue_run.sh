@@ -16,18 +16,18 @@ fi
 
 
 
-PID=595532
+PID=2539867
 
 while ps -p $PID > /dev/null; do
     echo "Process $PID is still running"
     sleep 10
 done
 
-sleep 1
+sleep 10
 echo "Process $PID has terminated"
 
 configs=(
-    "/root/autodl-tmp/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_avg4_loss_6h_expandgt_multi_concat.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_lea4_loss_6h_expandgt_multi_concat_nomer.py"
 )
 
 while true; do  

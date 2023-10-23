@@ -436,10 +436,15 @@ class FullAttnCatBlock(nn.Module):
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
            
-            new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
-            new_x = self.proj(new_x)
-            x = self.ffn(self.norm2(query), identity=query) 
+            # new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            # new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
+            # new_x = self.proj(new_x)
+            # x = self.ffn(self.norm2(query), identity=query) 
+            
+            x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            x = torch.cat((query, self.drop_path(x)),dim=-1)
+            x = self.proj(x)
+            x = self.ffn(self.norm2(query), identity=x)              
                 
             return x,attn_dict_list
         if self.with_cp:
@@ -843,9 +848,7 @@ class GPBlock(nn.Module):
         Returns:
             proj_tokens: shape [B, L, C]
         """
-        B, L, C = x.size()
-    
-        
+        B, L, C = x.size()      
         sw = sh = int(math.sqrt(L))
         if self.vis_gt_eff:
             sp_before = x.clone()

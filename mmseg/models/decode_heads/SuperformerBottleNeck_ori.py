@@ -746,6 +746,7 @@ class SuperformerStage(nn.Module):
                     'n d -> b n d',
                     b=x.shape[0]
                 )
+                
             else:            
                 gt = self.group_token_init(x_2d)
                 gt = rearrange(
@@ -759,13 +760,15 @@ class SuperformerStage(nn.Module):
         
         for i in range(start, end):
             x = self.blocks[i](x)
-
+            if self.use_gt_concat and len(self.merge_layer) > 0:
+                x, gt = einops.unpack(x, ps, 'b * d')    
             if self.merge_layer and i in self.merge_pos:
                 #unpack when cross attention
-                x, gt = einops.unpack(x, ps, 'b * d')                
+            
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
                 )
+            if self.use_gt_concat and len(self.merge_layer) > 0:                
                 x, ps = einops.pack([x, gt], 'b * d ')
                 
         if self.use_gt_concat and len(self.merge_layer) > 0:
@@ -1227,6 +1230,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         vis_gt_eff: bool = False,
         vis_spgt: bool = False,
         vis_pixel: bool = False,
+        vis_sp_stage: bool = False,
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
@@ -1600,6 +1604,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.vis_spgt = vis_spgt
         self.vis_pixel = vis_pixel
         self.log_reweight = log_reweight
+        self.vis_sp_stage = vis_sp_stage
         if self.log_reweight:
             self.writer = SummaryWriter()
             self.forward_counter = 0
@@ -1829,8 +1834,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             
  
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
-                vis_sp_stage = False
-                if vis_sp_stage:
+
+                if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
+                    pixel_features, sp_features, sp_features_seg,attn_dict_list, gt = stage(
+                        pixel_features,
+                        sp_features_last,
+                        attn_dict_list,
+                        gt 
+                    )
+                    sp_features_last = sp_features_seg
+                if self.vis_sp_stage:
                     import h5py
                     sp_vis = sp_features_last.detach() 
                     if sp_vis.dim() == 3:  
@@ -1840,24 +1853,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             h = stage.patch_embed.superpixel_shape[0],
                             w = stage.patch_embed.superpixel_shape[1],
                         )               
-                    with h5py.File('/data2/yunfei/vis_sp_stage.h5','a') as f:
-                        keys = list(f.keys())
-                        key = "sp_vis"
-                        original_key = key
-                        count = int(0)
-                        while key in keys:
-                            count = int(count) + 1
-                            key = original_key + str(count)
-                        if int(count) <6 :
-                            f.create_dataset(key, data=sp_vis.detach().cpu().numpy())
-                if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
-                    pixel_features, sp_features, sp_features_seg,attn_dict_list, gt = stage(
-                        pixel_features,
-                        sp_features_last,
-                        attn_dict_list,
-                        gt 
-                    )
-                    sp_features_last = sp_features_seg
+                    to_h5(self.output_dir, max_keys_per_file = 1, sp_vis = sp_vis)
+                    
                 # # rank not consistent due to whether flatten or not
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:

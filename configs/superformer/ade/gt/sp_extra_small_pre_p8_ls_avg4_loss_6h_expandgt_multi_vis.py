@@ -6,6 +6,6 @@ model = dict(
     decode_head=dict(
     expand_gt = True,
     keep_multihead = True,
-    output_dir = '/data2/yunfei/', 
-    vis_spgt = True,   
+    output_dir = '/data2/yunfei/sp_extra_small_pre_p8_ls_avg4_loss_6h_expandgt_multi_vis', 
+    vis_sp_stage = True,   
 ))
