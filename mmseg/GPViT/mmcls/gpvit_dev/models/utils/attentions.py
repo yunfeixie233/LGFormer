@@ -32,6 +32,7 @@ import os
 import h5py
 from timm.models import layers as timm_layers
 
+
 class SE(nn.Module):
     """
     Squeeze and excitation block

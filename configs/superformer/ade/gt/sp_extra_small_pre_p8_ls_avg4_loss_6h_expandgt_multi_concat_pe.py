@@ -18,15 +18,15 @@ model = dict(
         'mlpmixer_depth': 1,
         'group_layers': {0:64,},
         'drop_path_rate': 0.2,
-        'group_projector_methonds':'linear',
+        'group_projector_methonds':None,
         'association_embedding':False,
         'group_token_init_method':'avgpool',
         "init_strides":(4,),
         'init_kernel_sizes':(4,),
-        'merge_pos':((),(6,),()),
+        'merge_pos':((),(8,),()),
         'ls_init_value':1e-5,            
     },
     expand_gt = True,
     keep_multihead = True,
-  
+    use_gt_concat = True,
 ))

@@ -135,6 +135,30 @@ def positionalencoding1d(d_model, length,device):
     pe = pe.to(device=device)
     return pe
 
+def pos_emb_sincos_2d(
+    h,
+    w,
+    dim,
+    temperature: int = 10000,
+    dtype = torch.float32
+):
+    """Pos embedding for 2D image"""
+    y, x = torch.meshgrid(
+        torch.arange(h), torch.arange(w), indexing="ij"
+    )
+    assert (dim % 4) == 0, "dimension must be divisible by 4"
+
+    # 1D pos embedding
+    omega = torch.arange(dim // 4, dtype=dtype)
+    omega = 1.0 / (temperature ** omega)
+    
+    # 2D pos embedding
+    y = y.flatten()[:, None] * omega[None, :]
+    x = x.flatten()[:, None] * omega[None, :]
+
+    # concat sin and cos
+    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim=1)
+    return pe.type(dtype)
     
 def build_2d_sincos_position_embedding(patches_resolution, embed_dim, device, temperature=1. ):
     h = w = patches_resolution
@@ -577,7 +601,6 @@ class SuperformerStage(nn.Module):
             self.reweight = nn.Identity()
         self.use_gt_concat = use_gt_concat
         if use_gt_concat and len(merge_layer)>0:
-            print('len',len(merge_layer))
             self.group_token_init_method = merge_layer[0].group_token_init_method
             self.num_group_token = merge_layer[0].num_group_token
             self.embed_dims =  merge_layer[0].embed_dims
@@ -591,6 +614,14 @@ class SuperformerStage(nn.Module):
                     timm_layers.LayerNorm2d(self.embed_dims),
                     nn.GELU(),
                 )
+                gt_h = gt_w = int(math.sqrt(self.num_group_token))
+
+                self.gt_pos_embed = pos_emb_sincos_2d(
+                                        h=gt_h,
+                                        w=gt_w,
+                                        dim=self.embed_dims,
+                                    ).cuda()
+                                
             else:
                 raise(NotImplementedError)
             
@@ -749,11 +780,12 @@ class SuperformerStage(nn.Module):
                 
             else:            
                 gt = self.group_token_init(x_2d)
+            
                 gt = rearrange(
                     gt,
                     'b c h w -> b (h w) c'
                 )
-            
+                gt = gt + self.gt_pos_embed                    
             x, ps = einops.pack([x, gt], 'b * d ')
         else:
             gt = None
