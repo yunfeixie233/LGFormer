@@ -6,5 +6,5 @@ model = dict(
     decode_head=dict(
     reweight_pixel_update = True,
     log_reweight = True, 
-       
+    reweight_sp_update = True,
 ))
