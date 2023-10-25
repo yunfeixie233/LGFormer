@@ -83,7 +83,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
     from fvcore.nn import flop_count_table
 
     flops = FlopCountAnalysis(model, data)
-    print(flop_count_table(flops, max_depth=6))
+    print(flop_count_table(flops, max_depth=0))
 
 
 
