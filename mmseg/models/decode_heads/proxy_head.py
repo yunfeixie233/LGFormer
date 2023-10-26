@@ -65,28 +65,22 @@ class ProxyHead(BaseDecodeHead):
         return token_logits
 
     def forward(self, inputs):
-        x = self._transform_inputs(inputs)[0]  # (B, C, H, W)
+        x_mid, x = self._transform_inputs(inputs)  # (B, C, H, W)
         B, _, H, W = x.shape
-
-        # affinity = self.forward_affinity(x_mid)
-        # import h5py
-        # with h5py.File("/data2/yunfei/vis/affinity.h5","a") as f:
-        #     f.create_dataset("affinity",data=
-        #                      einops.rearrange(affinity,
-        #                                 'B n h w H W -> B n (H h) (W w)').detach().cpu().numpy())
+        affinity = self.forward_affinity(x_mid)
+        
+        # _, x = self._transform_inputs(inputs)  # (B, C, H, W)
+        # B, _, H, W = x.shape
+        # affinity = self.forward_affinity(x)                
         token_logits = self.forward_cls(x)
-        token_logits = einops.rearrange(
-           token_logits,
-           'b (h w) c -> b c h w',
-           h = H, w = W, 
-        )
+
         # classification per pixel
-        # token_logits = token_logits.reshape(B, H, W, -1).permute(0, 3, 1, 2)  # (B, C, H, W)
-        # token_logits = F.unfold(token_logits, kernel_size=3, padding=1).reshape(B, -1, 9, H, W)  # (B, C, 9, H, W)
-        # token_logits = einops.rearrange(token_logits, 'B C n H W -> B H W n C')  # (B, H, W, 9, C)
+        token_logits = token_logits.reshape(B, H, W, -1).permute(0, 3, 1, 2)  # (B, C, H, W)
+        token_logits = F.unfold(token_logits, kernel_size=3, padding=1).reshape(B, -1, 9, H, W)  # (B, C, 9, H, W)
+        token_logits = einops.rearrange(token_logits, 'B C n H W -> B H W n C')  # (B, H, W, 9, C)
 
-        # affinity = einops.rearrange(affinity, 'B n h w H W -> B H W (h w) n')  # (B, H, W, h * w, 9)
-        # seg_logits = (affinity @ token_logits).reshape(B, H, W, *self.region_res, -1)  # (B, H, W, h, w, C)
-        # seg_logits = einops.rearrange(seg_logits, 'B H W h w C -> B C (H h) (W w)')  # (B, C, H * h, W * w)
+        affinity = einops.rearrange(affinity, 'B n h w H W -> B H W (h w) n')  # (B, H, W, h * w, 9)
+        seg_logits = (affinity @ token_logits).reshape(B, H, W, *self.region_res, -1)  # (B, H, W, h, w, C)
+        seg_logits = einops.rearrange(seg_logits, 'B H W h w C -> B C (H h) (W w)')  # (B, C, H * h, W * w)
 
-        return token_logits
+        return seg_logits

@@ -11,7 +11,7 @@ data_preprocessor = dict(
 
 model = dict(
     type='EncoderDecoder',
-    pretrained=None,
+    pretrained='/data2/yunfei/vit_small_patch16_384_pretrain.pth',
     data_preprocessor = data_preprocessor,
     backbone=dict(
         type='VisionTransformer',
