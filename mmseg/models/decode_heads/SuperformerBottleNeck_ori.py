@@ -421,8 +421,9 @@ class SuperformerStage(nn.Module):
         merge_layer = None,
         merge_pos = None,
         reweight: bool = False,
-        use_gt_concat: bool = False,
+        use_global_token: bool = False,
         return_mid_sp: int = None,
+        use_gt_in_vit: bool = False,
     ) -> None:
         super().__init__()
 
@@ -444,6 +445,7 @@ class SuperformerStage(nn.Module):
         self.use_middle_pixel_features = use_middle_pixel_features
         self.merge_layer = merge_layer
         self.merge_pos = merge_pos
+        self.use_gt_in_vit = use_gt_in_vit
         if pre_norm_pixel:
             raise NotImplementedError()
 
@@ -599,32 +601,15 @@ class SuperformerStage(nn.Module):
             self.reweight = Reweight()
         else:
             self.reweight = nn.Identity()
-        self.use_gt_concat = use_gt_concat
+        self.use_global_token = use_global_token
         self.return_mid_sp = return_mid_sp
-        if use_gt_concat and len(merge_layer)>0:
-            self.group_token_init_method = merge_layer[0].group_token_init_method
+        if use_global_token and len(merge_layer)>0:
             self.num_group_token = merge_layer[0].num_group_token
             self.embed_dims =  merge_layer[0].embed_dims
-            self.init_stride = merge_layer[0].init_stride
-            if  self.group_token_init_method =='learnable':
-                self.group_token = nn.Parameter(torch.randn(self.num_group_token , self.embed_dims))
-            elif self.group_token_init_method == 'avgpool':
-                self.group_token_init = \
-                nn.Sequential(         
-                    nn.AvgPool2d(kernel_size=self.init_stride,stride=self.init_stride),
-                    timm_layers.LayerNorm2d(self.embed_dims),
-                    nn.GELU(),
-                )
-                gt_h = gt_w = int(math.sqrt(self.num_group_token))
+            
+            self.global_token = nn.Parameter(torch.randn(self.num_group_token , self.embed_dims))
 
-                self.gt_pos_embed = pos_emb_sincos_2d(
-                                        h=gt_h,
-                                        w=gt_w,
-                                        dim=self.embed_dims,
-                                    ).cuda()
-                                
-            else:
-                raise(NotImplementedError)
+                        
             
         self.init_weights()
 
@@ -762,51 +747,49 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None,
+        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None,global_token: torch.Tensor = None
 
     ) -> torch.Tensor:
         
-        if self.use_gt_concat and len(self.merge_layer) > 0:
+        if self.use_global_token and len(self.merge_layer) > 0:
             sh ,sw = self.patch_embed.superpixel_shape
             x_2d = rearrange(x,
                         'b (h w) c -> b c h w',
                         h=sh, w=sw)                
-            if self.group_token_init_method == 'learnable':    
-                gt = self.group_token
-                gt = einops.repeat(
-                    gt,
-                    'n d -> b n d',
-                    b=x.shape[0]
-                )
-                
-            else:            
-                gt = self.group_token_init(x_2d)
-            
-                gt = rearrange(
-                    gt,
-                    'b c h w -> b (h w) c'
-                )
-                gt = gt + self.gt_pos_embed                    
-            x, ps = einops.pack([x, gt], 'b * d ')
+
+            global_token = self.global_token
+            global_token = einops.repeat(
+                global_token,
+                'n d -> b n d',
+                b=x.shape[0]
+            )
+                                    
+            x, ps = einops.pack([x, global_token], 'b * d ')
         else:
-            gt = None
+            global_token = None
         sp_featuers_mid = None
         for i in range(start, end):
-            x = self.blocks[i](x)
+            if self.use_gt_in_vit and gt != None:
+                gt = self.blocks[i](gt)
+                print(f"forward gt at block {i}")
+            else:
+                x = self.blocks[i](x)
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
-            if self.use_gt_concat and len(self.merge_layer) > 0:
-                x, gt = einops.unpack(x, ps, 'b * d')    
+  
             if self.merge_layer and i in self.merge_pos:
                 #unpack when cross attention
-            
+                if self.use_global_token: 
+                    x, global_token = einops.unpack(x, ps, 'b * d')                                    
                 x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
-                    x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt
-                )
-            if self.use_gt_concat and len(self.merge_layer) > 0:                
-                x, ps = einops.pack([x, gt], 'b * d ')
-                
-        if self.use_gt_concat and len(self.merge_layer) > 0:
+                x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt, global_token = global_token
+            )
+                if self.use_global_token: 
+                    x, ps = einops.pack([x, gt], 'b * d ')             
+              
+
+              
+        if self.use_global_token and len(self.merge_layer) > 0:
             x, gt = einops.unpack(x, ps, 'b * d')
                 
         return x,attn_dict_list, gt, sp_featuers_mid
@@ -1257,7 +1240,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
         keep_multihead: bool = False,
-        use_gt_concat: bool = False,
+        use_global_token: bool = False,
         return_mid_sp: bool = False,        
         #visualize param
         vis_sp_id: bool =False,
@@ -1282,7 +1265,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         in_index=0,
         use_gt_cls = use_gt_cls,
 **kwargs)
-        self.use_gt_concat = use_gt_concat
+        self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
@@ -1539,8 +1522,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     merge_layer = merge_layer,
                     merge_pos = merge_pos,
                     reweight = reweight_pixel_update,
-                    use_gt_concat = use_gt_concat,
-                    return_mid_sp = return_mid_sp,                    
+                    use_global_token = use_global_token,
+                    return_mid_sp = return_mid_sp,
+                    use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,                    
                 )
             )
             cur_depth += depth
@@ -1606,7 +1590,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             )
                 self.seg_norm = norm_layer(self.embed_dim)
                 self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
-                
+            elif self.classification_feature == 'group_extralayer':
+                self.gt_norm = norm_layer(self.embed_dim)
+                self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
             else:
                 raise(NotImplementedError)
             
@@ -1809,7 +1795,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     group_pe_method = _arch_settings["group_pe_method"] if "group_pe_method" in _arch_settings.keys() 
                                                                         else None,
                     superpixel_shape = self.sp_shape,
-                    use_gt_concat = self.use_gt_concat)
+                    use_global_token = self.use_global_token,)
             group_layer = GPBlock(**_layer_cfg)
             merge_layer.append(group_layer)
         return merge_layer
@@ -2589,6 +2575,81 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
 
             return sp_logits, pixel_logits
+        elif self.classification_feature == "group_extralayer": 
+            #final info               
+            last_stage = self.stages[-1]
+            last_sp_layer = last_stage.patch_embed
+            if isinstance(last_sp_layer, nn.AvgPool2d):
+                sh=sw = last_sp_layer.kernel_size
+            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                sh, sw = last_sp_layer.superpixel_shape            
+            x_2d = einops.rearrange(x,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+            
+            info, _, _ = last_sp_layer(pixel_feature,x_2d)
+
+            if info is None:
+                raise ValueError()
+            if self.resize_similarity:
+                scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+            else:
+                scale_factor = 1
+            # raise NotImplementedError(
+            #     "TODO(meijier): use pixel similarities & not merge"
+            # )
+
+            similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+            similarities = prepare_similarities(
+                last_sp_layer,
+                similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                scale_factor=scale_factor,
+                resize_version = self.resize_version
+            )
+            similarities = similarities.softmax(1)
+            similarities = einops.rearrange(
+                similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+            )
+
+
+            
+            if self.vis_sp_id:
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                 
+            if self.vis_spgt:
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
+              #classification
+            if not self.seg_specific_classifier:
+                raise ValueError("No segmentation head is found.")
+            h_g = w_g = int(math.sqrt(gt.shape[1]))
+            if self.expand_gt:
+                # b head n g 
+                attn_map = attn_dict_list[-1]
+                if self.keep_multihead:
+                    num_heads = self.arch_settings['num_ungroup_heads']
+                    _, n, hc = gt.shape             
+                    gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )        
+                    gt = attn_map.transpose(-1,-2) @ gt
+                    gt = rearrange(gt, ' b h n c ->  b n (h c)')        
+                else:
+                    attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
+                    attn_map = attn_map.squeeze(1)
+                    gt = attn_map.transpose(-1,-2) @ gt
+                h_g = w_g = int(math.sqrt(gt.shape[1]))
+
+                gt_logits = self.gt_head(self.gt_norm(gt))
+
+                gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+                                    h = h_g,
+                                    w = w_g)                                                            
+                gt_logits =superpixel_ops.expand_superpixel_features(
+                    gt_logits, similarities
+                ) 
+            # to_h5(gt = gt_[:,0,...], sp =x.view(b,sh,sw,-1).permute(0, 3, 1, 2),filename= '/data2/yunfei/vis.h5')                
+            ret['seg'] = gt_logits
+            ret['gt'] =  None            
+            return ret
+
         else:
             raise(NotImplementedError)
     def forward(
