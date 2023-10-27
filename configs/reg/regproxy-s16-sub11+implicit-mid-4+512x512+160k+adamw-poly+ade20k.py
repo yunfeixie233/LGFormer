@@ -6,6 +6,6 @@ _base_ = [
 ]
 model = dict(
     backbone=dict(
-        out_indices=[4, 11]),
+        out_indices=[4,11,]),
     decode_head=dict(
         num_classes=150))
