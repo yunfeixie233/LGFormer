@@ -14,7 +14,7 @@ fi
 # 设置默认的 load_from 值，如果提供了参数则使用第一个参数
 load_from="${1:-best_ade.pth}"
 
-PID=3161214
+PID=1423547
 
 while ps -p $PID > /dev/null; do
     echo "Process $PID is still running"
@@ -25,8 +25,7 @@ sleep 10
 echo "Process $PID has terminated"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/reg/regproxy-s16-sub11+implicit-mid-4+512x512+160k+adamw-poly+ade20k.py"
-    
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_avg4_loss_6h_expandgt_multi_reweight_allupdate.py"
 )
 
 while true; do  

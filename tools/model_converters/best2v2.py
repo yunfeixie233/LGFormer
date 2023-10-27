@@ -33,8 +33,8 @@ def convert_v2(args):
                 ' b c h w -> b (h w) c',
             )
 
-        new_key = 'decode_head.' + key
-        
+        new_key = 'backbone.' + key
+        # new_key = 'decode_head.' + key
 
 
         new_model_data[new_key] = value
