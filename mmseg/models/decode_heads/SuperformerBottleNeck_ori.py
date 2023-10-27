@@ -771,7 +771,6 @@ class SuperformerStage(nn.Module):
         for i in range(start, end):
             if self.use_gt_in_vit and gt != None:
                 gt = self.blocks[i](gt)
-                print(f"forward gt at block {i}")
             else:
                 x = self.blocks[i](x)
             if self.return_mid_sp and i == self.return_mid_sp:
@@ -1593,6 +1592,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             elif self.classification_feature == 'group_extralayer':
                 self.gt_norm = norm_layer(self.embed_dim)
                 self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+                if self.seg_specific_classifier == "Linear":
+                    self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+                elif self.seg_specific_classifier == "Conv":
+                    self.seg_head_conv = nn.Conv2d(self.embed_dim, self.seg_num_classes,1)
+                else:
+                    print(self.seg_specific_classifier)
+                    raise ValueError()
+                self.seg_norm = norm_layer(self.embed_dim)
             else:
                 raise(NotImplementedError)
             
@@ -2646,8 +2653,29 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     gt_logits, similarities
                 ) 
             # to_h5(gt = gt_[:,0,...], sp =x.view(b,sh,sw,-1).permute(0, 3, 1, 2),filename= '/data2/yunfei/vis.h5')                
-            ret['seg'] = gt_logits
-            ret['gt'] =  None            
+            if not self.seg_specific_classifier:
+                raise ValueError("No segmentation head is found.")
+            elif self.seg_specific_classifier=="Linear":
+                
+                x = self.seg_norm(x)
+                b, num, c = x.shape
+                x = x.reshape(b * num, c)
+
+                sp_logits = self.seg_head(x)
+                sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+            elif self.seg_specific_classifier=="Conv":
+                x = self.seg_norm(x)
+                b, num, c = x.shape
+
+
+
+                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(x)
+            pixel_logits = superpixel_ops.expand_superpixel_features(
+                sp_logits, similarities
+            )            
+            ret['seg'] = pixel_logits
+            ret['gt'] =  gt_logits            
             return ret
 
         else:

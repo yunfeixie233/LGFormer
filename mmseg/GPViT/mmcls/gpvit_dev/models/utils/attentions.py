@@ -5,14 +5,14 @@ LePE attention References: https://github.com/microsoft/CSWin-Transformer
 from ast import Try
 from typing import Sequence
 from numpy import block
-
+import torch.distributed as dist
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as cp
 
 from einops import rearrange
-
+import numpy as np
 from mmcv.cnn import build_norm_layer, build_conv_layer, build_activation_layer
 from mmcv.cnn.bricks.transformer import FFN, AdaptivePadding, build_dropout
 from mmengine.model.weight_init import trunc_normal_
@@ -31,7 +31,7 @@ from PIL import Image
 import os
 import h5py
 from timm.models import layers as timm_layers
-
+from torch.utils.tensorboard import SummaryWriter
 
 class SE(nn.Module):
     """
@@ -643,7 +643,8 @@ class GPBlock(nn.Module):
                  keep_multihead: bool = False, 
                  group_pe_method = None,
                  superpixel_shape = None, 
-                 use_global_token: bool = False,                 
+                 use_global_token: bool = False,  
+                 log_interval: int = 50,               
                  **kwargs):
 
         super().__init__()
@@ -788,6 +789,9 @@ class GPBlock(nn.Module):
         if self.use_global_token:
             self.global_projector = nn.Linear(embed_dims, embed_dims)
             self.reweight = Reweight()
+            self.writer = SummaryWriter()
+            self.forward_counter = 0
+            self.log_interval = log_interval            
         for i in range(gt_iter):
         
             pos_embed = nn.Parameter(torch.randn(1, num_group_token, embed_dims) * 0.02)      
@@ -839,6 +843,8 @@ class GPBlock(nn.Module):
         self.vis_gt_eff = vis_gt_eff
         self.output_dir = output_dir
         self.layer_num = layer_num
+
+        
         self.init_weights()
     def init_weights(self):
         if self.pos_embeds is not None:
@@ -863,6 +869,12 @@ class GPBlock(nn.Module):
         Returns:
             proj_tokens: shape [B, L, C]
         """
+        if self.use_global_token:
+            self.forward_counter += 1
+            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0 and self.training:
+                param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                self.writer.add_scalar(f'global_token_reweight', param, self.forward_counter)                    
+                        
         B, L, C = x.size()      
         sw = sh = int(math.sqrt(L))
         if self.vis_gt_eff:

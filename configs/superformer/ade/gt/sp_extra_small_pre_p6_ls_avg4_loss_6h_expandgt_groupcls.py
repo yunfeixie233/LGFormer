@@ -29,8 +29,11 @@ model = dict(
     },     
     loss_decode=[
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=1.0)],
+            type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=0.5),
+            dict(
+            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5)],
     use_gt_loss = False,
     expand_gt = True,
     keep_multihead = True,
+    use_gt_cls = True,
 ))
