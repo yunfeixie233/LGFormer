@@ -624,15 +624,16 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             Tensor: Outputs segmentation logits map.
         """
         ret = self.forward(inputs)
-        if self.use_gt_cls:
-            seg_logits = ret['gt']
-        else:
-            seg_logits = ret['seg']               
-            # gt_logits = ret['gt']
-            # if gt_logits.shape != seg_logits.shape:
-            #     import torch.nn.functional as F                
-            #     gt_logits = F.interpolate(gt_logits,size=seg_logits.shape[2:],mode='bilinear')
-            # seg_logits = seg_logits + gt_logits
+        seg_logits = ret['seg'] 
+        # if self.use_gt_cls:
+        # #     seg_logits = ret['gt']
+        # # else:
+        #     seg_logits = ret['seg']               
+        #     gt_logits = ret['gt']
+        #     if gt_logits.shape != seg_logits.shape:
+        #         import torch.nn.functional as F                
+        #         gt_logits = F.interpolate(gt_logits,size=seg_logits.shape[2:],mode='bilinear')
+        #     seg_logits = seg_logits + gt_logits
         return self.predict_by_feat(seg_logits, batch_img_metas)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:

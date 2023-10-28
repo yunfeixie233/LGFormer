@@ -21,12 +21,12 @@ model = dict(
         'group_projector_methonds':'linear',
         'association_embedding':False,
         'group_token_init_method':'avgpool',
-        "init_strides":((2,2,),),
-        'init_kernel_sizes':((2,2,),),
-        'merge_pos':((),(6,),()),
-        'ls_init_value':1e-5,            
-    },
+        "init_strides":(4,),
+        'init_kernel_sizes':(4,),
+        'merge_pos':((),(8,),()),
+        'ls_init_value':0.,            
+    },        
     expand_gt = True,
-    keep_multihead = True,
-  
+    keep_multihead = True,    
+
 ))

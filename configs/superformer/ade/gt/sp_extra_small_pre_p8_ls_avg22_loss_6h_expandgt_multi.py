@@ -4,6 +4,8 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
+    expand_gt = True,
+    keep_multihead = True,
     arch_settings = {
         'embed_dims': 384,
         'patch_size': 8,
@@ -23,10 +25,7 @@ model = dict(
         'group_token_init_method':'avgpool',
         "init_strides":((2,2,),),
         'init_kernel_sizes':((2,2,),),
-        'merge_pos':((),(6,),()),
+        'merge_pos':((),(8,),()),
         'ls_init_value':1e-5,            
-    },
-    expand_gt = True,
-    keep_multihead = True,
-  
+    },    
 ))

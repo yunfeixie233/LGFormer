@@ -427,7 +427,7 @@ class FullAttnCatBlock(nn.Module):
 
         self.ffn = FFN(**_ffn_cfgs)
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
-
+        self.act_layer = nn.ReLU(True)
         self.proj = nn.Linear(embed_dims * 2, embed_dims, bias=True)
 
     def forward(self, query, key, value, att_bias=None,attn_dict_list = None):
@@ -446,7 +446,7 @@ class FullAttnCatBlock(nn.Module):
             x = torch.cat((query, self.drop_path(x)),dim=-1)
             x = self.proj(x)
             x = self.ffn(self.norm2(query), identity=x)              
-                
+            x = self.act_layer(x)
             return x,attn_dict_list
         if self.with_cp:
             return cp.checkpoint(_inner_forward, query, key, value, att_bias)
@@ -685,15 +685,28 @@ class GPBlock(nn.Module):
                 timm_layers.LayerNorm2d(embed_dims),
                 nn.GELU(),            
             )            
-        elif self.group_token_init_method == 'avgpool':
 
-            self.group_token_init = \
-            nn.Sequential(         
+        elif self.group_token_init_method == 'avgpool':
+            if isinstance(init_kernel_size, tuple) and isinstance(init_stride, tuple):
+                layers = []
+                for k_size, stride in zip(init_kernel_size, init_stride):
+                    layers.extend([
+                        nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
+                        timm_layers.LayerNorm2d(embed_dims),
+                        nn.GELU(),
+
+                    ])
+                self.group_token_init = nn.Sequential(*layers)
+            elif isinstance(init_kernel_size, int) and isinstance(init_stride, int):
+                self.group_token_init = \
+                nn.Sequential(         
                 nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
                 timm_layers.LayerNorm2d(embed_dims),
                 nn.GELU(),
-
             )
+            else:
+                raise(NotImplementedError)
+            
         elif self.group_token_init_method == 'depthwise':
                 self.group_token_init = \
                 nn.Sequential(                         
@@ -920,8 +933,9 @@ class GPBlock(nn.Module):
             if self.group_projector_methonds == "cross" and prev_token is not None:
                 gt, _= self.group_projector(query=gt, key=prev_token, value=prev_token)            
             gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
-            if len(blocks) > 0 :
+            if len(blocks) > 0 :           
                 gt = gt + pos_embed
+
                 gt = blocks(gt)
             
          

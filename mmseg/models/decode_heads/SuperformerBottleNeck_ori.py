@@ -42,7 +42,7 @@ import os.path as osp
 from timm.models import layers as timm_layers
 
 
-def to_h5(output_directory, max_keys_per_file=None, **kwargs):
+def to_h5(output_directory, max_keys_per_file=None,  max_file_per_fold=None, **kwargs):
     """
     Save input tensors or numpy arrays to an H5 file in a specified directory with automatic numbering.
     Each key from kwargs gets its own sub-directory.
@@ -65,11 +65,18 @@ def to_h5(output_directory, max_keys_per_file=None, **kwargs):
         os.makedirs(output_directory)
 
     # Helper function to handle data writing
-    def write_data(f, key, value):
+    def write_data(f, key, value,convert_4D = True):
         if torch.is_tensor(value) and value.device.type == 'cuda':
             value = value.detach().cpu().numpy()
         elif torch.is_tensor(value):
             value = value.detach().numpy()
+        if value.ndim == 3 and convert_4D:
+            h = w = int(math.sqrt(value.shape[1]))
+            value = rearrange(
+                value,
+                'b (h w) c -> b h w c',
+                h = h, w = w
+            )
         f.create_dataset(key, data=value)
     
     for key, value in kwargs.items():
@@ -81,7 +88,8 @@ def to_h5(output_directory, max_keys_per_file=None, **kwargs):
         existing_files = [f for f in os.listdir(sub_directory) if f.startswith(key) and f.endswith('.h5')]
         counts = [int(f.split(key)[1].split('.h5')[0]) for f in existing_files]
         max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
-        
+        if max_file_per_fold and max_file_per_fold < max_count:
+            break
         output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
         
         with h5py.File(output_file, "a") as f:
@@ -424,6 +432,8 @@ class SuperformerStage(nn.Module):
         use_global_token: bool = False,
         return_mid_sp: int = None,
         use_gt_in_vit: bool = False,
+        vis_sp_block: bool = False,
+        output_dir: str = None
     ) -> None:
         super().__init__()
 
@@ -610,7 +620,8 @@ class SuperformerStage(nn.Module):
             self.global_token = nn.Parameter(torch.randn(self.num_group_token , self.embed_dims))
 
                         
-            
+        self.vis_sp_block = vis_sp_block
+        self.output_dir = output_dir  
         self.init_weights()
 
     def init_weights(self):
@@ -773,6 +784,8 @@ class SuperformerStage(nn.Module):
                 gt = self.blocks[i](gt)
             else:
                 x = self.blocks[i](x)
+                if self.vis_sp_block:
+                    to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
   
@@ -1250,6 +1263,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         vis_spgt: bool = False,
         vis_pixel: bool = False,
         vis_sp_stage: bool = False,
+        vis_sp_block: bool = False,
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
@@ -1523,7 +1537,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     reweight = reweight_pixel_update,
                     use_global_token = use_global_token,
                     return_mid_sp = return_mid_sp,
-                    use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,                    
+                    use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
+                    vis_sp_block = vis_sp_block,
+                    output_dir = output_dir          
                 )
             )
             cur_depth += depth
@@ -1636,6 +1652,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.vis_pixel = vis_pixel
         self.log_reweight = log_reweight
         self.vis_sp_stage = vis_sp_stage
+        self.vis_sp_block = vis_sp_block
         if self.log_reweight:
             self.writer = SummaryWriter()
             self.forward_counter = 0

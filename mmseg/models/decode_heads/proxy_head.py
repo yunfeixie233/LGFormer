@@ -65,13 +65,13 @@ class ProxyHead(BaseDecodeHead):
         return token_logits
 
     def forward(self, inputs):
-        x_mid, x = self._transform_inputs(inputs)  # (B, C, H, W)
-        B, _, H, W = x.shape
-        affinity = self.forward_affinity(x_mid)
-        
-        # _, x = self._transform_inputs(inputs)  # (B, C, H, W)
+        # x_mid, x = self._transform_inputs(inputs)  # (B, C, H, W)
         # B, _, H, W = x.shape
-        # affinity = self.forward_affinity(x)                
+        # affinity = self.forward_affinity(x_mid)
+        
+        _, x = self._transform_inputs(inputs)  # (B, C, H, W)
+        B, _, H, W = x.shape
+        affinity = self.forward_affinity(x)                
         token_logits = self.forward_cls(x)
 
         # classification per pixel
