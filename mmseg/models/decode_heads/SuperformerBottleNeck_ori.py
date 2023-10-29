@@ -1248,6 +1248,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         },
         use_gt_loss: bool = False,
         use_gt_cls: bool = False,
+        use_gt_extralayer: bool = False,
         expand_gt: bool = False,
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1476,7 +1477,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
 
         stage_in_dim = stem_channels_list[-1]
-
+        self.use_gt_extralayer = use_gt_extralayer 
         for i, (depth, dim, head, sp_size, sp_head, stride) in enumerate(
             zip(depths, dims, heads, sp_sizes, sp_heads, strides)
         ):
@@ -1545,6 +1546,51 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 )
             )
             cur_depth += depth
+            # create extralayer for group token using the same setting of extralayer
+            
+            if i == num_stages -1 and self.use_gt_extralayer:
+                self.gt_stages= \
+                    SuperformerStage(
+                        stage_in_dim,
+                        sp_dim,
+                        dim,
+                        stride,
+                        sp_stride,
+                        head,
+                        depth,
+                        norm_layer=norm_layer,
+                        norm_layer_2d=norm_layer_2d,
+                        act_layer=act_layer,
+                        drop_rate=drop_rate,
+                        drop_path_rate=drop_path_rates[cur_depth : cur_depth + depth],
+                        attn_drop_rate=attn_drop_rate,
+                        superpixel_layer=sp_layer,
+                        pixel_ls_init_value=pixel_ls_init_value,
+                        ls_init_value=ls_init_value,
+                        pre_norm_pixel=pre_norm_pixel_stage,
+                        sp_embed_method=sp_embed_method,
+                        sp_project_method=sp_project_method,
+                        pixel_refine_method=pixel_refine_method,
+                        return_updated_pixel_features=return_updated_pixel_features if self.use_patch_embed is False else False,
+                        unflatten_sp_features=unflatten_sp_features,
+                        use_pos_embed=use_pos_embeds[i],
+                        use_cls_token=use_class_tokens[i],
+                        pos_embed_method=pos_embed_method,
+                        no_embed_class=self.no_embed_class,
+                        superpixel_shape=sp_shape,
+                        use_pixel_similarities=use_pixel_similarities,
+                        use_middle_pixel_features=use_middle_pixel_features,
+                        merge_layer = merge_layer,
+                        merge_pos = merge_pos,
+                        reweight = reweight_pixel_update,
+                        use_global_token = use_global_token,
+                        return_mid_sp = return_mid_sp,
+                        use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
+                        vis_sp_block = vis_sp_block,
+                        output_dir = output_dir          
+                    )
+                
+                
 
         assert cur_depth == sum(depths)
         self.stages = nn.ModuleList(stages)
@@ -1639,6 +1685,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
         self.use_gt_loss = use_gt_loss 
         self.expand_gt = expand_gt
+
         if self.use_gt_loss:
             self.gt_norm = norm_layer(self.embed_dim)
             self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1944,6 +1991,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self, x: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
         img = None,attn_dict_list = None, gt = None, sp_features_mid = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         ret = {}
+            #final info               
+        last_stage = self.stages[-1]
+        last_sp_layer = last_stage.patch_embed
+        if isinstance(last_sp_layer, nn.AvgPool2d):
+            sh=sw = last_sp_layer.kernel_size
+        elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+            sh, sw = last_sp_layer.superpixel_shape
+        else:
+            raise ValueError()  
+      
         if self.classification_feature == "pixel":
             b, c, h, w = x.shape
             if self.pixel_projection:
@@ -1958,14 +2015,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             return None, pixel_logits
         elif self.classification_feature == "pixel_extralayer":
             _, _, h, w = pixel_feature.shape
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
             x_2d = einops.rearrange(x,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
@@ -2057,14 +2106,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
             return sp_logits, pixel_logits
         elif self.classification_feature == "both":
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
             x = rearrange(
                 x,
                 'b (sh sw) c -> b c sh sw',
@@ -2191,15 +2232,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             return sp_logits, pixel_logits
         elif self.classification_feature == "superpixel_bilinear":
             
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
             x = rearrange(x,
                           'b (sh sw) c -> b c sh sw',
                           sh = sh, sw = sw)
@@ -2293,15 +2325,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 else:
                     raise ValueError()
         elif self.classification_feature == "superpixel_extralayer": 
-            #final info               
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
+
             x_2d = einops.rearrange(x,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
@@ -2393,9 +2417,27 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
                     gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
                                         h = h_g,
-                                        w = w_g)                                                            
+                                        w = w_g) 
+                    if self.use_gt_extralayer:
+                        gt_layer = self.gt_stages.patch_embed
+                        gt_2d = rearrange(gt,'b (h w) c -> b c h w',
+                                        h = h_g,
+                                        w = w_g) 
+                        info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
+                        similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
+                        similarities_gt = prepare_similarities(
+                            gt_layer,
+                            similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                            scale_factor=scale_factor,
+                        )
+                        similarities_gt = similarities_gt.softmax(1)
+                        similarities_gt = einops.rearrange(
+                            similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                        )
+                    else:
+                        similarities_gt = similarities
                     gt_logits =superpixel_ops.expand_superpixel_features(
-                        gt_logits, similarities
+                        gt_logits, similarities_gt
                     ) 
 
             else:
@@ -2406,14 +2448,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             return ret
         elif self.classification_feature == "superpixel_extralayer_similarity": 
             #final info               
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
             x_2d = einops.rearrange(x,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
@@ -2479,14 +2513,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         elif self.classification_feature == "both_extralayer": 
             
             #final info               
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
             x_2d = einops.rearrange(x,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
@@ -2565,15 +2591,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             pixel_logits = sp_logits + pixel_logits
             return sp_logits, pixel_logits
         elif self.classification_feature == 'regproxy':
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape
-            else:
-                raise ValueError()
          
             if self.return_mid_sp:
                 x_mid =  rearrange(sp_features_mid,
@@ -2603,12 +2620,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             return sp_logits, pixel_logits
         elif self.classification_feature == "group_extralayer": 
             #final info               
-            last_stage = self.stages[-1]
-            last_sp_layer = last_stage.patch_embed
-            if isinstance(last_sp_layer, nn.AvgPool2d):
-                sh=sw = last_sp_layer.kernel_size
-            elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                sh, sw = last_sp_layer.superpixel_shape            
             x_2d = einops.rearrange(x,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
