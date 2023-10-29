@@ -4,5 +4,5 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
-    expand_gt = True
+    gt_cls_method = 'upsample_first'
 ))
