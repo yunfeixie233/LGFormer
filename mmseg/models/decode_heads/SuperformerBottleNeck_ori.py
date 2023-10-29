@@ -783,9 +783,10 @@ class SuperformerStage(nn.Module):
             if self.use_gt_in_vit and gt != None:
                 gt = self.blocks[i](gt)
             else:
-                x = self.blocks[i](x)
                 if self.vis_sp_block:
-                    to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)
+                    to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
+                x = self.blocks[i](x)
+
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
   
@@ -803,7 +804,8 @@ class SuperformerStage(nn.Module):
               
         if self.use_global_token and len(self.merge_layer) > 0:
             x, gt = einops.unpack(x, ps, 'b * d')
-                
+        if self.vis_sp_block:
+            to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
         return x,attn_dict_list, gt, sp_featuers_mid
 
     def add_pos_embed(self, x):

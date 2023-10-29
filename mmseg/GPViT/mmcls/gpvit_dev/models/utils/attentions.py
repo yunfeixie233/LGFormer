@@ -443,7 +443,6 @@ class FullAttnCatBlock(nn.Module):
             new_x = self.proj(new_x)
             x = self.ffn(self.norm2(new_x), identity=query) 
             
-
             return x,attn_dict_list
         if self.with_cp:
             return cp.checkpoint(_inner_forward, query, key, value, att_bias)
@@ -1010,3 +1009,5 @@ class GPBlock(nn.Module):
             self.write_vis(sp_after,output_file,'sp_after')                
             self.write_vis(gt,output_file,'gt')                
             self.write_vis(sp_diff,output_file,'sp_diff')                
+
+
