@@ -385,13 +385,21 @@ class FullAttnCatBlock(nn.Module):
                  with_cp=False,
                  association_embedding = False,
                  ls_init_value = 1e-5,
-                 
+                 reweight_gt:str = None,
                  **kwargs):
         super().__init__()
         self.with_cp = with_cp
 
         self.norm_query = build_norm_layer(norm_cfg, embed_dims)[1]
-
+        if reweight_gt is None:
+            self.reweight = nn.Identity()
+        elif reweight_gt == 'reweight':
+            self.reweight == Reweight()
+        elif reweight_gt == 'sigmoid':           
+            self.reweight = ReweightSigmoid()
+        self.writer = SummaryWriter()
+        self.forward_counter = 0
+        self.log_interval = 50        
         if not key_is_query:
             self.norm_key = build_norm_layer(norm_cfg, embed_dims)[1]
         else:
@@ -428,7 +436,6 @@ class FullAttnCatBlock(nn.Module):
         self.ffn = FFN(**_ffn_cfgs)
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
         self.act_layer = nn.ReLU(True)
-        self.norm = build_norm_layer(norm_cfg, embed_dims)[1]
         self.proj = nn.Linear(embed_dims * 2, embed_dims, bias=True)
 
     def forward(self, query, key, value, att_bias=None,attn_dict_list = None):
@@ -441,7 +448,11 @@ class FullAttnCatBlock(nn.Module):
             new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
             new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
             new_x = self.proj(new_x)
-            x = self.ffn(self.norm2(new_x), identity=query) 
+            x = self.ffn(self.reweight(self.norm2(new_x)), identity=query) 
+            self.forward_counter += 1
+            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0 and self.training:
+                param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                self.writer.add_scalar(f'reweight', param, self.forward_counter)                    
             
             return x,attn_dict_list
         if self.with_cp:
@@ -528,6 +539,14 @@ class Reweight(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * (0.5 + torch.sigmoid(self.reweight))
+class ReweightSigmoid(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self.weight = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(self.weight)
 
 
 class FullGroupAttnBlock(nn.Module):
@@ -640,7 +659,8 @@ class GPBlock(nn.Module):
                  group_pe_method = None,
                  superpixel_shape = None, 
                  use_global_token: bool = False,  
-                 log_interval: int = 50,               
+                 log_interval: int = 50,
+                 reweight_gt: str = None,               
                  **kwargs):
 
         super().__init__()
@@ -784,7 +804,8 @@ class GPBlock(nn.Module):
             key_is_query=False,
             value_is_key=True,
             with_cp=with_cp,
-            ls_init_value = ls_init_value,)
+            ls_init_value = ls_init_value,
+            reweight_gt = reweight_gt)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _mixer_cfg = dict(
             num_patches=num_group_token,

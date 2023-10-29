@@ -1253,6 +1253,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         reweight_pixel_update_last:bool = False,
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
+        reweight_gt: str = None,
         keep_multihead: bool = False,
         use_global_token: bool = False,
         return_mid_sp: bool = False,        
@@ -1283,6 +1284,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
+        self.reweight_gt = reweight_gt
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
         self.reweight_pixel_update_last = reweight_pixel_update_last
@@ -1821,7 +1823,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     group_pe_method = _arch_settings["group_pe_method"] if "group_pe_method" in _arch_settings.keys() 
                                                                         else None,
                     superpixel_shape = self.sp_shape,
-                    use_global_token = self.use_global_token,)
+                    use_global_token = self.use_global_token,
+                    reweight_gt = self.reweight_gt)
+
             group_layer = GPBlock(**_layer_cfg)
             merge_layer.append(group_layer)
         return merge_layer
