@@ -1250,6 +1250,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_gt_cls: bool = False,
         use_gt_extralayer: bool = False,
         expand_gt: bool = False,
+        gt_cls_method: str = 'upsample_first',
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
         reweight_sp_update: bool = False,
@@ -1684,7 +1685,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if self.use_pixel_similarities_upsample:
             assert self.classification_feature in ['superpixel_extralayer_similarity','superpixel_extralayer']
         self.use_gt_loss = use_gt_loss 
-        self.expand_gt = expand_gt
+        self.gt_cls_method = gt_cls_method
 
         if self.use_gt_loss:
             self.gt_norm = norm_layer(self.embed_dim)
@@ -2393,57 +2394,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 else:
                     raise ValueError()
             
-            if self.use_gt_loss:
-                h_g = w_g = int(math.sqrt(gt.shape[1]))
-                if self.expand_gt:
-                    # b head n g 
-                    attn_map = attn_dict_list[-1]
-                    if self.keep_multihead:
-                        num_heads = self.arch_settings['num_ungroup_heads']
-                        _, n, hc = gt.shape             
-                        gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )        
-                        gt = attn_map.transpose(-1,-2) @ gt
-                        gt = rearrange(gt, ' b h n c ->  b n (h c)')        
-                    else:
-                        attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
-                        attn_map = attn_map.squeeze(1)
-                        gt = attn_map.transpose(-1,-2) @ gt
-                    h_g = w_g = int(math.sqrt(gt.shape[1]))
-
-                    gt_logits = self.gt_head(self.gt_norm(gt))
-
-                    gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                        h = h_g,
-                                        w = w_g) 
-                    if self.use_gt_extralayer:
-                        gt_layer = self.gt_stages.patch_embed
-                        gt_2d = rearrange(gt,'b (h w) c -> b c h w',
-                                        h = h_g,
-                                        w = w_g) 
-                        info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
-                        del(_)
-                        similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
-                        similarities_gt = prepare_similarities(
-                            gt_layer,
-                            similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
-                            scale_factor=scale_factor,
-                        )
-                        similarities_gt = similarities_gt.softmax(1)
-                        similarities_gt = einops.rearrange(
-                            similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
-                        )
-                    else:
-                        similarities_gt = similarities
-                    gt_logits =superpixel_ops.expand_superpixel_features(
-                        gt_logits, similarities_gt
-                    ) 
-
-            else:
-                gt_logits = None
-            # to_h5(gt = gt_[:,0,...], sp =x.view(b,sh,sw,-1).permute(0, 3, 1, 2),filename= '/data2/yunfei/vis.h5')                
+            
             ret['seg'] = pixel_logits
-            ret['gt'] =  gt_logits            
-            return ret
         elif self.classification_feature == "superpixel_extralayer_similarity": 
             #final info               
             x_2d = einops.rearrange(x,
@@ -2708,6 +2660,61 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             raise(NotImplementedError)
+        
+        if self.use_gt_loss:
+            h_g = w_g = int(math.sqrt(gt.shape[1]))
+            num_heads = self.arch_settings['num_ungroup_heads']
+            _, n, hc = gt.shape    
+            attn_map = attn_dict_list[-1]       
+            if self.gt_cls_method == "upsample_first":   
+                     
+                gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
+
+                gt = attn_map.transpose(-1,-2) @ gt
+                gt = rearrange(gt, ' b h n c ->  b n (h c)')
+                h_g = w_g = int(math.sqrt(gt.shape[1]))
+
+                                    
+            elif self.gt_cls_method == "cls_first":
+                attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
+                attn_map = attn_map.squeeze(1)
+            else:
+                raise(NotImplementedError)
+
+            gt_logits = self.gt_head(self.gt_norm(gt))
+
+            gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+                                h = h_g,
+                                w = w_g)                           
+
+            if self.use_gt_extralayer:
+                gt_layer = self.gt_stages.patch_embed
+                gt_2d = rearrange(gt,'b (h w) c -> b c h w',
+                                h = h_g,
+                                w = w_g) 
+                info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
+                del(_)
+                similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
+                similarities_gt = prepare_similarities(
+                    gt_layer,
+                    similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
+                    scale_factor=scale_factor,
+                )
+                similarities_gt = similarities_gt.softmax(1)
+                similarities_gt = einops.rearrange(
+                    similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                )
+            else:
+                similarities_gt = similarities
+            gt_logits =superpixel_ops.expand_superpixel_features(
+                gt_logits, similarities_gt
+            ) 
+
+        else:
+            gt_logits = None
+
+        ret['gt'] =  gt_logits
+        return ret        
     def forward(
         self,
         x: torch.Tensor,
