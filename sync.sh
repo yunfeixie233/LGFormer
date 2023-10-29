@@ -11,15 +11,15 @@ if [[ "$current_env" != "$desired_env" ]]; then
     echo "Switched to env $current_env"
 fi
 
-# 检查是否使用 --resume 参数
+# Check for the --resume argument
+resume=false
+resume_from=""
 if [ "$1" == "--resume" ]; then
     resume=true
-    shift # 移除第一个参数，使得 $2 变成 $1
-else
-    resume=false
+    resume_from=$2
 fi
 
-load_from="${1:-best_ade.pth}"
+load_from="${3:-best_ade.pth}"
 
 # Sync interval in seconds (e.g., 3600 seconds = 1 hour)
 SYNC_INTERVAL=300
@@ -52,10 +52,9 @@ for config in "${configs[@]}"; do
     WORK_DIR="/data2/yunfei/SpformerV1/work_dirs/${WORK_DIR_BASENAME}"
 
     if $first && $resume; then
-        echo "Resuming training from $load_from for $config"
-        bash tools/dist_train.sh "$config" 8 --resume --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
+        echo "Resuming training from $resume_from for $config"
+        bash tools/dist_train.sh "$config" 8 --resume --cfg-options load_from="$resume_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
         first=false
-        
     else
         echo "Starting training from $load_from for $config"
         bash tools/dist_train.sh "$config" 8 --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
