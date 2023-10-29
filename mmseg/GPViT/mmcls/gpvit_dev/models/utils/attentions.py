@@ -437,16 +437,16 @@ class FullAttnCatBlock(nn.Module):
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
            
-            # new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            # new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
-            # new_x = self.proj(new_x)
-            # x = self.ffn(self.norm2(query), identity=query) 
+            new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
+            new_x = self.proj(new_x)
+            x = self.ffn(self.norm2(new_x), identity=query) 
             
-            x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            x = torch.cat((query, self.drop_path(x)),dim=-1)
-            x = self.proj(x)
-            x = self.ffn(self.norm2(query), identity=x)              
-            x = self.act_layer(x)
+            # x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
+            # x = torch.cat((query, self.drop_path(x)),dim=-1)
+            # x = self.proj(x)
+            # x = self.ffn(self.norm2(query), identity=x)
+                          
             return x,attn_dict_list
         if self.with_cp:
             return cp.checkpoint(_inner_forward, query, key, value, att_bias)
@@ -1013,3 +1013,5 @@ class GPBlock(nn.Module):
             self.write_vis(sp_after,output_file,'sp_after')                
             self.write_vis(gt,output_file,'gt')                
             self.write_vis(sp_diff,output_file,'sp_diff')                
+
+
