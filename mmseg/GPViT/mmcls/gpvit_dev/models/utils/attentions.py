@@ -451,8 +451,9 @@ class FullAttnCatBlock(nn.Module):
             x = self.ffn(self.reweight(self.norm2(new_x)), identity=query) 
             self.forward_counter += 1
             if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0 and self.training:
-                param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
-                self.writer.add_scalar(f'reweight', param, self.forward_counter)                    
+                if hasattr(self.reweight, 'reweight'):     
+                    param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                    self.writer.add_scalar(f'reweight', param, self.forward_counter)                    
             
             return x,attn_dict_list
         if self.with_cp:
