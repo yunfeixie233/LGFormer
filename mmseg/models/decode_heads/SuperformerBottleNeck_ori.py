@@ -2387,9 +2387,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                     if self.use_similarity_head:
                         similarities = self.similarity_head(similarities)
-                    # import h5py
-                    # with h5py.File("/data2/yunfei/vis/similarities.h5","a") as f:
-                    #     f.create_dataset("similarities",data=similarities.detach().cpu().numpy())
                     pixel_logits = superpixel_ops.expand_superpixel_features(
                         sp_logits, similarities
                     )
@@ -2424,10 +2421,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                         h = h_g,
                                         w = w_g) 
                         info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
+                        del(_)
                         similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
                         similarities_gt = prepare_similarities(
                             gt_layer,
-                            similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                            similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
                             scale_factor=scale_factor,
                         )
                         similarities_gt = similarities_gt.softmax(1)
