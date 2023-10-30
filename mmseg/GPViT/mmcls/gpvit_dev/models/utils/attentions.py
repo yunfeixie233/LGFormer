@@ -639,7 +639,9 @@ class GroupAttnBlock(nn.Module):
             else:
                 x = new_x
             self.forward_counter += 1
-            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
+            # if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
+            if self.forward_counter % self.log_interval == 0 :
+            
                 if hasattr(self.reweight, 'reweight'):
                     param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
                     self.writer.add_scalar(f'reweight', param, self.forward_counter)                                    

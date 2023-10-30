@@ -19,7 +19,7 @@ if [ "$1" == "--resume" ]; then
     resume_from=$2
 fi
 
-load_from="${3:-best_ade.pth}"
+load_from="${3:-best_coco.pth}"
 
 # Sync interval in seconds (e.g., 3600 seconds = 1 hour)
 SYNC_INTERVAL=300
@@ -30,8 +30,48 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt_new/sp_extra_small_pre_p8_ls_avg4.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_small_pre.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p10_ls_avg4.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p11_ls_avg4.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_avg4.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p8_ls_avg4.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p7_ls_avg4.py"
 )
+should_skip_sync() {
+    local skip_sync=false
+    # 获取本机的所有 IP 地址
+    local ips=$(hostname -I)
+    for ip in $ips; do
+        if [[ "$ip" == "$REMOTE_HOST" ]]; then
+            skip_sync=true
+            break
+        fi
+    done
+    echo $skip_sync
+}
+
+get_server_name() {
+    local server_ip=$(hostname -I | awk '{for(i=1;i<=NF;i++) if ($i ~ /^169\./) print $i}')
+    local server_name=""
+
+    case "$server_ip" in
+        "169.233.1.28")
+            server_name="4u-7"
+            ;;
+        "169.233.1.27")
+            server_name="4u-6"
+            ;;
+        "169.233.1.18")
+            server_name="4u-1"
+            ;;            
+        # 可以在此添加更多的匹配规则
+        *)
+            server_name="UnknownServer"
+            ;;
+    esac
+
+    echo "$server_name"
+}
 
 sync_and_cleanup() {
     local SRC_DIR="$1"
@@ -47,7 +87,7 @@ sync_and_cleanup() {
 
 first=true
 for config in "${configs[@]}"; do
-
+    server_name=$(get_server_name)  
     WORK_DIR_BASENAME=$(basename "${config%.*}")
     WORK_DIR="/data2/yunfei/SpformerV1/work_dirs/${WORK_DIR_BASENAME}"
 
@@ -60,7 +100,7 @@ for config in "${configs[@]}"; do
         bash tools/dist_train.sh "$config" 8 --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
     fi
 
-    python /data2/yunfei/SpformerV1/reminder.py "$config" 1
+    python /data2/yunfei/SpformerV1/reminder.py "$config" 1 "$server_name"  
     PID=$!
 
     LAST_SYNC_TIME=$(date +%s)
@@ -76,9 +116,11 @@ for config in "${configs[@]}"; do
     done
 
     echo "Process $PID has terminated"
-    python /data2/yunfei/SpformerV1/reminder.py "$config" 0   
+
+
+    python /data2/yunfei/SpformerV1/reminder.py "$config" 0 "$server_name"  
     sync_and_cleanup "$WORK_DIR"
     sleep 30
 done
-python /data2/yunfei/SpformerV1/reminder.py "所有" 0  
+python /data2/yunfei/SpformerV1/reminder.py "所有" 0 "$server_name"  
 echo "All configurations processed."

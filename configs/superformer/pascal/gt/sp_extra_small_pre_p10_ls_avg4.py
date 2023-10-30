@@ -6,6 +6,9 @@ model = dict(
     decode_head=dict(
     use_group_token = 'mix',
     use_gt_loss = True,
+    group_init_strides = (3,),
+    group_init_kernel_sizes = (3,),
+    group_layers = {0:100,},
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),

@@ -1513,11 +1513,15 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             sp_layer, sp_shape = self._make_superpixel_layer(
                 i, cur_stride, sp_size, sp_head, pixel_dim, sp_dim, sp_method
             )
-            group_cfg.update({'superpixel_shape': sp_shape})          
-            merge_layer = self._make_group_layer(
-                stage = i, group_cfg=group_cfg
-            ) if self.use_group_token == 'mix' else None
-            group_pos = group_cfg['group_pos'][i] if self.use_group_token == 'mix' else None
+            if self.use_group_token == 'mix':
+                group_cfg.update({'superpixel_shape': sp_shape})
+                group_pos = group_cfg['group_pos'][i]
+                merge_layer = self._make_group_layer(
+                    stage = i, group_cfg=group_cfg
+                )                
+            else:
+                group_pos = None                          
+                merge_layer = None
             # first feature already has norm & act
             pre_norm_pixel_stage = pre_norm_pixel and i != 0
             if pre_norm_pixel_stage:
