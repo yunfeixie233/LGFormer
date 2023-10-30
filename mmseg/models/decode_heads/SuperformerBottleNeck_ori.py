@@ -427,7 +427,7 @@ class SuperformerStage(nn.Module):
         use_pixel_similarities: bool = False,
         use_middle_pixel_features: bool = False,
         merge_layer = None,
-        merge_pos = None,
+        group_pos = None,
         reweight: bool = False,
         use_global_token: bool = False,
         return_mid_sp: int = None,
@@ -454,7 +454,7 @@ class SuperformerStage(nn.Module):
         self.use_pixel_similarities = use_pixel_similarities
         self.use_middle_pixel_features = use_middle_pixel_features
         self.merge_layer = merge_layer
-        self.merge_pos = merge_pos
+        self.group_pos = group_pos
         self.use_gt_in_vit = use_gt_in_vit
         if pre_norm_pixel:
             raise NotImplementedError()
@@ -790,11 +790,11 @@ class SuperformerStage(nn.Module):
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
   
-            if self.merge_layer and i in self.merge_pos:
+            if self.merge_layer and i in self.group_pos:
                 #unpack when cross attention
                 if self.use_global_token: 
                     x, global_token = einops.unpack(x, ps, 'b * d')                                    
-                x,attn_dict_list , gt = self.merge_layer[self.merge_pos.index(i)](
+                x,attn_dict_list , gt = self.merge_layer[self.group_pos.index(i)](
                 x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt, global_token = global_token
             )
                 if self.use_global_token: 
@@ -1228,36 +1228,39 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_similarity_head: bool = False,
         resize_version: str = 'v2',
         use_pixel_similarities_upsample: bool = False,
-        use_group_token: str = None,
-        gt_scale_factor: int = 1,        
-        extralayer_nols: bool = False,
-        arch_settings: dict = {
-            'embed_dims': 216,
-            'patch_size': 8,
-            'window_size': 2,
-            'num_layers': 4,
-            'num_heads': 12,
-            'num_group_heads': 6,
-            'num_group_forward_heads': 6,
-            'num_ungroup_heads': 6,
-            'ffn_ratio': 4.,
-            'patch_embed': dict(type='ConvPatchEmbed', num_convs=0),
-            'mlpmixer_depth': 1,
-            'group_layers': {0:64,1:32,2:32,3:16},
-            'drop_path_rate': 0.2
-        },
+        extralayer_nols: bool = False,          
+        #group related setting
+        use_group_token: str = None, 
+        group_embed_dims =384,
+        group_layers = {0:64,},            
+        num_group_heads = 6,
+        num_ungroup_heads = 6,
+        num_block_heads = 6,            
+        group_block_depth = 1,
+        group_projector_method = 'linear',
+        group_token_init_method = 'avgpool', 
+        group_init_strides = (4,),
+        group_init_kernel_sizes = (4,),
+        group_pos = ((),(8,),()),
+        group_ls_init_value = None,
+        ungroup_ls_init_value = 1e-5,
+        group_block_init_values = None,
+        group_identity: bool =True,
+        ungroup_identity: bool =True,
+        gt_iter: int = 1,
+        group_pe_method: str = 'learnable',
+        group_reweight_method: str = None,      
         use_gt_loss: bool = False,
         use_gt_cls: bool = False,
         use_gt_extralayer: bool = False,
-        expand_gt: bool = False,
         gt_cls_method: str = 'upsample_first',
+        use_global_token: bool = False,
+        use_ffn: bool = False,
+        #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
-        reweight_gt: str = None,
-        keep_multihead: bool = False,
-        use_global_token: bool = False,
         return_mid_sp: bool = False,        
         #visualize param
         vis_sp_id: bool =False,
@@ -1286,7 +1289,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
-        self.reweight_gt = reweight_gt
+
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
         self.reweight_pixel_update_last = reweight_pixel_update_last
@@ -1463,17 +1466,38 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             )
         if use_group_token:
             assert use_group_token in ['post','mix']      
-        self.use_group_token = use_group_token
-        self.gt_scale_factor = gt_scale_factor
+
         self.output_dir = output_dir
+        self.use_group_token = use_group_token  
+        print(group_pos)      
         if self.use_group_token:
-            self.arch_settings = arch_settings
-            self.keep_multihead = keep_multihead            
-            if self.use_group_token == 'post':
-                self.merge_layer = self._make_merge_layer(
-                    self.arch_settings
-                )
-            self.vis_gt_eff = vis_gt_eff
+            group_cfg = dict(
+            group_embed_dims = group_embed_dims,
+            group_layers = group_layers,            
+            num_group_heads = num_group_heads,
+            num_ungroup_heads = num_ungroup_heads,
+            num_block_heads = num_block_heads,            
+            group_block_depth = group_block_depth,
+            group_projector_method = group_projector_method,
+            group_token_init_method = group_token_init_method,
+            group_init_strides = group_init_strides,
+            group_init_kernel_sizes = group_init_kernel_sizes,
+            group_pos = group_pos,
+            group_ls_init_value = group_ls_init_value,
+            ungroup_ls_init_value = ungroup_ls_init_value,
+            group_block_init_values = group_block_init_values,
+            group_identity = group_identity,
+            ungroup_identity = ungroup_identity,
+            gt_iter = gt_iter,
+            group_pe_method = group_pe_method,
+            group_reweight_method = group_reweight_method,
+            use_ffn = use_ffn
+            )
+            self.group_cfg = group_cfg
+            print(group_cfg)
+        if self.use_group_token == 'post':
+                self.merge_layer = self._make_group_layer(group_cfg)
+
 
         num_stages = len(depths)
         stages = []
@@ -1489,10 +1513,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             sp_layer, sp_shape = self._make_superpixel_layer(
                 i, cur_stride, sp_size, sp_head, pixel_dim, sp_dim, sp_method
             )
-            merge_layer = self._make_merge_layer(
-                stage = i, _arch_settings = self.arch_settings
+            group_cfg.update({'superpixel_shape': sp_shape})          
+            merge_layer = self._make_group_layer(
+                stage = i, group_cfg=group_cfg
             ) if self.use_group_token == 'mix' else None
-            merge_pos = self.arch_settings['merge_pos'][i] if self.use_group_token == 'mix' else None
+            group_pos = group_cfg['group_pos'][i] if self.use_group_token == 'mix' else None
             # first feature already has norm & act
             pre_norm_pixel_stage = pre_norm_pixel and i != 0
             if pre_norm_pixel_stage:
@@ -1539,7 +1564,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_pixel_similarities=use_pixel_similarities,
                     use_middle_pixel_features=use_middle_pixel_features,
                     merge_layer = merge_layer,
-                    merge_pos = merge_pos,
+                    group_pos = group_pos,
                     reweight = reweight_pixel_update,
                     use_global_token = use_global_token,
                     return_mid_sp = return_mid_sp,
@@ -1584,7 +1609,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         use_pixel_similarities=use_pixel_similarities,
                         use_middle_pixel_features=use_middle_pixel_features,
                         merge_layer = merge_layer,
-                        merge_pos = merge_pos,
+                        group_pos = group_pos,
                         reweight = reweight_pixel_update,
                         use_global_token = use_global_token,
                         return_mid_sp = return_mid_sp,
@@ -1812,69 +1837,47 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         else:
             raise ValueError(f"Unknown superpixel method {method}")
         return sp_fn, sp_shape
-    def _make_merge_layer(
+    def _make_group_layer(
         self,
-        _arch_settings:dict,
+        group_cfg:dict,
         stage: int = None,        
         
     ):
+
         if self.use_group_token == 'post':
-            depth = len(_arch_settings['group_layers'].keys())
+            depth = len(group_cfg['group_layers'].keys())
         elif self.use_group_token == 'mix':
-            depth = len(_arch_settings['merge_pos'][stage])
+            depth = len(group_cfg['group_pos'][stage])
         merge_layer = nn.ModuleList()
         for i in range(depth):
             if i >0 :
-                if _arch_settings["group_projector_methonds"] == 'linear':
+                if group_cfg["group_projector_methonds"] == 'linear':
                     group_projector =nn.Sequential(
-                        nn.LayerNorm(_arch_settings['embed_dims']),
-                        MixerMlp(_arch_settings['group_layers'][i-1], _arch_settings['embed_dims'] // 2, _arch_settings['group_layers'][i])
+                        nn.LayerNorm(group_cfg['group_embed_dims']),
+                        MixerMlp(group_cfg['group_layers'][i-1], group_cfg['group_embed_dims'] // 2, group_cfg['group_layers'][i])
                         )
-                elif _arch_settings["group_projector_methonds"] == 'cross':
+                elif group_cfg["group_projector_methonds"] == 'cross':
                     group_projector = FullAttnCatBlock(
-                        embed_dims=_arch_settings['embed_dims'],
-                        num_heads = _arch_settings['num_group_heads'],
+                        embed_dims=group_cfg['embed_dims'],
+                        num_heads = group_cfg['num_group_heads'],
                         key_is_query=False,
                         value_is_key=False,
                     )
-                elif _arch_settings["group_projector_methonds"]== None:
+                elif group_cfg["group_projector_methonds"]== None:
                     group_projector=None
                 else :
                     raise(NotImplementedError)
             else:
                 group_projector=None
-            _layer_cfg = dict(
-                    embed_dims=_arch_settings['embed_dims'],
-                    depth=_arch_settings['mlpmixer_depth'],
-                    num_group_heads=_arch_settings['num_group_heads'],
-                    num_forward_heads=_arch_settings['num_group_forward_heads'],
-                    num_ungroup_heads=_arch_settings['num_ungroup_heads'],
-                    num_group_token=_arch_settings['group_layers'][i],
-                    ffn_ratio=_arch_settings['ffn_ratio'],
-                    init_stride = _arch_settings['init_strides'][i],
-                    init_kernel_size = _arch_settings['init_kernel_sizes'][i],
-                    with_cp=None,
-                    group_projector=group_projector,
-                    zero_init_group_token=True,
-                    group_projector_methonds = _arch_settings["group_projector_methonds"],
-                    association_embedding = _arch_settings["association_embedding"],
-                    group_token_init_method = _arch_settings["group_token_init_method"] \
-                                                if isinstance(_arch_settings["group_token_init_method"],str)
-                                                else _arch_settings["group_token_init_method"][i],
-                    ls_init_value = _arch_settings["ls_init_value"], 
-                    gt_iter = _arch_settings["gt_iter"] if "gt_iter" in _arch_settings.keys() else 1,
-                    same_group_method = _arch_settings["same_group_method"] if "same_group_method" in _arch_settings.keys() else False,
-                    vis_gt_eff = self.vis_gt_eff,
-                    output_dir = self.output_dir,
-                    layer_num = depth,
-                    keep_multihead = self.keep_multihead,
-                    group_pe_method = _arch_settings["group_pe_method"] if "group_pe_method" in _arch_settings.keys() 
-                                                                        else None,
-                    superpixel_shape = self.sp_shape,
-                    use_global_token = self.use_global_token,
-                    reweight_gt = self.reweight_gt)
-
-            group_layer = GPBlock(**_layer_cfg)
+                
+            group_cfg.update({'init_stride': group_cfg['group_init_strides'][i],
+                              'init_kernel_size': group_cfg['group_init_kernel_sizes'][i],
+                              'group_token_init_method': group_cfg["group_token_init_method"] \
+                                                if isinstance(group_cfg["group_token_init_method"],str)
+                                                else group_cfg["group_token_init_method"][i],
+                               'num_group_token':group_cfg['group_layers'][i]                 
+                                                })
+            group_layer = GPBlock(**group_cfg)
             merge_layer.append(group_layer)
         return merge_layer
     
@@ -2617,7 +2620,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 # b head n g 
                 attn_map = attn_dict_list[-1]
                 if self.keep_multihead:
-                    num_heads = self.arch_settings['num_ungroup_heads']
+                    num_heads = self.group_cfg['num_ungroup_heads']
                     _, n, hc = gt.shape             
                     gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )        
                     gt = attn_map.transpose(-1,-2) @ gt
@@ -2667,13 +2670,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         
         if self.use_gt_loss:
             h_g = w_g = int(math.sqrt(gt.shape[1]))
-            num_heads = self.arch_settings['num_ungroup_heads']
+            num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt.shape    
             attn_map = attn_dict_list[-1]       
             if self.gt_cls_method == "upsample_first":   
                      
                 gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
-
                 gt = attn_map.transpose(-1,-2) @ gt
                 gt = rearrange(gt, ' b h n c ->  b n (h c)')
                 h_g = w_g = int(math.sqrt(gt.shape[1]))
