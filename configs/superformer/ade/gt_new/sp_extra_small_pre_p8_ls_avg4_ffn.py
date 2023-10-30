@@ -4,5 +4,5 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
-    group_ls_init_value =1e-5,
+    use_ffn =True,
 ))
