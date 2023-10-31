@@ -1200,6 +1200,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         gt_cls_method: str = 'upsample_first', #method for group classification
         use_global_token: bool = False,
         use_ffn: bool = False, #whether use ffn in group attn
+        concat: bool = False,
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1435,7 +1436,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             gt_iter = gt_iter,
             group_pe_method = group_pe_method,
             group_reweight_method = group_reweight_method,
-            use_ffn = use_ffn
+            use_ffn = use_ffn,
+            concat = concat,
             )
             self.group_cfg = group_cfg
             print(group_cfg)
@@ -2000,6 +2002,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             gt_logits = None        
+
+        ret['gt'] =  gt_logits        
         if isinstance(last_sp_layer, nn.AvgPool2d):
             sh=sw = last_sp_layer.kernel_size
         elif isinstance(last_sp_layer, st.SuperPixelTokenization):
@@ -2666,7 +2670,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         
 
 
-        ret['gt'] =  gt_logits
         return ret        
     def forward(
         self,
