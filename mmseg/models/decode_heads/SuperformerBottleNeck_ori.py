@@ -24,12 +24,12 @@ from mmcv.cnn import build_norm_layer
 
 from ...superformer.superpixel import superpixel_transformer as st
 from ...superformer.superpixel import superpixel_ops
+from ...superformer.superpixel.superpixel_group_attention_ops import GPBlock
 import math
 rearrange = einops.rearrange
 LayerScale2d = st.LayerScale2d
 SKIP_CONFIRM = False
 from ..utils import PatchEmbed, resize
-from ...GPViT.mmcls.gpvit_dev.models.utils.attentions import *
 from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 writer = SummaryWriter()
@@ -690,70 +690,13 @@ class SuperformerStage(nn.Module):
                 )
                 pixel_delta = pixel_delta.reshape(b, c, h, w)
         
-        # import h5py
-        # with h5py.File('/home/meijieru/workspace/yunfei/pixel.h5','a') as f:
-        #     keys = list(f.keys())
-        #     key = "pixel_features"
-        #     original_key = key
-        #     count = int(0)
-        #     while key in keys:
-        #         print(f"Dataset with key {key} already exists. Updating key name.")
-        #         count = int(count) + 1
-        #         key = original_key + str(count)
-        #     if count <10 :
-        #         f.create_dataset(key, data=x.detach().cpu().numpy())
-        # with h5py.File('/home/meijieru/workspace/yunfei/pixel_delta.h5','a') as f:
-        #     keys = list(f.keys())
-        #     key = "pixel_features_delta_ls"
-        #     original_key = key
-        #     count = int(0)
-        #     while key in keys:
-        #         print(f"Dataset with key {key} already exists. Updating key name.")
-        #         count = int(count) + 1
-        #         key = original_key + str(count)
-        #     if count <10:
-        #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
+
 
         
         res = self.reweight(x) + self.pixel_delta_ls(pixel_delta)
         
         res = self.pixel_refine(res)
-        # import h5py
-        # with h5py.File("/root/autodl-tmp/vis.h5","a") as f:
-        #     keys = list(f.keys())
-        #     key = "pixel_delta"
-        #     original_key = key
-        #     count = 0
-        #     while key in keys:
-        #         print(f"Dataset with key {key} already exists. Updating key name.")
-        #         count += 1
-        #         key = original_key + str(count)
-        #     f.create_dataset(key,data=pixel_delta.detach().cpu().numpy()) 
-            
-        #     key = "pixel_delta_ls"
-        #     original_key = key
-        #     count = 0
-        #     while key in keys:
-        #         print(f"Dataset with key {key} already exists. Updating key name.")
-        #         count += 1
-        #         key = original_key + str(count)
-        #     f.create_dataset(key,data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy()) 
-        #     key = "x"
-        #     original_key = key
-        #     count = 0
-        #     while key in keys:
-        #         print(f"Dataset with key {key} already exists. Updating key name.")
-        #         count += 1
-        #         key = original_key + str(count)
-        #     f.create_dataset(key,data=x.detach().cpu().numpy()) 
-        #     key = "res"
-        #     original_key = key
-        #     count = 0
-        #     while key in keys:
-        #         print(f"Dataset with key {key} already exists. Updating key name.")
-        #         count += 1
-        #         key = original_key + str(count)                          
-        #     f.create_dataset(key,data=res.detach().cpu().numpy())               
+             
 
         return res
 

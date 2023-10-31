@@ -16,7 +16,67 @@ import mmcv
 rearrange = einops.rearrange
 
 SOFTMAX_IN_FLOAT32 = False
-from ...models.decode_heads.SuperformerBottleNeck_ori import to_h5
+def to_h5(output_directory, max_keys_per_file=None,  max_file_per_fold=None, **kwargs):
+    """
+    Save input tensors or numpy arrays to an H5 file in a specified directory with automatic numbering.
+    Each key from kwargs gets its own sub-directory.
+    
+    Usage:
+    >>> a = torch.tensor([1,2,3])
+    >>> b = np.array([4,5,6])
+    >>> to_h5(output_directory='./output', a=a, b=b)
+    
+    Arguments:
+    output_directory: The main directory where the sub-directories and H5 files should be saved.
+    max_keys_per_file: Maximum number of keys (datasets) allowed in each H5 file.
+    **kwargs : Tensors or numpy arrays to save.
+    
+    Returns:
+    None
+    """
+    
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
+    # Helper function to handle data writing
+    def write_data(f, key, value,convert_4D = True):
+        if torch.is_tensor(value) and value.device.type == 'cuda':
+            value = value.detach().cpu().numpy()
+        elif torch.is_tensor(value):
+            value = value.detach().numpy()
+        if value.ndim == 3 and convert_4D:
+            h = w = int(math.sqrt(value.shape[1]))
+            value = rearrange(
+                value,
+                'b (h w) c -> b h w c',
+                h = h, w = w
+            )
+        f.create_dataset(key, data=value)
+    
+    for key, value in kwargs.items():
+        sub_directory = osp.join(output_directory, key)
+        
+        if not os.path.exists(sub_directory):
+            os.makedirs(sub_directory)
+        
+        existing_files = [f for f in os.listdir(sub_directory) if f.startswith(key) and f.endswith('.h5')]
+        counts = [int(f.split(key)[1].split('.h5')[0]) for f in existing_files]
+        max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
+        if max_file_per_fold and max_file_per_fold < max_count:
+            break
+        output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
+        
+        with h5py.File(output_file, "a") as f:
+            keys_in_file = list(f.keys())
+            
+            if max_keys_per_file is not None and len(keys_in_file) >= max_keys_per_file:
+                max_count += 1
+                output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
+                f.close()
+                f = h5py.File(output_file, "a")
+                
+            write_data(f, key, value)
+            f.close()
 def hard_softmax(logits, dim):
     y_soft = logits.softmax(dim)
     # Straight through.

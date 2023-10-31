@@ -25,7 +25,6 @@ from functools import partial
 import sys
 
 from timm.layers import Mlp
-# sys.path.append("/root/autodl-tmp/GroupViT/models")
 import os.path as osp
 from PIL import Image
 import os
@@ -95,207 +94,6 @@ class FeatExtract(nn.Module):
         if not self.keep_dim:
             x = self.pool(x)
         return x
-    
-class MLPMixerLayer(nn.Module):
-    def __init__(self,
-                 num_patches,
-                 group_embed_dims,
-                 patch_expansion,
-                 channel_expansion,
-                 drop_path,
-                 drop_out,
-                 **kwargs):
-
-        super(MLPMixerLayer, self).__init__()
-
-        patch_mix_dims = int(patch_expansion * group_embed_dims)
-        channel_mix_dims = int(channel_expansion * group_embed_dims)
-
-        self.patch_mixer = nn.Sequential(
-            nn.Linear(num_patches, patch_mix_dims),
-            nn.GELU(),
-            nn.Dropout(drop_out),
-            nn.Linear(patch_mix_dims, num_patches),
-            nn.Dropout(drop_out)
-        )
-
-        self.channel_mixer = nn.Sequential(
-            nn.Linear(group_embed_dims, channel_mix_dims),
-            nn.GELU(),
-            nn.Dropout(drop_out),
-            nn.Linear(channel_mix_dims, group_embed_dims),
-            nn.Dropout(drop_out)
-        )
-
-        self.drop_path1 = build_dropout(dict(type='DropPath', drop_prob=drop_path))
-        self.drop_path2 = build_dropout(dict(type='DropPath', drop_prob=drop_path))
-
-        self.norm1 = nn.LayerNorm(group_embed_dims)
-        self.norm2 = nn.LayerNorm(group_embed_dims)
-
-    def forward(self, x):
-        x = x + self.drop_path1(self.patch_mixer(self.norm1(x).transpose(1,2)).transpose(1,2))
-        x = x + self.drop_path2(self.channel_mixer(self.norm2(x)))
-        return x
-
-class MLPMixer(BaseModule):
-    def __init__(self,
-                 num_patches,
-                 group_embed_dims,
-                 patch_expansion=0.5,
-                 channel_expansion=4.0,
-                 depth=1,
-                 drop_path=0.,
-                 drop_out=0.,
-                 init_cfg=None,
-                 **kwargs):
-        super(MLPMixer, self).__init__(init_cfg)
-        layers = [
-            MLPMixerLayer(num_patches, group_embed_dims, patch_expansion, channel_expansion, drop_path, drop_out)
-            for _ in range(depth)
-        ]
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.layers(x)
-
-class AttentionWithRelPos(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.,
-                 attn_map_dim=None, num_cls_tokens=1):
-        super().__init__()
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
-        self.scale = qk_scale or head_dim ** -0.5
-
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-        self.num_cls_tokens = num_cls_tokens
-        if attn_map_dim is not None:
-            one_dim = attn_map_dim[0]
-            rel_pos_dim = (2 * one_dim - 1)
-            self.rel_pos = nn.Parameter(torch.zeros(num_heads, rel_pos_dim ** 2))
-            tmp = torch.arange(rel_pos_dim ** 2).reshape((rel_pos_dim, rel_pos_dim))
-            out = []
-            offset_x = offset_y = one_dim // 2
-            for y in range(one_dim):
-                for x in range(one_dim):
-                    for dy in range(one_dim):
-                        for dx in range(one_dim):
-                            out.append(tmp[dy - y + offset_y, dx - x + offset_x])
-            self.rel_pos_index = torch.tensor(out, dtype=torch.long)
-            trunc_normal_(self.rel_pos, std=.02)
-        else:
-            self.rel_pos = None
-
-    def forward(self, x, patch_attn=False, mask=None):
-        B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-
-        if self.rel_pos is not None and patch_attn:
-            # use for the indicating patch + cls:
-            rel_pos = self.rel_pos[:, self.rel_pos_index.to(attn.device)].reshape(self.num_heads, N - self.num_cls_tokens, N - self.num_cls_tokens)
-            attn[:, :, self.num_cls_tokens:, self.num_cls_tokens:] = attn[:, :, self.num_cls_tokens:, self.num_cls_tokens:] + rel_pos
-
-        if mask is not None:
-            ## mask is only (BH_sW_s)(ksks)(ksks), need to expand it
-            mask = mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
-            attn = attn.masked_fill(mask == 0, torch.finfo(attn.dtype).min)
-
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-class LightAttModule(nn.Module):
-    def __init__(self,
-                 dim,
-                 num_heads,
-                 out_dim=None,
-                 qkv_bias=False,
-                 qk_scale=None,
-                 attn_drop=0.,
-                 proj_drop=0.,
-                 q_project=True,
-                 k_project=True,
-                 v_project=True,
-                 proj_after_att=True,
-                 keep_multihead = True,):
-        super().__init__()
-        if out_dim is None:
-            out_dim = dim
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.keep_multihead = keep_multihead
-        self.scale = qk_scale or head_dim ** -0.5
-
-        self.q_proj = nn.Linear(dim, dim, bias=qkv_bias) if q_project else None
-        self.k_proj = nn.Linear(dim, dim, bias=qkv_bias) if k_project else None
-        self.v_proj = nn.Linear(dim, dim, bias=qkv_bias) if v_project else None
-
-        self.attn_drop = nn.Dropout(attn_drop)
-
-        if proj_after_att:
-            if self.keep_multihead:
-                self.proj = nn.Sequential(nn.Linear(head_dim, out_dim // self.num_heads), nn.Dropout(proj_drop))
-            else:
-                self.proj = nn.Sequential(nn.Linear(dim, out_dim), nn.Dropout(proj_drop))
-        else:
-            self.proj = None
-
-    def forward(self, query, key, value, att_bias=None,attn_dict_list=None):
-        bq, nq, cq = query.shape
-        bk, nk, ck = key.shape
-        bv, nv, cv = value.shape
-
-        # [bq, nh, nq, cq//nh]
-        if self.q_proj:
-            q = rearrange(self.q_proj(query), 'b n (h c)-> b h n c', h=self.num_heads, b=bq, n=nq, c=cq // self.num_heads)
-        else:
-            q = rearrange(query, 'b n (h c)-> b h n c', h=self.num_heads, b=bq, n=nq, c=cq // self.num_heads)
-        # [bk, nh, nk, ck//nh]
-        if self.k_proj:
-            k = rearrange(self.k_proj(key), 'b n (h c)-> b h n c', h=self.num_heads, b=bk, n=nk, c=ck // self.num_heads)
-        else:
-            k = rearrange(key, 'b n (h c)-> b h n c', h=self.num_heads, b=bk, n=nk, c=ck // self.num_heads)
-        # [bv, nh, nv, cv//nh]
-        if self.v_proj:
-            v = rearrange(self.v_proj(value), 'b n (h c)-> b h n c', h=self.num_heads, b=bv, n=nv, c=cv // self.num_heads)
-        else:
-            v = rearrange(value, 'b n (h c)-> b h n c', h=self.num_heads, b=bv, n=nv, c=cv // self.num_heads)
-
-        # [B, nh, N, S]
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        if att_bias is not None:
-            attn = attn + att_bias.unsqueeze(dim=1)
-        
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        if isinstance(attn_dict_list,list):
-            attn_dict_list.append(attn)
-        assert attn.shape == (bq, self.num_heads, nq, nk)
-
-        # [B, nh, N, C//nh] -> [B, N, C]
-        # out = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        if self.keep_multihead:
-            out = rearrange(attn @ v, 'b h n c -> b (n h) c', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
-        else:
-            out = rearrange(attn @ v, 'b h n c -> b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
-        if self.proj:
-            out = self.proj(out)
-        if self.keep_multihead:
-            out = rearrange(out, 'b (n h) c ->  b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)
-        return out,attn_dict_list
-
 
 class FullAttnModule(nn.Module):
     def __init__(self,
@@ -366,168 +164,6 @@ class FullAttnModule(nn.Module):
             out = rearrange(out, 'b (n h) c ->  b n (h c)', h=self.num_heads, b=bq, n=nq, c=cv // self.num_heads)        
         out = self.proj_drop(out)
         return out,attn_dict_list
-
-class FullAttnCatBlock(nn.Module):
-    def __init__(self,
-                 group_embed_dims,
-                 num_heads,
-                 ffn_ratio=4.,
-                 qkv_bias=False,
-                 qk_scale=None,
-                 proj_drop=0.,
-                 attn_drop=0.,
-                 drop_path=0.,
-                 act_cfg=dict(type='GELU'),
-                 norm_cfg=dict(type='LN'),
-                 key_is_query=False,
-                 value_is_key=False,
-                 q_project=True,
-                 with_cp=False,
-                 association_embedding = False,
-                 ls_init_value = 1e-5,
-                 group_reweight_method:str = None,
-                 **kwargs):
-        super().__init__()
-        self.with_cp = with_cp
-
-        self.norm_query = build_norm_layer(norm_cfg, group_embed_dims)[1]
-        if group_reweight_method is None:
-            self.reweight = nn.Identity()
-        elif group_reweight_method == 'reweight':
-            self.reweight == Reweight()
-        elif group_reweight_method == 'reweight_sigmoid':           
-            self.reweight = ReweightSigmoid()
-        self.writer = SummaryWriter()
-        self.forward_counter = 0
-        self.log_interval = 50        
-        if not key_is_query:
-            self.norm_key = build_norm_layer(norm_cfg, group_embed_dims)[1]
-        else:
-            self.norm_key = None
-        self.key_is_query = key_is_query
-
-        if not value_is_key:
-            self.norm_value = build_norm_layer(norm_cfg, group_embed_dims)[1]
-        else:
-            self.norm_value = None
-        self.value_is_key = value_is_key
-
-        self.attn = FullAttnModule(
-            group_embed_dims,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
-            attn_drop=attn_drop,
-            proj_drop=proj_drop,
-            q_project=q_project,
-            association_embedding = association_embedding)
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
-        _ffn_cfgs = {
-            'group_embed_dims': group_embed_dims,
-            'feedforward_channels': int(group_embed_dims * ffn_ratio),
-            'num_fcs': 2,
-            'ffn_drop': proj_drop,
-            'dropout_layer': dict(type='DropPath', drop_prob=drop_path),
-            'act_cfg': act_cfg,
-            'layer_scale_init_value':ls_init_value
-        }
-
-        self.ffn = FFN(**_ffn_cfgs)
-        self.norm2 = build_norm_layer(norm_cfg, group_embed_dims)[1]
-        self.act_layer = nn.ReLU(True)
-        self.proj = nn.Linear(group_embed_dims * 2, group_embed_dims, bias=True)
-
-    def forward(self, query, key, value, att_bias=None,attn_dict_list = None):
-        def _inner_forward(query, key, value, att_bias,attn_dict_list):
-            
-            q = self.norm_query(query)
-            k = q if self.key_is_query else self.norm_key(key)
-            v = k if self.value_is_key else self.norm_value(value)
-           
-            new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias,attn_dict_list = attn_dict_list)
-            # new_x = torch.cat((query, self.drop_path(new_x)),dim=-1)
-            # new_x = self.proj(new_x)
-            x = self.ffn(self.reweight(self.norm2(new_x)), identity=query) 
-            self.forward_counter += 1
-
-            if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
-
-                if hasattr(self.reweight, 'reweight'):
-                    param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
-                elif hasattr(self.reweight, 'weight') : 
-                    param =  (torch.sigmoid(self.reweight.weight)).detach().cpu().numpy().astype(np.float32)
-                    
-                    self.writer.add_scalar(f'reweight', param, self.forward_counter)                    
-            
-            return x,attn_dict_list
-        if self.with_cp:
-            return cp.checkpoint(_inner_forward, query, key, value, att_bias)
-        else:
-            return _inner_forward(query, key, value, att_bias,attn_dict_list)
-
-class LightGroupAttnBlock(nn.Module):
-    def __init__(self,
-                 group_embed_dims,
-                 num_heads,
-                 ffn_ratio=4.,
-                 qkv_bias=False,
-                 qk_scale=None,
-                 drop=0.,
-                 attn_drop=0.,
-                 drop_path=0.,
-                 act_cfg=dict(type='GELU'),
-                 norm_cfg=dict(type='LN'),
-                 key_is_query=False,
-                 value_is_key=False,
-                 with_cp=False,
-                 ls_init_value = None):
-        super().__init__()
-
-        self.with_cp = with_cp
-
-        self.norm_query = build_norm_layer(norm_cfg, group_embed_dims)[1]
-
-        if not key_is_query:
-            self.norm_key = build_norm_layer(norm_cfg, group_embed_dims)[1]
-        else:
-            self.norm_key = None
-        self.key_is_query = key_is_query
-
-        if not value_is_key:
-            self.norm_value = build_norm_layer(norm_cfg, group_embed_dims)[1]
-        else:
-            self.norm_value = None
-        self.value_is_key = value_is_key
-
-        self.attn = LightAttModule(
-            group_embed_dims,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-            q_project=True,
-            k_project=True,
-            v_project=True,
-            proj_after_att=True)
-
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
-    def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
-        def _inner_forward(query, key, value, att_bias,attn_dict_list = None):
-            q = self.norm_query(query)
-            k = q if self.key_is_query else self.norm_key(key)
-            v = k if self.value_is_key else self.norm_value(value)
-            x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias, attn_dict_list = attn_dict_list)
-            x = self.drop_path(x)
-            return x, attn_dict_list
-
-
-        if self.with_cp:
-            return cp.checkpoint(_inner_forward, query, key, value, att_bias,attn_dict_list)
-        else:
-            return _inner_forward(query, key, value, att_bias,attn_dict_list)
 class LayerScale(nn.Module):
     def __init__(self, dim, init_values=1e-5, inplace=False):
         super().__init__()
@@ -615,8 +251,8 @@ class GroupAttnBlock(nn.Module):
         self.use_ffn = use_ffn
         if self.identity:
             self.ls = LayerScale(group_embed_dims, init_values=ls_init_value) if ls_init_value else nn.Identity()
-            self.norm2 = norm_layer(group_embed_dims)
             if self.use_ffn:
+                self.norm2 = norm_layer(group_embed_dims)
                 self.mlp = Mlp(
                     in_features=group_embed_dims,
                     hidden_features=int(group_embed_dims * ffn_ratio),
@@ -639,16 +275,15 @@ class GroupAttnBlock(nn.Module):
             else:
                 x = new_x
             self.forward_counter += 1
-            # if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0:
-            if self.forward_counter % self.log_interval == 0 :
-            
-                if hasattr(self.reweight, 'reweight'):
-                    param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
-                    self.writer.add_scalar(f'reweight', param, self.forward_counter)                                    
-                elif hasattr(self.reweight, 'weight') : 
-                    param =  (torch.sigmoid(self.reweight.weight)).detach().cpu().numpy().astype(np.float32)
-                    self.writer.add_scalar(f'reweight', param, self.forward_counter)                    
-                
+            if self.forward_counter % self.log_interval == 0:
+                if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:                
+                    if hasattr(self.reweight, 'reweight'):
+                        param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                        self.writer.add_scalar(f'reweight', param, self.forward_counter)                                    
+                    elif hasattr(self.reweight, 'weight') : 
+                        param =  (torch.sigmoid(self.reweight.weight)).detach().cpu().numpy().astype(np.float32)
+                        self.writer.add_scalar(f'reweight', param, self.forward_counter)                    
+                    
             return x, attn_dict_list
 
 
