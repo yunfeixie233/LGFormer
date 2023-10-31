@@ -31,6 +31,7 @@ import os
 import h5py
 from timm.models import layers as timm_layers
 from torch.utils.tensorboard import SummaryWriter
+import timm.models.layers as tml
 
 class SE(nn.Module):
     """
@@ -226,7 +227,7 @@ class GroupAttnBlock(nn.Module):
         if group_reweight_method is None:
             self.reweight = nn.Identity()
         elif group_reweight_method == 'reweight':
-            self.reweight == Reweight()
+            self.reweight = Reweight()
         elif group_reweight_method == 'reweight_sigmoid':           
             self.reweight = ReweightSigmoid()
         self.writer = SummaryWriter()
@@ -349,7 +350,19 @@ class GPBlock(nn.Module):
             self.gt_pos_embed = self._create_pos_embed(
                 group_embed_dims, num_group_token
             )
-        
+        elif self.group_pe_method == "depthwise":
+            self.sp_pos_embed = tml.create_conv2d(
+                group_embed_dims, group_embed_dims, 3, bias=True, depthwise=True
+            )
+            self.gt_pos_embed = tml.create_conv2d(
+                group_embed_dims,
+                group_embed_dims,
+                3,
+                bias=True,
+                depthwise=True,
+            )
+        else:
+            raise ValueError()                        
 
         if  self.group_token_init_method =='learnable':
             self.group_token = nn.Parameter(torch.zeros(1, num_group_token, group_embed_dims))
@@ -562,6 +575,10 @@ class GPBlock(nn.Module):
                         'b (h w) c -> b c h w',
                         h=sh, w=sw)
             group_token = self.group_token_init(x)
+            if self.group_pe_method == 'depthwise':
+                group_token = group_token + self.gt_pos_embed(group_token)
+                x = x + self.sp_pos_embed(x)
+
             group_token = rearrange(
                 group_token,
                 'b c h w -> b (h w) c'
@@ -569,7 +586,9 @@ class GPBlock(nn.Module):
             x = rearrange(x,
                 'b c h w -> b (h w) c ',
                 h=sh, w=sw)
-
+            if self.group_pe_method == 'learnable':
+                group_token = group_token + self.gt_pos_embed
+                x = x + self.sp_pos_embed   
         elif self.group_token_init_method == "learnable":
             group_token = self.group_token.expand(x.size(0), -1, -1)
 
@@ -588,9 +607,8 @@ class GPBlock(nn.Module):
         if global_token != None and self.use_global_token:
             gt = gt + self.global_projector(global_token)
               
-        if self.group_pe_method:
-            gt = gt + self.gt_pos_embed
-            x = x + self.sp_pos_embed
+
+                 
         for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(
             zip(self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn if self.gt_attn else [None]*len(self.group_layers))
         ):
