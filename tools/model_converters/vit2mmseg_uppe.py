@@ -15,24 +15,24 @@ def convert_vit(ckpt,args):
     new_ckpt = OrderedDict()
 
     for k, v in ckpt.items():
-        if "pos_embed" in k:
-            print(v.shape)
-            v = v[:, 1:]
-            v = rearrange(
-                v,
-                'b (h w) c -> b c h w',
-                h=h,
-                w=w,
-            )
+        # if "pos_embed" in k:
+        #     print(v.shape)
+        #     v = v[:, 1:]
+        #     v = rearrange(
+        #         v,
+        #         'b (h w) c -> b c h w',
+        #         h=h,
+        #         w=w,
+        #     )
 
-            v = F.interpolate(v,size=args.shape,mode='bicubic')
+        #     v = F.interpolate(v,size=args.shape,mode='bicubic')
             
 
-            v = rearrange(
-                v,
-                ' b c h w -> b (h w) c',
-            )        
-            new_k = k
+        #     v = rearrange(
+        #         v,
+        #         ' b c h w -> b (h w) c',
+        #     )        
+        #     new_k = k
 
         if k.startswith('head'):
             continue

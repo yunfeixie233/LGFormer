@@ -2,7 +2,7 @@
 
 unset LD_LIBRARY_PATH
 
-PID=2432253
+PID=2785534
 while ps -p $PID > /dev/null; do
     echo "Process $PID is still running"
     sleep 10
@@ -13,8 +13,4 @@ echo "Process $PID has terminated"
 
 
 sleep 30
-bash tools/dist_train.sh \
-/data2/yunfei/study/SpformerV1/configs/superformer/ade/gt/sp_extra_small_pre_p8_ls_lea4_loss_6h_expandgt_multi_concat.py 8 \
- --resume --cfg-options load_from=/data2/yunfei/iter_28000.pth \
-randomness.diff_rank_seed=False \
-randomness.seed=1539460459
+python -m torch.distributed.launch --nproc_per_node 8 train.py --launcher pytorch --config configs/regproxy_ade20k/regproxy-s16-sub11+implicit-mid-4+512x512+80k+adamw-poly+ade20k.py  --seed 42 --deterministic    --options model.pretrained='/data2/yunfei/vit_small_patch16_384_pretrain.pth'  

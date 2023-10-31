@@ -30,8 +30,6 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_small_pre.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p10_ls_avg4.py"
     "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p11_ls_avg4.py"
     "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_avg4.py"
     "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p8_ls_avg4.py"
