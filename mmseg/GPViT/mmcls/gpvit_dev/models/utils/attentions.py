@@ -861,7 +861,6 @@ class GPBlock(nn.Module):
         self.use_global_token = use_global_token 
         if self.use_global_token:
             self.global_projector = nn.Linear(group_embed_dims, group_embed_dims)
-            self.reweight = Reweight()
             self.writer = SummaryWriter()
             self.forward_counter = 0
             self.log_interval = log_interval            
@@ -952,7 +951,7 @@ class GPBlock(nn.Module):
             raise(NotImplementedError)
         
         if global_token != None and self.use_global_token:
-            gt = gt + self.reweight(self.global_projector(global_token)) 
+            gt = gt + self.global_projector(global_token)
               
         if self.group_pe_method:
             gt = gt + self.gt_pos_embed
