@@ -4,6 +4,6 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
-    concat = True,
+    group_block_depth =3,
         
 ))
