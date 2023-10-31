@@ -300,13 +300,13 @@ class DualPathCrossAttentionLayer(BaseModule):
             similarities_multi_head_pixel,
         ) = self._superpixel_assign_step(pixel_query, sp_key, sp_value)
         if self._pixelify:
-            pixel_return = pixel_features + self.reweight_pixel(self.pixel_ls1(pixel_features_delta))
+            pixel_return = self.reweight_pixel(pixel_features) + self.pixel_ls1(pixel_features_delta)
         else:
             pixel_return = None
 
         return (
             pixel_return,
-            sp_features + self.reweight_sp(self.sp_ls1(sp_feature_delta)),
+            self.reweight_sp(sp_features) + self.sp_ls1(sp_feature_delta),
             similarities_multi_head,
             similarities_multi_head_pixel,
         )

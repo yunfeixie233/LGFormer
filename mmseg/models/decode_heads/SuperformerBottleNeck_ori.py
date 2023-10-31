@@ -715,7 +715,7 @@ class SuperformerStage(nn.Module):
         #         f.create_dataset(key, data=self.pixel_delta_ls(pixel_delta).detach().cpu().numpy())
 
         
-        res = x + self.reweight(self.pixel_delta_ls(pixel_delta))
+        res = self.reweight(x) + self.pixel_delta_ls(pixel_delta)
         
         res = self.pixel_refine(res)
         # import h5py

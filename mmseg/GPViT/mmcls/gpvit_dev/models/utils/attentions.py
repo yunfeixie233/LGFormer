@@ -633,9 +633,9 @@ class GroupAttnBlock(nn.Module):
             new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias, attn_dict_list = attn_dict_list)
             if self.identity:
                 if self.use_ffn is False:
-                    x = query + self.reweight(self.drop_path(self.ls(new_x)))
+                    x = self.reweight(query) + self.drop_path(self.ls(new_x))
                 else:
-                    x = query + self.reweight(self.drop_path(self.ls(self.mlp((self.norm2(new_x))))))                   
+                    x = self.reweight(query) + self.drop_path(self.ls(self.mlp((self.norm2(new_x)))))                   
             else:
                 x = new_x
             self.forward_counter += 1
@@ -952,7 +952,7 @@ class GPBlock(nn.Module):
             raise(NotImplementedError)
         
         if global_token != None and self.use_global_token:
-            gt = gt + self.reweight(self.global_projector(global_token)) 
+            gt = gt + self.global_projector(global_token)
               
         if self.group_pe_method:
             gt = gt + self.gt_pos_embed
