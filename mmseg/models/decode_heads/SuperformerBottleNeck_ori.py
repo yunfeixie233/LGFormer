@@ -1932,7 +1932,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         affinity = affinity.softmax(dim=1)
         return affinity
     def forward_segmentation(
-        self, x: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
+        self, sp_feature: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
         img = None,attn_dict_list = None, gt = None, sp_features_mid = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Get prediction via different methods.
 
@@ -1962,20 +1962,20 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             raise ValueError()  
         
         if self.classification_feature == "pixel":
-            b, c, h, w = x.shape
+            b, c, h, w = pixel_feature.shape
             if self.pixel_projection:
-                x = self.pixel_projection(x)
-            pixel_feature = self.seg_norm(rearrange(x,
+                pixel_feature = self.pixel_projection(pixel_feature)
+            pixel_feature = self.seg_norm(rearrange(pixel_feature,
                                         "b c h w -> b (h w) c"))
             pixel_logits = self.seg_head(pixel_feature)
             pixel_logits = rearrange(pixel_logits,
                                      "b (h w) c -> b c h w",
                                      h = h,w = w)
-            
-            return None, pixel_logits
+            ret['seg'] = pixel_logits
+
         elif self.classification_feature == "pixel_extralayer":
             _, _, h, w = pixel_feature.shape
-            x_2d = einops.rearrange(x,
+            x_2d = einops.rearrange(pixel_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
             
@@ -1986,18 +1986,17 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             pixel_logits = rearrange(pixel_logits,
                                      "b (h w) c -> b c h w",
                                      h = h,w = w)
-            ret['seg'] = pixel_logits
-            ret['gt'] =  None            
+            ret['seg'] = pixel_logits        
             return ret
         elif self.classification_feature == "superpixel":
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
             elif self.seg_specific_classifier=="Linear":
-                x = self.seg_norm(x)
-                b, num, c = x.shape
-                x = x.reshape(b * num, c)
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
+                sp_feature = sp_feature.reshape(b * num, c)
 
-                sp_logits = self.seg_head(x)
+                sp_logits = self.seg_head(sp_feature)
 
                 last_stage = self.stages[-1]
                 last_sp_layer = last_stage.patch_embed
@@ -2020,11 +2019,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     sh, sw = last_sp_layer.superpixel_shape
                 else:
                     raise ValueError()
-                x = self.seg_norm(x)
-                b, num, c = x.shape
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
 
-                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-                sp_logits = self.seg_head_conv(x)
+                sp_feature = sp_feature.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(sp_feature)
 
                 
 
@@ -2063,11 +2062,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                 else:
                     raise ValueError()
+            ret['seg'] = pixel_logits
 
-            return sp_logits, pixel_logits
         elif self.classification_feature == "both":
-            x = rearrange(
-                x,
+            sp_feature = rearrange(
+                sp_feature,
                 'b (sh sw) c -> b c sh sw',
                 sh = sh, sw= sw
             )
@@ -2097,7 +2096,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
                     )
                     pixel_logits = superpixel_ops.expand_superpixel_features(
-                        x, similarities
+                        sp_feature, similarities
                     )
                 else:
                     raise ValueError()
@@ -2111,16 +2110,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 pixel_logits,
                 'b (h w) c->b c h w',
                 h=sh*4, w=sw*4)
-            return None, pixel_logits
+            ret['seg'] = pixel_logits
         elif self.classification_feature == "both_dualhead":
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
             elif self.seg_specific_classifier=="Linear":
-                x = self.seg_norm(x)
-                b, num, c = x.shape
-                x = x.reshape(b * num, c)
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
+                sp_feature = sp_feature.reshape(b * num, c)
 
-                sp_logits = self.seg_head(x)
+                sp_logits = self.seg_head(sp_feature)
 
                 last_stage = self.stages[-1]
                 last_sp_layer = last_stage.patch_embed
@@ -2143,11 +2142,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     sh, sw = last_sp_layer.superpixel_shape
                 else:
                     raise ValueError()
-                x = self.seg_norm(x)
-                b, num, c = x.shape
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
 
-                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-                sp_logits = self.seg_head_conv(x)
+                sp_feature = sp_feature.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(sp_feature)
 
                 
 
@@ -2189,18 +2188,19 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                      "b (h w) c -> b c h w",
                                      h = h,w = w)
             pixel_logits = pixel_logits + pixel_logits_
-            return sp_logits, pixel_logits
+            ret['seg'] = pixel_logits
+    
         elif self.classification_feature == "superpixel_bilinear":
             
-            x = rearrange(x,
+            sp_feature = rearrange(sp_feature,
                           'b (sh sw) c -> b c sh sw',
                           sh = sh, sw = sw)
             
-            x = F.interpolate(x,scale_factor=self.cls_scale_factor,mode='bilinear')
-            x = rearrange(x,
+            sp_feature = F.interpolate(sp_feature,scale_factor=self.cls_scale_factor,mode='bilinear')
+            sp_feature = rearrange(sp_feature,
                           'b c h w -> b (h w) c')
-            x = self.seg_norm(x)
-            pixel_logits = rearrange(self.seg_head(x),
+            sp_feature = self.seg_norm(sp_feature)
+            pixel_logits = rearrange(self.seg_head(sp_feature),
                                      'b (h w) c -> b c h w',
                                      h = sh * self.cls_scale_factor, w = sw* self.cls_scale_factor )
             # import h5py
@@ -2215,8 +2215,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             #         key = original_key + str(count)
             #     if int(count) <5 :
             #         f.create_dataset(key, data=pixel_logits.detach().cpu().numpy())     
-                             
-            return pixel_logits
+            ret['seg'] = pixel_logits
+
         elif self.classification_feature == "superpixel_similarity":
             
             last_stage = self.stages[-1]
@@ -2256,7 +2256,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
                     )
                     sp_feature = rearrange(
-                        x,
+                        sp_feature,
                         'b (h w) c -> b c h w',
                         h = sh, w= sw,
                         
@@ -2280,13 +2280,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         ' b (h w) c -> b c h w',
                         h = h, w = w
                     )
-                    
-                    return pixel_logits
+                    ret['seg'] = pixel_logits
                 else:
                     raise ValueError()
         elif self.classification_feature == "superpixel_extralayer": 
 
-            x_2d = einops.rearrange(x,
+            x_2d = einops.rearrange(sp_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
             
@@ -2305,20 +2304,20 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 raise ValueError("No segmentation head is found.")
             elif self.seg_specific_classifier=="Linear":
                 
-                x = self.seg_norm(x)
-                b, num, c = x.shape
-                x = x.reshape(b * num, c)
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
+                sp_feature = sp_feature.reshape(b * num, c)
 
-                sp_logits = self.seg_head(x)
+                sp_logits = self.seg_head(sp_feature)
                 sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
             elif self.seg_specific_classifier=="Conv":
-                x = self.seg_norm(x)
-                b, num, c = x.shape
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
 
 
 
-                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-                sp_logits = self.seg_head_conv(x)
+                sp_feature = sp_feature.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(sp_feature)
             pixel_logits = None
             if return_pixel_logits:
                 if isinstance(last_sp_layer, nn.AvgPool2d):
@@ -2357,7 +2356,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             ret['seg'] = pixel_logits
         elif self.classification_feature == "superpixel_extralayer_similarity": 
             #final info               
-            x_2d = einops.rearrange(x,
+            x_2d = einops.rearrange(sp_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
             
@@ -2394,7 +2393,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
                     )
                     sp_feature = rearrange(
-                        x,
+                        sp_feature,
                         'b (h w) c -> b c h w',
                         h = sh, w= sw,
                     )
@@ -2417,12 +2416,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     return None,pixel_logits
                 else:
                     raise ValueError()
+            ret['seg'] = pixel_logits
 
-            return sp_logits, pixel_logits
         elif self.classification_feature == "both_extralayer": 
             
             #final info               
-            x_2d = einops.rearrange(x,
+            x_2d = einops.rearrange(sp_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
             
@@ -2437,20 +2436,20 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 raise ValueError("No segmentation head is found.")
             elif self.seg_specific_classifier=="Linear":
                 
-                x = self.seg_norm(x)
-                b, num, c = x.shape
-                x = x.reshape(b * num, c)
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
+                sp_feature = sp_feature.reshape(b * num, c)
 
-                sp_logits = self.seg_head(x)
+                sp_logits = self.seg_head(sp_feature)
                 sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
             elif self.seg_specific_classifier=="Conv":
-                x = self.seg_norm(x)
-                b, num, c = x.shape
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
 
 
 
-                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-                sp_logits = self.seg_head_conv(x)
+                sp_feature = sp_feature.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(sp_feature)
             pixel_logits = None
             if return_pixel_logits:
                 if isinstance(last_sp_layer, nn.AvgPool2d):
@@ -2498,7 +2497,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                      "b (h w) c -> b c h w",
                                      h = sp_logits.shape[2],w = sp_logits.shape[3])
             pixel_logits = sp_logits + pixel_logits
-            return sp_logits, pixel_logits
+            ret['seg'] = pixel_logits
         elif self.classification_feature == 'regproxy':
          
             if self.return_mid_sp:
@@ -2506,13 +2505,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             'B (H W) C -> B C H W',
                             H = sh, W= sw)
             else:
-                x_mid =  rearrange(x,
+                x_mid =  rearrange(sp_feature,
                             'B (H W) C -> B C H W',
                             H = sh, W= sw)           
             affinity = self.forward_affinity(x_mid)
 
 
-            sp_logits = self.seg_head(self.seg_norm(x))
+            sp_logits = self.seg_head(self.seg_norm(sp_feature))
             sp_logits = rearrange(sp_logits,
                                   'B (H W) C -> B C H W',
                                    H = sh, W= sw)
@@ -2525,11 +2524,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             pixel_logits = (affinity @ sp_logits).reshape(B, H, W, *self.region_res, -1)  # (B, H, W, h, w, C)
             pixel_logits = einops.rearrange(pixel_logits, 'B H W h w C -> B C (H h) (W w)')  # (B, C, H * h, W * w)
 
+            ret['seg'] = pixel_logits
 
-            return sp_logits, pixel_logits
         elif self.classification_feature == "group_extralayer": 
             #final info               
-            x_2d = einops.rearrange(x,
+            x_2d = einops.rearrange(sp_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
             
@@ -2596,26 +2595,24 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 raise ValueError("No segmentation head is found.")
             elif self.seg_specific_classifier=="Linear":
                 
-                x = self.seg_norm(x)
-                b, num, c = x.shape
-                x = x.reshape(b * num, c)
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
+                sp_feature = sp_feature.reshape(b * num, c)
 
-                sp_logits = self.seg_head(x)
+                sp_logits = self.seg_head(sp_feature)
                 sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
             elif self.seg_specific_classifier=="Conv":
-                x = self.seg_norm(x)
-                b, num, c = x.shape
+                sp_feature = self.seg_norm(sp_feature)
+                b, num, c = sp_feature.shape
 
 
 
-                x = x.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-                sp_logits = self.seg_head_conv(x)
+                sp_feature = sp_feature.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
+                sp_logits = self.seg_head_conv(sp_feature)
             pixel_logits = superpixel_ops.expand_superpixel_features(
                 sp_logits, similarities
             )            
             ret['seg'] = pixel_logits
-            ret['gt'] =  gt_logits            
-            return ret
 
         else:
             raise(NotImplementedError)
@@ -2718,85 +2715,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             sp_shape = self.stages[-1].patch_embed.superpixel_shape
             self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)
         
-            
-
-        if self.use_compact_loss:
-            h = w = int(math.sqrt(sp_features_seg.shape[1]))            
-            if self.classification_feature == "superpixel":
-                restruct_pixel_features = self.compute_compact_loss(pixel_features,sp_features_seg)
-                if generate_seg:
-                        sp_logits, pixel_logits = self.forward_segmentation(
-                        sp_features_seg, return_pixel_logits, stride=seg_stride
-                    )
-                        ret={}
-                        ret["seg"] = pixel_logits
-                        ret['restruct'] = restruct_pixel_features
-                        ret['pixel_feature'] = rearrange(sp_features_seg,
-                                                         'b (h w) c -> b c h w',
-                                                         h = h, w =w)
-                        
-                        return ret
-        elif self.classification_feature in ["superpixel",'regproxy']:
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride,sp_features_mid = sp_features_mid
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret
-        elif self.classification_feature == "pixel":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    pixel_features, return_pixel_logits, stride=seg_stride
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret
-        elif self.classification_feature == "both":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret
-        elif self.classification_feature == "both_dualhead":
-            if generate_seg:
-                    sp_logits, pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret
-        elif self.classification_feature == "superpixel_bilinear":
-            if generate_seg:
-                    pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret
-        elif self.classification_feature == "superpixel_similarity":
-            if generate_seg:
-                    pixel_logits = self.forward_segmentation(
-                    sp_features_seg, return_pixel_logits, stride=seg_stride, pixel_feature=pixel_features
-                )
-                    ret={}
-                    ret["seg"] = pixel_logits
-                    return ret
-        elif 'extralayer' in self.classification_feature:
-
-            if generate_seg:
-                    ret = self.forward_segmentation(
-                    x = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
-                    img = x, attn_dict_list = attn_dict_list, gt = gt
-                )
-                    
-
-                    return ret
-        else:
-            logits = self.forward_head(sp_features)
-            return logits
+        if generate_seg:
+            ret = self.forward_segmentation(
+                sp_feature = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
+                img = x, attn_dict_list = attn_dict_list, gt = gt
+            )
+        return ret
     def compute_compact_loss(self, x: torch.Tensor,sp_features: torch.Tensor):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
