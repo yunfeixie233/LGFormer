@@ -704,7 +704,7 @@ class SuperformerStage(nn.Module):
         self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None,global_token: torch.Tensor = None
 
     ) -> torch.Tensor:
-        
+        #global token concat and forward with image token, default to False
         if self.use_global_token and len(self.merge_layer) > 0:
             sh ,sw = self.patch_embed.superpixel_shape
             x_2d = rearrange(x,
@@ -723,13 +723,14 @@ class SuperformerStage(nn.Module):
             global_token = None
         sp_featuers_mid = None
         for i in range(start, end):
+            #whether use hierarchy structure: only forward group token in vit block
             if self.use_gt_in_vit and gt != None:
                 gt = self.blocks[i](gt)
             else:
                 if self.vis_sp_block:
                     to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
                 x = self.blocks[i](x)
-
+            #return sp of middle layer to generate similarity if needed
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
   
@@ -1004,8 +1005,6 @@ class SuperformerStage(nn.Module):
             sp_features = self.add_sim_embed(sp_features,info)
         if self.pos_embed_method == "fixed":
             sp_features = self.add_pos_embed(sp_features)
-
-        # sp_features = self.blocks(sp_features)
         vis_sp_block = False
         if vis_sp_block:
             sp_before = sp_features.detach()
@@ -2683,7 +2682,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if self.log_reweight:
             self.forward_counter += 1
             if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0 and self.training:
-            # if self.forward_counter % self.log_interval == 0:
                 for i, stage in enumerate(self.stages):
                     if hasattr(stage.reweight, 'reweight'):     
                         param =  (0.5 + torch.sigmoid(stage.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
