@@ -3,6 +3,7 @@ Author: Chenhongyi Yang
 LePE attention References: https://github.com/microsoft/CSWin-Transformer
 """
 from ast import Try
+from calendar import c
 from typing import Sequence
 from numpy import block
 import torch.distributed as dist
@@ -211,6 +212,7 @@ class GroupAttnBlock(nn.Module):
                  identity:bool = True,
                  group_reweight_method:str = None,
                  use_ffn:bool = False,
+                 concat: bool = False,
                 ):
         super().__init__()
 
@@ -260,6 +262,10 @@ class GroupAttnBlock(nn.Module):
                     act_layer=act_layer,
                     drop=proj_drop,
                 )
+        self.concat = concat
+        if self.concat:
+            self.proj = nn.Linear(group_embed_dims * 2, group_embed_dims, bias=True)
+
 
 
     def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
@@ -268,6 +274,9 @@ class GroupAttnBlock(nn.Module):
             k = q if self.key_is_query else self.norm_key(key)
             v = k if self.value_is_key else self.norm_value(value)
             new_x, attn_dict_list = self.attn(q, k, v, att_bias=att_bias, attn_dict_list = attn_dict_list)
+            if self.concat:
+                x = torch.cat((query,new_x), dim= -1)
+                x = self.proj(x)
             if self.identity:
                 if self.use_ffn is False:
                     x = self.reweight(query) + self.drop_path(self.ls(new_x))
@@ -332,6 +341,7 @@ class GPBlock(nn.Module):
                  log_interval: int = 50,
                  group_reweight_method: str = None,
                  group_projector_method = None,
+                 concat: bool = False,
                  **kwargs):
 
         super().__init__()
@@ -491,7 +501,8 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             ls_init_value = ungroup_ls_init_value,
             identity = ungroup_identity,
-            group_reweight_method = group_reweight_method)
+            group_reweight_method = group_reweight_method,
+            concat = concat)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _block_cfg = dict(
             dim=group_embed_dims,
