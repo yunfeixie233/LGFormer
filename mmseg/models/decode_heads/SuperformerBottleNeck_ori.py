@@ -1173,31 +1173,31 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         extralayer_nols: bool = False,          
         #group related setting
         use_group_token: str = None, 
-        group_embed_dims =384,
-        group_layers = {0:64,},            
-        num_group_heads = 6,
-        num_ungroup_heads = 6,
-        num_block_heads = 6,            
-        group_block_depth = 1,
-        group_projector_method = 'linear',
+        group_embed_dims =384, #group token dim
+        group_layers = {0:64,}, # group token num each layer           
+        num_group_heads = 6,# cross attention head num
+        num_ungroup_heads = 6,# cross attention head num
+        num_block_heads = 6,#group token head num              
+        group_block_depth = 1,#self attention block num
+        group_projector_method = 'linear', # projection method if having token from prev layer
         group_token_init_method = 'avgpool', 
-        group_init_strides = (4,),
-        group_init_kernel_sizes = (4,),
-        group_pos = ((),(8,),()),
-        group_ls_init_value = None,
-        ungroup_ls_init_value = 1e-5,
-        group_block_init_values = None,
-        group_identity: bool =True,
+        group_init_strides = (4,),# group token init strides
+        group_init_kernel_sizes = (4,),# group token init kernel sizes
+        group_pos = ((),(8,),()), #position of inserting group in vit blocks
+        group_ls_init_value = None, # ls in grouping attn
+        ungroup_ls_init_value = 1e-5, # ls in ungrouping attn
+        group_block_init_values = None, # ls in group self attn
+        group_identity: bool =True, #whether use residual
         ungroup_identity: bool =True,
-        gt_iter: int = 1,
+        gt_iter: int = 1, #iteration each group layer
         group_pe_method: str = 'learnable',
         group_reweight_method: str = None,      
         use_gt_loss: bool = False,
-        use_gt_cls: bool = False,
+        use_gt_cls: bool = False, #whether use group token for prediction
         use_gt_extralayer: bool = False,
-        gt_cls_method: str = 'upsample_first',
+        gt_cls_method: str = 'upsample_first', #method for group classification
         use_global_token: bool = False,
-        use_ffn: bool = False,
+        use_ffn: bool = False, #whether use ffn in group attn
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1862,17 +1862,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 endpoints=None
                 pixel_features=x
             sp_features_last = self.init_superpixel_features(pixel_features)
-
-
             assert len(self.stages) > 0
-
             gt = None   
             if self.use_group_token == 'mix':
                 attn_dict_list = []
             else:
-                attn_dict_list = None
-            
- 
+                attn_dict_list = None         
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
 
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
@@ -2620,15 +2615,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             h_g = w_g = int(math.sqrt(gt.shape[1]))
             num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt.shape    
+            #get final attention map
             attn_map = attn_dict_list[-1]       
-            if self.gt_cls_method == "upsample_first":   
-                     
+            if self.gt_cls_method == "upsample_first":                       
                 gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
                 gt = attn_map.transpose(-1,-2) @ gt
                 gt = rearrange(gt, ' b h n c ->  b n (h c)')
                 h_g = w_g = int(math.sqrt(gt.shape[1]))
-
-                                    
             elif self.gt_cls_method == "cls_first":
                 attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
                 attn_map = attn_map.squeeze(1)
@@ -2636,11 +2629,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 raise(NotImplementedError)
 
             gt_logits = self.gt_head(self.gt_norm(gt))
-
             gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
                                 h = h_g,
                                 w = w_g)                           
-
             if self.use_gt_extralayer:
                 gt_layer = self.gt_stages.patch_embed
                 gt_2d = rearrange(gt,'b (h w) c -> b c h w',
