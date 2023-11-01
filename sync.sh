@@ -22,7 +22,7 @@ fi
 load_from="${3:-best_coco.pth}"
 
 # Sync interval in seconds (e.g., 3600 seconds = 1 hour)
-SYNC_INTERVAL=300
+SYNC_INTERVAL=-1
 
 # Define remote host information
 REMOTE_USER="meijieru"
@@ -30,10 +30,7 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_avg4_fuseconv.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt.py"    
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_learn8.py"    
 
 )
 should_skip_sync() {
