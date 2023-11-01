@@ -30,7 +30,11 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt.py"    
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_small_pre_registry_4.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_small_pre_registry_16.py" 
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_avg4_global_nofuse.py"    
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_avg4_global_nofuse_16.py"    
+
 )
 should_skip_sync() {
     local skip_sync=false
