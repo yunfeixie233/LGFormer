@@ -1664,6 +1664,15 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_gt_loss = use_gt_loss 
         self.gt_cls_method = gt_cls_method
         self.use_gt_fuse = use_gt_fuse
+        if self.use_gt_fuse:
+            self.fuse_conv = ConvModule(
+                group_embed_dims,
+                group_embed_dims,
+                3,
+                padding=1,
+                norm_cfg=dict(type='LN'),
+                inplace=False)
+
         if self.use_gt_loss:
             self.gt_norm = norm_layer(self.embed_dim)
             self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
@@ -1956,7 +1965,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             #final info               
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
-        
+    
+      
+         
         if isinstance(last_sp_layer, nn.AvgPool2d):
             sh=sw = last_sp_layer.kernel_size
         elif isinstance(last_sp_layer, st.SuperPixelTokenization):
@@ -2289,6 +2300,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         elif self.classification_feature == "superpixel_extralayer": 
             if self.use_gt_loss and self.use_gt_fuse:
                 sp_feature = sp_feature + gt
+                sp_feature = self.fuse_conv(sp_feature)
             x_2d = einops.rearrange(sp_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
@@ -2620,7 +2632,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             raise(NotImplementedError)
-        
         if self.use_gt_loss:
             h_g = w_g = int(math.sqrt(gt.shape[1]))
             num_heads = self.group_cfg['num_ungroup_heads']
@@ -2673,7 +2684,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             gt_logits = None        
 
         ret['gt'] =  gt_logits        
-        
 
 
         return ret        
