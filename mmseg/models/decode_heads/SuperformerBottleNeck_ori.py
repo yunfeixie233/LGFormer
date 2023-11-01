@@ -1172,7 +1172,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         resize_version: str = 'v2',
         use_pixel_similarities_upsample: bool = False,
         extralayer_nols: bool = False,
-        use_sp_fuse: bool = False,          
+        use_sp_fuse: bool = False, 
+        use_pixel_fuse: bool = False,         
         #group related setting
         use_group_token: str = None, 
         group_embed_dims =384, #group token dim
@@ -1609,7 +1610,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         
             elif self.classification_feature in['pixel','pixel_extralayer']:
                 if self.use_sp_fuse:
-                    self.pixel_projection = nn.Conv2d(stem_channels_list[-1], self.embed_dim, 1) 
+                    self.pixel_projection = nn.Conv2d(stem_channels_list[-1], self.embed_dim, stride = 1,) 
+                    
                     self.sp_fuse_conv = \
                         nn.Sequential(                         
                         timm_layers.create_conv2d(self.embed_dim, self.embed_dim, kernel_size = 3, padding = "same"),
@@ -1673,6 +1675,19 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_gt_fuse = use_gt_fuse
         if self.use_gt_fuse:
             self.group_fuse_conv = \
+                nn.Sequential(                         
+                timm_layers.create_conv2d(group_embed_dims, group_embed_dims, kernel_size = 3, padding = "same"),
+                timm_layers.LayerNorm2d(group_embed_dims),
+                nn.GELU())
+        self.use_pixel_fuse = use_pixel_fuse
+        if self.use_pixel_fuse:
+            self.pixel_projection = nn.Sequential(
+                timm_layers.create_conv2d(stem_channels_list[-1], self.embed_dim,  1, padding="same"),
+                norm_layer_2d(sp_dim),
+                act_layer(),
+                nn.AvgPool2d(kernel_size=sp_sizes[0], stride=sp_sizes[0]),
+            )            
+            self.pixel_fuse_conv = \
                 nn.Sequential(                         
                 timm_layers.create_conv2d(group_embed_dims, group_embed_dims, kernel_size = 3, padding = "same"),
                 timm_layers.LayerNorm2d(group_embed_dims),
@@ -2034,6 +2049,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                           h = sh, w = sw)
             
             info, pixel_feature, _ = last_sp_layer(pixel_feature,x_2d)
+            
             if self.use_sp_fuse:
                 if isinstance(last_sp_layer, nn.AvgPool2d):
                     raise NotImplementedError()
@@ -2053,6 +2069,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         scale_factor=scale_factor,
                         resize_version = self.resize_version
                     )
+                    
                     similarities = similarities.softmax(1)
                     similarities = einops.rearrange(
                         similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
@@ -2380,7 +2397,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                           h = sh, w = sw))
                 sp_feature = rearrange(sp_feature,
                           'b c h w -> b (h w) c')
-
+            if self.use_pixel_fuse:
+                sp_feature = rearrange(sp_feature,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+                sp_feature = self.pixel_fuse_conv(sp_feature + self.pixel_projection(pixel_feature))
+                sp_feature = rearrange(sp_feature,
+                          'b c h w -> b (h w) c')                
             x_2d = einops.rearrange(sp_feature,
                         'b (h w) c -> b c h w',
                         h = sh, w = sw)
@@ -2441,6 +2464,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     similarities = einops.rearrange(
                         similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
                     )
+                    vis_sim = False
+                    if vis_sim:
+                        to_h5(self.output_dir,max_file_per_fold=20,max_keys_per_file=1,similarities = similarities)
+                    
                     if self.use_similarity_head:
                         similarities = self.similarity_head(similarities)
                     pixel_logits = superpixel_ops.expand_superpixel_features(

@@ -30,11 +30,7 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9_ls_avg4_fuseconv.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp.py"
     "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt.py"    
-
 )
 should_skip_sync() {
     local skip_sync=false
@@ -85,41 +81,43 @@ sync_and_cleanup() {
 }
 
 first=true
-for config in "${configs[@]}"; do
-    server_name=$(get_server_name)  
-    WORK_DIR_BASENAME=$(basename "${config%.*}")
-    WORK_DIR="/data2/yunfei/SpformerV1/work_dirs/${WORK_DIR_BASENAME}"
+while true; do  
+    for config in "${configs[@]}"; do
+        server_name=$(get_server_name)  
+        WORK_DIR_BASENAME=$(basename "${config%.*}")
+        WORK_DIR="/data2/yunfei/SpformerV1/work_dirs/${WORK_DIR_BASENAME}"
 
-    if $first && $resume; then
-        echo "Resuming training from $resume_from for $config"
-        bash tools/dist_train.sh "$config" 8 --resume --cfg-options load_from="$resume_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
-        first=false
-    else
-        echo "Starting training from $load_from for $config"
-        bash tools/dist_train.sh "$config" 8 --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
-    fi
-
-    python /data2/yunfei/SpformerV1/reminder.py "$config" 1 "$server_name"  
-    PID=$!
-
-    LAST_SYNC_TIME=$(date +%s)
-    while ps -p $PID > /dev/null; do
-        echo "Process $PID is still running"
-        CURRENT_TIME=$(date +%s)
-        if (( CURRENT_TIME - LAST_SYNC_TIME >= SYNC_INTERVAL )); then
-            echo "Syncing $WORK_DIR"
-            sync_and_cleanup "$WORK_DIR"
-            LAST_SYNC_TIME=$CURRENT_TIME
+        if $first && $resume; then
+            echo "Resuming training from $resume_from for $config"
+            bash tools/dist_train.sh "$config" 8 --resume --cfg-options load_from="$resume_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
+            first=false
+        else
+            echo "Starting training from $load_from for $config"
+            bash tools/dist_train.sh "$config" 8 --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
         fi
-        sleep 10
+
+        python /data2/yunfei/SpformerV1/reminder.py "$config" 1 "$server_name"  
+        PID=$!
+
+        LAST_SYNC_TIME=$(date +%s)
+        while ps -p $PID > /dev/null; do
+            echo "Process $PID is still running"
+            CURRENT_TIME=$(date +%s)
+            if (( CURRENT_TIME - LAST_SYNC_TIME >= SYNC_INTERVAL )); then
+                echo "Syncing $WORK_DIR"
+                sync_and_cleanup "$WORK_DIR"
+                LAST_SYNC_TIME=$CURRENT_TIME
+            fi
+            sleep 10
+        done
+
+        echo "Process $PID has terminated"
+
+
+        python /data2/yunfei/SpformerV1/reminder.py "$config" 0 "$server_name"  
+        sync_and_cleanup "$WORK_DIR"
+        sleep 30
     done
-
-    echo "Process $PID has terminated"
-
-
-    python /data2/yunfei/SpformerV1/reminder.py "$config" 0 "$server_name"  
-    sync_and_cleanup "$WORK_DIR"
-    sleep 30
+    python /data2/yunfei/SpformerV1/reminder.py "所有" 0 "$server_name"  
+    echo "All configurations processed."
 done
-python /data2/yunfei/SpformerV1/reminder.py "所有" 0 "$server_name"  
-echo "All configurations processed."
