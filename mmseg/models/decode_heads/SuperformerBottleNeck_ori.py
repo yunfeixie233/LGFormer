@@ -1825,7 +1825,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                               'group_token_init_method': group_cfg["group_token_init_method"] \
                                                 if isinstance(group_cfg["group_token_init_method"],str)
                                                 else group_cfg["group_token_init_method"][i],
-                               'num_group_token':group_cfg['group_layers'][i]                 
+                               'num_group_token':group_cfg['group_layers'][i],
+                               'group_projector':group_projector,
+                               'group_identity':group_cfg["group_identity"] \
+                                                if isinstance(group_cfg["group_identity"],bool)
+                                                else group_cfg["group_identity"][i],                
                                                 })
             group_layer = GPBlock(**group_cfg)
             merge_layer.append(group_layer)

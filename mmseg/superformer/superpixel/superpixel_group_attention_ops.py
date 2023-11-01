@@ -603,7 +603,8 @@ class GPBlock(nn.Module):
         elif self.group_token_init_method == "learnable":
             group_token = self.group_token.expand(x.size(0), -1, -1)
 
-
+        elif self.group_token_init_method == "from_feature":
+            group_token = prev_token
 
         if prev_token is None:
             gt = group_token
