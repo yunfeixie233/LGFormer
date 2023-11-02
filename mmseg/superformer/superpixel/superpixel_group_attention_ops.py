@@ -459,6 +459,10 @@ class GPBlock(nn.Module):
                 FeatExtract(group_embed_dims, keep_dim=False),
                 FeatExtract(group_embed_dims, keep_dim=False),
             )
+        elif self.group_token_init_method == 'from_feature':
+            pass
+        elif  self.group_token_init_method == 'from_global':
+            pass
         else:
             raise(NotImplementedError)
         self.group_projector = group_projector
@@ -601,23 +605,27 @@ class GPBlock(nn.Module):
                 group_token = group_token + self.gt_pos_embed
                 x = x + self.sp_pos_embed   
         elif self.group_token_init_method == "learnable":
-            group_token = self.group_token.expand(x.size(0), -1, -1)
-
+            gt = self.group_token.expand(x.size(0), -1, -1)
+            if self.group_pe_method == 'learnable':
+                gt = gt + self.gt_pos_embed
+                x = x + self.sp_pos_embed
         elif self.group_token_init_method == "from_feature":
-            group_token = prev_token
-
-        if prev_token is None:
-            gt = group_token
-        elif self.group_projector_method in ["linear","conv",'conv_relu']:
-            gt = group_token + self.group_projector(prev_token)
-        elif self.group_projector_method == "cross" or self.group_projector_method == None:
-            gt = group_token 
+            gt = prev_token
+        elif self.group_token_init_method == "from_global":
+            gt = global_token
+        # if prev_token is None:
+        #     gt = group_token
+        # elif self.group_projector_method in ["linear","conv",'conv_relu']:
+        #     gt = group_token + self.group_projector(prev_token)
+        # elif self.group_projector_method == "cross" or self.group_projector_method == None:
+        #     gt = group_token 
         
-        else:
-            raise(NotImplementedError)
+        # else:
+        #     raise(NotImplementedError)
         
         if global_token != None and self.use_global_token:
-            gt = gt + self.global_projector(global_token)
+            if self.group_token_init_method != "from_global":
+                gt = gt + self.global_projector(global_token)
               
 
                  
