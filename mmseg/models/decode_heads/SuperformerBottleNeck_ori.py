@@ -1422,7 +1422,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             assert use_group_token in ['post','mix']      
 
         self.output_dir = output_dir
-        self.use_group_token = use_group_token  
+        self.use_group_token = use_group_token
+        self.group_init_strides = group_init_strides  
         print(group_pos)      
         if self.use_group_token:
             group_cfg = dict(
@@ -1996,7 +1997,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
         if self.use_gt_loss:
-            h_g = w_g = int(math.sqrt(gt.shape[1]))
+            h_g = last_sp_layer.superpixel_shape[0] / self.group_init_strides[-1]
+            w_g = last_sp_layer.superpixel_shape[1] / self.group_init_strides[-1]
+            
             num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt.shape    
             #get final attention map
@@ -2005,7 +2008,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
                 gt = attn_map.transpose(-1,-2) @ gt
                 gt = rearrange(gt, ' b h n c ->  b n (h c)')
-                h_g = w_g = int(math.sqrt(gt.shape[1]))
+                h_g = last_sp_layer.superpixel_shape[0]
+                w_g = last_sp_layer.superpixel_shape[1] 
             elif self.gt_cls_method == "cls_first":
                 attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
                 attn_map = attn_map.squeeze(1)

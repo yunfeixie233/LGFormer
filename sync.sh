@@ -19,7 +19,7 @@ if [ "$1" == "--resume" ]; then
     resume_from=$2
 fi
 
-load_from="${3:-best_coco.pth}"
+load_from="${3:-best_city.pth}"
 
 # Sync interval in seconds (e.g., 3600 seconds = 1 hour)
 SYNC_INTERVAL=-1
@@ -30,9 +30,7 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p9p10_ls_learn32_fromfeat_id.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/sp_extra_small_pre_p8p9p10_ls_learn32_fromfeat_id.py"
-
+    "/data2/yunfei/SpformerV1/configs/superformer/city/nogt/sp_extra_small_pre.py"
 )
 should_skip_sync() {
     local skip_sync=false
