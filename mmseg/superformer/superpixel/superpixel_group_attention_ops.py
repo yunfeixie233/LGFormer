@@ -601,20 +601,20 @@ class GPBlock(nn.Module):
             x = rearrange(x,
                         'b (h w) c -> b c h w',
                         h=sh, w=sw)
-            group_token = self.group_token_init(x)
+            gt = self.group_token_init(x)
             if self.group_pe_method == 'depthwise':
-                group_token = group_token + self.gt_pos_embed(group_token)
+                gt = gt + self.gt_pos_embed(gt)
                 x = x + self.sp_pos_embed(x)
 
-            group_token = rearrange(
-                group_token,
+            gt = rearrange(
+                gt,
                 'b c h w -> b (h w) c'
             )
             x = rearrange(x,
                 'b c h w -> b (h w) c ',
                 h=sh, w=sw)
             if self.group_pe_method == 'learnable':
-                group_token = group_token + self.gt_pos_embed
+                gt = gt + self.gt_pos_embed
                 x = x + self.sp_pos_embed   
         elif self.group_token_init_method == "learnable":
             gt = self.group_token.expand(x.size(0), -1, -1)
