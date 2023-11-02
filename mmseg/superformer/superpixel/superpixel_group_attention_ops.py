@@ -213,6 +213,7 @@ class GroupAttnBlock(nn.Module):
                  group_reweight_method:str = None,
                  use_ffn:bool = False,
                  concat: bool = False,
+                 
                 ):
         super().__init__()
 
@@ -265,7 +266,7 @@ class GroupAttnBlock(nn.Module):
         self.concat = concat
         if self.concat:
             self.proj = nn.Linear(group_embed_dims * 2, group_embed_dims, bias=True)
-
+   
 
 
     def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
@@ -284,6 +285,7 @@ class GroupAttnBlock(nn.Module):
                     x = self.reweight(query) + self.drop_path(self.ls(self.mlp((self.norm2(new_x)))))                   
             else:
                 x = new_x
+
             self.forward_counter += 1
             if self.forward_counter % self.log_interval == 0:
                 if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:                
@@ -342,6 +344,7 @@ class GPBlock(nn.Module):
                  group_reweight_method: str = None,
                  group_projector_method = None,
                  concat: bool = False,
+                 attn_fuse_conv: bool = False,
                  **kwargs):
 
         super().__init__()
@@ -371,6 +374,8 @@ class GPBlock(nn.Module):
                 bias=True,
                 depthwise=True,
             )
+        elif self.group_pe_method == None:
+            pass
         else:
             raise ValueError()                        
 
@@ -489,7 +494,7 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             ls_init_value = group_ls_init_value,
             identity = group_identity,
-            group_reweight_method = group_reweight_method)
+            group_reweight_method = group_reweight_method,)
         _group_att_cfg.update(group_att_cfg)
         _ungroup_att_cfg = dict(
             group_embed_dims=group_embed_dims,
@@ -506,7 +511,7 @@ class GPBlock(nn.Module):
             ls_init_value = ungroup_ls_init_value,
             identity = ungroup_identity,
             group_reweight_method = group_reweight_method,
-            concat = concat)
+            concat = concat,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _block_cfg = dict(
             dim=group_embed_dims,
@@ -519,6 +524,7 @@ class GPBlock(nn.Module):
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
             act_layer=nn.GELU,
             init_values=block_init_values,
+
             )
         _block_cfg.update(_block_cfg)
         self.use_global_token = use_global_token 
@@ -548,7 +554,13 @@ class GPBlock(nn.Module):
         self.vis_gt_eff = vis_gt_eff
         self.output_dir = output_dir
         self.layer_num = layer_num
-
+        self.attn_fuse_conv = attn_fuse_conv
+        if self.attn_fuse_conv:
+            self.attn_fuse_conv = \
+            nn.Sequential(                         
+            timm_layers.create_conv2d(group_embed_dims, group_embed_dims, kernel_size = 3, padding = "same"),
+            timm_layers.LayerNorm2d(group_embed_dims),
+            nn.GELU())      
         
         self.init_weights()
     def init_weights(self):
@@ -641,7 +653,16 @@ class GPBlock(nn.Module):
                 gt = blocks(gt)
             
          
+            
             proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+            if self.attn_fuse_conv:
+                proj_tokens = rearrange(proj_tokens,
+                                        'b (h w) c -> b c h w',
+                                        h = sh, w = sw,)
+                proj_tokens = self.attn_fuse_conv(proj_tokens)
+                proj_tokens = rearrange(proj_tokens,
+                                        'b c h w -> b (h w) c') 
+                
         if self.vis_gt_eff:
             self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt)
         return proj_tokens, attn_dict_list, gt
