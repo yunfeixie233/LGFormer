@@ -12,7 +12,10 @@ h = w = 14
 def convert_v2(args):
 
     data = torch.load(args.src)
-    model_data = data['model']    
+    if 'model' in data.keys():
+        model_data = data['model']
+    elif 'state_dict' in data.keys():
+        model_data = data['state_dict']
     for key, value in model_data.items():
         
         # print("ori",key,value.shape)
