@@ -1997,8 +1997,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
         if self.use_gt_loss:
-            h_g = last_sp_layer.superpixel_shape[0] / self.group_init_strides[-1]
-            w_g = last_sp_layer.superpixel_shape[1] / self.group_init_strides[-1]
+            h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
+            w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
             
             num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt.shape    

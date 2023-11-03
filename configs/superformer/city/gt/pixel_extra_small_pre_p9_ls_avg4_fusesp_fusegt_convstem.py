@@ -1,5 +1,5 @@
 _base_ = [
-    '../nogt/sp_extra_base_pre.py',
+    '../nogt/sp_extra_small_pre_convstem.py',
 ]
 model = dict(
     type='EncoderDecoder',
@@ -11,8 +11,7 @@ model = dict(
     use_gt_loss = True,
     group_init_strides = (3,),
     group_init_kernel_sizes = (3,),
-    group_layers = {0:100,},
-    group_embed_dims = 768,
+    group_layers = {0:256,},
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),

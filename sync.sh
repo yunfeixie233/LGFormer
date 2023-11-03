@@ -19,10 +19,10 @@ if [ "$1" == "--resume" ]; then
     resume_from=$2
 fi
 
-load_from="${3:-base_coco.pth}"
+load_from="${3:-small_conv_coco.pth}"
 
 # Sync interval in seconds (e.g., 3600 seconds = 1 hour)
-SYNC_INTERVAL=-1
+SYNC_INTERVAL=300
 
 # Define remote host information
 REMOTE_USER="meijieru"
@@ -30,8 +30,8 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_base_pre.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_base_pre_p9_ls_avg4_fusesp_fusegt.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_small_pre_convstem.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt_convstem.py"
 )
 should_skip_sync() {
     local skip_sync=false
@@ -86,15 +86,16 @@ while true; do
     for config in "${configs[@]}"; do
         server_name=$(get_server_name)  
         WORK_DIR_BASENAME=$(basename "${config%.*}")
-        WORK_DIR="/data2/yunfei/SpformerV1/work_dirs/${WORK_DIR_BASENAME}"
+        WORK_DIR="${config/configs/work_dirs}"
+        WORK_DIR="${WORK_DIR%.py}"        
 
         if $first && $resume; then
             echo "Resuming training from $resume_from for $config"
-            bash tools/dist_train.sh "$config" 8 --resume --cfg-options load_from="$resume_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
+            bash tools/dist_train.sh "$config" 8 --work-dir "$WORK_DIR" --resume --cfg-options load_from="$resume_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
             first=false
         else
             echo "Starting training from $load_from for $config"
-            bash tools/dist_train.sh "$config" 8 --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
+            bash tools/dist_train.sh "$config" 8 --work-dir "$WORK_DIR" --cfg-options load_from="$load_from" randomness.diff_rank_seed=False randomness.seed=1539460459 &
         fi
 
         python /data2/yunfei/SpformerV1/reminder.py "$config" 1 "$server_name"  
