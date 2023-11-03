@@ -11,15 +11,20 @@ if [[ "$current_env" != "$desired_env" ]]; then
     echo "Switched to env $current_env"
 fi
 
+default_load_from="small_conv_coco.pth"
+
 # Check for the --resume argument
 resume=false
 resume_from=""
+load_from=""
+
 if [ "$1" == "--resume" ]; then
     resume=true
     resume_from=$2
+    load_from="${3:-$default_load_from}"
+else
+    load_from="${1:-$default_load_from}"
 fi
-
-load_from="${3:-small_conv_coco.pth}"
 
 # Sync interval in seconds (e.g., 3600 seconds = 1 hour)
 SYNC_INTERVAL=300
@@ -30,8 +35,7 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/nogt/sp_extra_small_pre_convstem.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/pascal/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt_convstem.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt_new/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt_convstem.py"
 )
 should_skip_sync() {
     local skip_sync=false
@@ -71,15 +75,17 @@ get_server_name() {
 
 sync_and_cleanup() {
     local SRC_DIR="$1"
+    local RELATIVE_PATH="${SRC_DIR#"$REMOTE_BASE_DIR/"}"  # Extract the relative path from the SRC_DIR
     local DATE_PREFIX=$(date +%m%d)
-    local DEST_DIR_NAME="${DATE_PREFIX}_$(basename "$SRC_DIR")"
-    local TMP_DIR="/tmp/${DEST_DIR_NAME}"
+    local DEST_DIR_NAME="${DATE_PREFIX}_${RELATIVE_PATH}"  # Use the relative path in the DEST_DIR_NAME
+    local TMP_DIR="/tmp/${RELATIVE_PATH}"
 
     mkdir -p "$TMP_DIR"
     rsync -av --exclude='*.pth' "$SRC_DIR/" "$TMP_DIR" > /dev/null 2>&1
-    rsync -av --delete "$TMP_DIR/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_BASE_DIR}/${DEST_DIR_NAME}" > /dev/null 2>&1
+    rsync -av --delete "$TMP_DIR/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_BASE_DIR}/${RELATIVE_PATH}" > /dev/null 2>&1
     rm -rf "$TMP_DIR"
 }
+
 
 first=true
 while true; do  
