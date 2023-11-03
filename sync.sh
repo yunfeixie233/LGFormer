@@ -11,7 +11,7 @@ if [[ "$current_env" != "$desired_env" ]]; then
     echo "Switched to env $current_env"
 fi
 
-default_load_from="small_conv_coco.pth"
+default_load_from="small_conv_ade.pth"
 
 # Check for the --resume argument
 resume=false
@@ -36,6 +36,7 @@ REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
     "/data2/yunfei/SpformerV1/configs/superformer/ade/gt_new/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt_convstem.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt_new/sp_extra_small_pre_p9_ls_learn32_convstem.py"
 )
 should_skip_sync() {
     local skip_sync=false
