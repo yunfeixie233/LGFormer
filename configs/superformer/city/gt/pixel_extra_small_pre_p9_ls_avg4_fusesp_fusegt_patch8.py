@@ -11,6 +11,7 @@ model = dict(
     use_gt_loss = True,
     group_init_strides = (4,),
     group_init_kernel_sizes = (4,),
+    group_identity =False,    
     group_layers = {0:128,},
     loss_decode=[
             dict(
