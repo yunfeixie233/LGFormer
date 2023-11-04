@@ -8,7 +8,7 @@ data_preprocessor = dict(size=crop_size)
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
-    img_size=(2048,1024),  
+    img_size=(1024,2048),  
     classification_feature = 'superpixel_extralayer',
     resize_similarity =  True,          
     depths=(2,10,0,),
