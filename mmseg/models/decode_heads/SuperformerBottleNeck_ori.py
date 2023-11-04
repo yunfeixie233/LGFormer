@@ -1194,7 +1194,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         group_ls_init_value = None, # ls in grouping attn
         ungroup_ls_init_value = 1e-5, # ls in ungrouping attn
         group_block_init_values = None, # ls in group self attn
-        group_identity: bool =False, #whether use residual
+        group_identity: bool =True, #whether use residual
         ungroup_identity: bool =True,
         gt_iter: int = 1, #iteration each group layer
         group_pe_method: str = 'learnable',
