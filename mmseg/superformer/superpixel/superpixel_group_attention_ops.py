@@ -593,7 +593,7 @@ class GPBlock(nn.Module):
                 self.writer.add_scalar(f'global_token_reweight', param, self.forward_counter)                    
                         
         B, L, C = x.size()      
-        sw = sh = int(math.sqrt(L))
+        sw, sh = hw_shape
         if self.vis_gt_eff:
             sp_before = x.clone()
 

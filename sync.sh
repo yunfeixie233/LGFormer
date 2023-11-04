@@ -35,8 +35,7 @@ REMOTE_HOST="169.233.1.28"
 REMOTE_BASE_DIR="/data2/yunfei/SpformerV1/work_dirs"
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt_new/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt_convstem.py"
-    "/data2/yunfei/SpformerV1/configs/superformer/ade/gt_new/sp_extra_small_pre_p9_ls_learn32_convstem.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/city/gt/pixel_extra_small_pre_p9_ls_avg4_fusesp_fusegt_patch8.py"
 )
 should_skip_sync() {
     local skip_sync=false

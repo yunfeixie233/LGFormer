@@ -645,7 +645,6 @@ class SuperformerStage(nn.Module):
         if sp_features_last is not None:
             sp_features_last = self.sp_transform_last(sp_features_last)
         info, pixel_features, sp_features = self.patch_embed(x, sp_features_last)
-
         self._tokenization_info = {
             key: val for key, val in info.items() if "similarities" in key
         }
@@ -1925,7 +1924,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt,
                         global_token, 
                     )
-                    sp_features_last = sp_features_seg
+                    sp_features_last = sp_features
                 if self.vis_sp_stage:
                     import h5py
                     sp_vis = sp_features_last.detach() 
@@ -2797,7 +2796,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         seg_stride: int = 1,
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
-        
         #visualize reweight
         if self.log_reweight:
             self.forward_counter += 1
@@ -2814,8 +2812,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             param = (0.5 + torch.sigmoid(block.reweight_sp.reweight)).detach().cpu().numpy().astype(np.float32)
                             self.writer.add_scalar(f'{i}_stage_{j}_block_reweight_sp', param, self.forward_counter)
             
-                    
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt,sp_features_mid = self.forward_features(x)
+        
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
         if self.vis_sp_id:

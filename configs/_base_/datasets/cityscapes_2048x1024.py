@@ -1,14 +1,5 @@
 _base_ = './cityscapes.py'
-crop_size = (2048, 1024)
-data_preprocessor = dict(
-    type='SegDataPreProcessor',
-    size=crop_size,
-    mean=[123.675, 116.28, 103.53],
-    std=[58.395, 57.12, 57.375],
-    bgr_to_rgb=True,
-    pad_val=0,
-    seg_pad_val=255)
-bgr_mean = data_preprocessor['mean'][::-1]
+crop_size = (1024,2048)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations'),
@@ -17,15 +8,11 @@ train_pipeline = [
         scale=(2048, 1024),
         ratio_range=(0.5, 2.0),
         keep_ratio=True),
-    dict(type='RandomFlip', prob=0.5),
-    dict(
-        type='mmpretrain.datasets.transforms.AutoAugment',
-        policies='imagenet',
-        hparams=dict(pad_val=[round(x) for x in bgr_mean])),
     dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
+    dict(type='RandomFlip', prob=0.5),
+    dict(type='PhotoMetricDistortion'),
     dict(type='PackSegInputs')
 ]
-
 test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='Resize', scale=(2048, 1024), keep_ratio=True),
