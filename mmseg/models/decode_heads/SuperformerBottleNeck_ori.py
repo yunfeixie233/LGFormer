@@ -648,6 +648,7 @@ class SuperformerStage(nn.Module):
         self._tokenization_info = {
             key: val for key, val in info.items() if "similarities" in key
         }
+        
         return info, sp_features, pixel_features
 
     @property
@@ -2811,9 +2812,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         if hasattr(block.reweight_sp, 'reweight'): 
                             param = (0.5 + torch.sigmoid(block.reweight_sp.reweight)).detach().cpu().numpy().astype(np.float32)
                             self.writer.add_scalar(f'{i}_stage_{j}_block_reweight_sp', param, self.forward_counter)
-            
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt,sp_features_mid = self.forward_features(x)
-        
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
         if self.vis_sp_id:
@@ -2952,7 +2951,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                 group_result,
                                 'b g h w -> b h w g',
                             )
-                            print(group_result.shape)
                             group_result = group_result.argmax(dim=-1).cpu().numpy()
 
                             vis = colormap[group_result % colormap.size(0)]
@@ -3046,13 +3044,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         base_name, file_ext = osp.splitext(out_file)
         for i,(key, val) in enumerate(res.items()):
             
-            im = val.numpy().astype(np.uint8)
-            # resize_output = not resize_similarities or im.shape[0] != ih
-            resize_output = False
+            im = val.squeeze().numpy().astype(np.uint8)
+
+            resize_output = False or im.shape[0] != ih
             im = Image.fromarray(im)
             if resize_output:
                 print('resize_output')
-                im = im.resize((ih, iw), Image.Resampling.NEAREST)
+                im = im.resize((iw, ih), Image.Resampling.NEAREST)
                 
             alpha = 0.3
             im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
@@ -3068,7 +3066,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         import os.path as osp
         from PIL import Image
         import os
-        out_file = osp.join(self.output_dir, 'vis_sp', f'sp.jpg')        
+        out_file = osp.join(self.output_dir, 'vis_sp', f'sp.jpg')  
+ 
         img = img.detach()
         _, _, ih, iw = img.shape
 
@@ -3100,12 +3099,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             base_name, file_ext = osp.splitext(out_file)
             for key, val in res.items():
                 
-                im = val.numpy().astype(np.uint8)
+
+                im = val.squeeze().numpy().astype(np.uint8)
+
                 resize_output = not resize_similarities or im.shape[0] != ih
-                im = Image.fromarray(im.squeeze())
+                im = Image.fromarray(im)
                 if resize_output:
                     print('resize_output')
-                    im = im.resize((ih, iw), Image.Resampling.NEAREST)
+                    im = im.resize((iw, ih), Image.Resampling.NEAREST)
                     
                 alpha = 0.3
                 im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
@@ -3133,15 +3134,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
             for key, val in res.items():
-                
-                im = val.numpy().astype(np.uint8)
+
+                im = val.squeeze().numpy().astype(np.uint8)
+
                 resize_output = not resize_similarities or im.shape[0] != ih
-                im = Image.fromarray(im.squeeze())
+                im = Image.fromarray(im)
                 if resize_output:
                     print('resize_output')
-                    im = im.resize((ih, iw), Image.Resampling.NEAREST)
+                    im = im.resize((iw, ih), Image.Resampling.NEAREST)
                     
-                alpha = 0.3
+                alpha = 0.3 
                 im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
                 im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
                 while osp.exists(f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"):

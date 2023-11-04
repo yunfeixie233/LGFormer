@@ -1,5 +1,5 @@
 _base_ = [
-    '../nogt/sp_extra_small_pre_patch8.py',
+    '../nogt/sp_extra_small_pre.py',
 ]
 model = dict(
     type='EncoderDecoder',
@@ -9,10 +9,10 @@ model = dict(
     group_pos = ((),(7,),()), 
     use_group_token = 'mix',
     use_gt_loss = True,
-    group_init_strides = (4,),
-    group_init_kernel_sizes = (4,),
     group_identity =False,    
-    group_layers = {0:128,},
+    group_init_strides = (3,),
+    group_init_kernel_sizes = (3,),
+    group_layers = {0:256,},
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
