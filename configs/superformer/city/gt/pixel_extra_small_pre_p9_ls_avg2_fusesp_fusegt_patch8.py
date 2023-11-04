@@ -4,17 +4,20 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
+    use_gt_fuse = True,
+    use_sp_fuse = True,  
+    group_pos = ((),(7,),()), 
     use_group_token = 'mix',
     use_gt_loss = True,
-    group_init_strides = (4,),
-    group_pos = ((),(7,),()),
+    group_init_strides = (2,),
+    group_init_kernel_sizes = (2,),
+    group_layers = {0:512,},
     group_identity =False,
-    group_init_kernel_sizes = (4,),
-    group_layers = {0:128,},
+    
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.5)]
-    
+         
 ))

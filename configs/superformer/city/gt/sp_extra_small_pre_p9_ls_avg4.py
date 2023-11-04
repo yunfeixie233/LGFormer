@@ -10,7 +10,7 @@ model = dict(
     group_pos = ((),(7,),()),
     
     group_init_kernel_sizes = (3,),
-    group_layers = {0:100,},
+    group_layers = {0:256,},
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
