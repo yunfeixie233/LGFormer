@@ -619,7 +619,7 @@ class GPBlock(nn.Module):
         elif self.group_token_init_method == "learnable":
             gt = self.group_token.expand(x.size(0), -1, -1)
             if self.group_pe_method == 'learnable':
-                gt = gt + self.gt_pos_embed
+                # for learnable gt we do not provide position info
                 x = x + self.sp_pos_embed
         elif self.group_token_init_method == "from_feature":
             gt = prev_token
