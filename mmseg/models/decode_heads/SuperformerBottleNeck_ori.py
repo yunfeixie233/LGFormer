@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from functools import partial, lru_cache
+import copy
 
 import timm
 from timm.models.vision_transformer import Block, _cfg
@@ -21,7 +22,6 @@ from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
 from .decode_head import BaseDecodeHead, MultiLossBaseDecodeHead
 from ..builder import HEADS
 from mmcv.cnn import build_norm_layer
-
 
 from ...superformer.superpixel import superpixel_transformer as st
 from ...superformer.superpixel import superpixel_ops
@@ -1187,14 +1187,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         num_block_heads = 6,#group token head num              
         group_block_depth = 1,#self attention block num
         group_projector_method = 'linear', # projection method if having token from prev layer
-        group_token_init_method = 'avgpool', 
+        group_token_init_method: Sequence[str]  = ("avgpool",), 
         group_init_strides = (4,),# group token init strides
         group_init_kernel_sizes = (4,),# group token init kernel sizes
         group_pos = ((),(8,),()), #position of inserting group in vit blocks
         group_ls_init_value = None, # ls in grouping attn
         ungroup_ls_init_value = 1e-5, # ls in ungrouping attn
         group_block_init_values = None, # ls in group self attn
-        group_identity: bool =True, #whether use residual
+        group_identity: Sequence[bool] =(True), #whether use residual
         ungroup_identity: bool =True,
         gt_iter: int = 1, #iteration each group layer
         group_pe_method: str = 'learnable',
@@ -1450,10 +1450,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             concat = concat,
             attn_fuse_conv = attn_fuse_conv,
             )
-            self.group_cfg = group_cfg
+
             print(group_cfg)
         if self.use_group_token == 'post':
-                self.merge_layer = self._make_group_layer(group_cfg)
+                self.group_cfg = group_cfg                            
+                self.merge_layer = self._make_group_layer()
 
 
         num_stages = len(depths)
@@ -1473,8 +1474,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             if self.use_group_token == 'mix':
                 group_cfg.update({'superpixel_shape': sp_shape})
                 group_pos = group_cfg['group_pos'][i]
+                self.group_cfg = group_cfg                
                 merge_layer = self._make_group_layer(
-                    stage = i, group_cfg=group_cfg
+                    stage = i,
                 )                
             else:
                 group_pos = None                          
@@ -1827,48 +1829,44 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         return sp_fn, sp_shape
     def _make_group_layer(
         self,
-        group_cfg:dict,
         stage: int = None,        
         
     ):
-
+        group_cfg = copy.copy(self.group_cfg)
         if self.use_group_token == 'post':
-            depth = len(group_cfg['group_layers'].keys())
+            depth = len(self.group_cfg['group_layers'].keys())
         elif self.use_group_token == 'mix':
-            depth = len(group_cfg['group_pos'][stage])
+            depth = len(self.group_cfg['group_pos'][stage])
         merge_layer = nn.ModuleList()
         for i in range(depth):
             if i >0 :
-                if group_cfg["group_projector_method"] == 'linear':
+                if self.group_cfg["group_projector_method"] == 'linear':
                     group_projector =nn.Sequential(
-                        nn.LayerNorm(group_cfg['group_embed_dims']),
-                        MixerMlp(group_cfg['group_layers'][i-1], group_cfg['group_embed_dims'] // 2, group_cfg['group_layers'][i])
+                        nn.LayerNorm(self.group_cfg['group_embed_dims']),
+                        MixerMlp(self.group_cfg['group_layers'][i-1], self.group_cfg['group_embed_dims'] // 2, self.group_cfg['group_layers'][i])
                         )
-                elif group_cfg["group_projector_method"] == 'cross':
+                elif self.group_cfg["group_projector_method"] == 'cross':
                     group_projector = FullAttnCatBlock(
-                        embed_dims=group_cfg['embed_dims'],
-                        num_heads = group_cfg['num_group_heads'],
+                        embed_dims=self.group_cfg['embed_dims'],
+                        num_heads = self.group_cfg['num_group_heads'],
                         key_is_query=False,
                         value_is_key=False,
                     )
-                elif group_cfg["group_projector_method"]== None:
+                elif self.group_cfg["group_projector_method"]== None:
                     group_projector=None
                 else :
                     raise(NotImplementedError)
             else:
                 group_projector=None
                 
-            group_cfg.update({'init_stride': group_cfg['group_init_strides'][i],
-                              'init_kernel_size': group_cfg['group_init_kernel_sizes'][i],
-                              'group_token_init_method': group_cfg["group_token_init_method"] \
-                                                if isinstance(group_cfg["group_token_init_method"],str)
-                                                else group_cfg["group_token_init_method"][i],
-                               'num_group_token':group_cfg['group_layers'][i],
+            group_cfg.update({'init_stride': self.group_cfg['group_init_strides'][i],
+                              'init_kernel_size': self.group_cfg['group_init_kernel_sizes'][i],
+                              'group_token_init_method': self.group_cfg["group_token_init_method"][i],
+                               'num_group_token':self.group_cfg['group_layers'][i],
                                'group_projector':group_projector,
-                               'group_identity':group_cfg["group_identity"] \
-                                                if isinstance(group_cfg["group_identity"],bool)
-                                                else group_cfg["group_identity"][i],                
+                               'group_identity':self.group_cfg["group_identity"][i],             
                                                 })
+            print(group_cfg["group_token_init_method"])
             group_layer = GPBlock(**group_cfg)
             merge_layer.append(group_layer)
         return merge_layer

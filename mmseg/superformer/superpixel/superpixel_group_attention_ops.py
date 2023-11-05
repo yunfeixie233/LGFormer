@@ -469,6 +469,7 @@ class GPBlock(nn.Module):
         elif  self.group_token_init_method == 'from_global':
             pass
         else:
+            print(group_token_init_method)
             raise(NotImplementedError)
         self.group_projector = group_projector
         self.group_projector_method = group_projector_method
