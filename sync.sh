@@ -36,7 +36,7 @@ REMOTE_BASE_DIR="/data1/yunfei/log"
 REMOTE_PORT=20046
 
 configs=(
-    "/root/autodl-tmp/SpformerV1/configs/superformer/city/gt/pixel_extra_small_pre_p9_ls_lea64_fusesp_fusegt.py"
+    "/root/autodl-tmp/SpformerV1/configs/superformer/city/gt/pixel_extra_small_pre_p7p8p9p10_ls_avg4_fusesp_fusegt_allloss.py"
 )
 should_skip_sync() {
     local skip_sync=false
@@ -98,7 +98,7 @@ sync_and_cleanup() {
     rsync -av --exclude='*.pth' "$SRC_DIR/" "$TMP_DIR" > /dev/null 2>&1
     
     # rsync -av --delete -e "ssh -p ${REMOTE_PORT}" "$TMP_DIR/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}" > /dev/null 2>&1
-    rsync -av --delete --rsync-path="mkdir -p ${REMOTE_DIR} && rsync" -e "ssh -p ${REMOTE_PORT}" "$TMP_DIR/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
+    rsync -av --delete --inplace --rsync-path="mkdir -p ${REMOTE_DIR} && rsync" -e "ssh -p ${REMOTE_PORT}" "$TMP_DIR/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
 
     rm -rf "$TMP_DIR"
     echo "Syncing $WORK_DIR to $REMOTE_DIR "    
