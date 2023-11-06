@@ -145,6 +145,7 @@ class FullAttnModule(nn.Module):
 
         # [B, nh, N, S]
         attn = (q @ k.transpose(-2, -1)) * self.scale
+
         if att_bias is not None:
             attn = attn + att_bias.unsqueeze(dim=1)
         if self.association_embedding:
@@ -503,7 +504,7 @@ class GPBlock(nn.Module):
             num_heads=num_ungroup_heads,
             ffn_ratio=ffn_ratio,
             qkv_bias=qkv_bias,
-            qk_scale=None,
+            qk_scale=group_qk_scale,
             proj_drop=proj_drop,
             attn_drop=attn_drop,
             drop_path=drop_path,
@@ -595,7 +596,8 @@ class GPBlock(nn.Module):
                 param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
                 self.writer.add_scalar(f'global_token_reweight', param, self.forward_counter)                    
                         
-        B, L, C = x.size()      
+        B, L, C = x.size()
+        self.hw_shape = hw_shape      
         sw, sh = hw_shape
 
         if self.vis_gt_eff:
@@ -668,13 +670,12 @@ class GPBlock(nn.Module):
                                         'b c h w -> b (h w) c') 
                 
         if self.vis_gt_eff:
-            self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt)
+            self.visualize_gt_eff(sp_before = sp_before, sp_after = proj_tokens, gt = gt, attn_dict_list = attn_dict_list )
         return proj_tokens, attn_dict_list, gt
             
     def reshape_vis(self, tensor):
         if tensor.dim() == 3:
-            B, L, C = tensor.size()
-            sw = sh = int(math.sqrt(L))
+            sw, sh =self.hw_shape
             tensor = tensor.detach().cpu().numpy()
             tensor = rearrange(tensor,
                             'b (h w) c -> b c h w ',
@@ -689,7 +690,9 @@ class GPBlock(nn.Module):
                 count += 1
                 key = original_key + str(count)
             f.create_dataset(key, data=tensor)        
-    def visualize_gt_eff(self, sp_before, sp_after, gt):
+    def visualize_gt_eff(self, sp_before, sp_after, gt, attn_dict_list):
+            sw, sh = self.hw_shape
+        
             sp_before =self.reshape_vis(sp_before)
             sp_after = self.reshape_vis(sp_after)
             sp_diff = sp_after - sp_before
@@ -716,6 +719,11 @@ class GPBlock(nn.Module):
             self.write_vis(sp_before,output_file,'sp_before')                
             self.write_vis(sp_after,output_file,'sp_after')                
             self.write_vis(gt,output_file,'gt')                
-            self.write_vis(sp_diff,output_file,'sp_diff')                
+            self.write_vis(sp_diff,output_file,'sp_diff') 
+            for attn_map in attn_dict_list:
+                attn_map = rearrange(attn_map,
+                                     'b head n (h w) -> h head n h w',
+                                     h = sh, w = sw)
+                self.write_vis(attn_map.detach().cpu().numpy(),output_file,'attn_map') 
 
 

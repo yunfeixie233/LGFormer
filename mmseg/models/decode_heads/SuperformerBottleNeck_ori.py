@@ -61,49 +61,51 @@ def to_h5(output_directory, max_keys_per_file=None,  max_file_per_fold=None, **k
     Returns:
     None
     """
-    
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
+    if dist.get_rank() !=0:
+        pass
+    else:
+        if not os.path.exists(output_directory):
+            os.makedirs(output_directory)
 
-    # Helper function to handle data writing
-    def write_data(f, key, value,convert_4D = True):
-        if torch.is_tensor(value) and value.device.type == 'cuda':
-            value = value.detach().cpu().numpy()
-        elif torch.is_tensor(value):
-            value = value.detach().numpy()
-        if value.ndim == 3 and convert_4D:
-            h = w = int(math.sqrt(value.shape[1]))
-            value = rearrange(
-                value,
-                'b (h w) c -> b h w c',
-                h = h, w = w
-            )
-        f.create_dataset(key, data=value)
-    
-    for key, value in kwargs.items():
-        sub_directory = osp.join(output_directory, key)
+        # Helper function to handle data writing
+        def write_data(f, key, value,convert_4D = True):
+            if torch.is_tensor(value) and value.device.type == 'cuda':
+                value = value.detach().cpu().numpy()
+            elif torch.is_tensor(value):
+                value = value.detach().numpy()
+            if value.ndim == 3 and convert_4D:
+                h = w = int(math.sqrt(value.shape[1]))
+                value = rearrange(
+                    value,
+                    'b (h w) c -> b h w c',
+                    h = h, w = w
+                )
+            f.create_dataset(key, data=value)
         
-        if not os.path.exists(sub_directory):
-            os.makedirs(sub_directory)
-        
-        existing_files = [f for f in os.listdir(sub_directory) if f.startswith(key) and f.endswith('.h5')]
-        counts = [int(f.split(key)[1].split('.h5')[0]) for f in existing_files]
-        max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
-        if max_file_per_fold and max_file_per_fold < max_count:
-            break
-        output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
-        
-        with h5py.File(output_file, "a") as f:
-            keys_in_file = list(f.keys())
+        for key, value in kwargs.items():
+            sub_directory = osp.join(output_directory, key)
             
-            if max_keys_per_file is not None and len(keys_in_file) >= max_keys_per_file:
-                max_count += 1
-                output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
-                f.close()
-                f = h5py.File(output_file, "a")
+            if not os.path.exists(sub_directory):
+                os.makedirs(sub_directory)
+            
+            existing_files = [f for f in os.listdir(sub_directory) if f.startswith(key) and f.endswith('.h5')]
+            counts = [int(f.split(key)[1].split('.h5')[0]) for f in existing_files]
+            max_count = max(counts, default=0)  # get the maximum count or set it to 0 if the folder is empty
+            if max_file_per_fold and max_file_per_fold < max_count:
+                break
+            output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
+            
+            with h5py.File(output_file, "a") as f:
+                keys_in_file = list(f.keys())
                 
-            write_data(f, key, value)
-            f.close()
+                if max_keys_per_file is not None and len(keys_in_file) >= max_keys_per_file:
+                    max_count += 1
+                    output_file = osp.join(sub_directory, f'{key}{max_count}.h5')
+                    f.close()
+                    f = h5py.File(output_file, "a")
+                    
+                write_data(f, key, value)
+                f.close()
         
 class Reweight(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
@@ -1222,7 +1224,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #visualize param
         vis_sp_id: bool =False,
         vis_sp: bool = False,
-        output_dir:str = None,
+        # output_dir:str = None,
+        output_dir:str = '/data2/yunfei/vis',
         vis_gt: bool = False,
         vis_gt_eff: bool = False,
         vis_spgt: bool = False,
@@ -1721,10 +1724,17 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         delattr(self, 'head')        
         if self.use_patch_embed:
             delattr(self, 'sp_init')
+        
+
+
+        self.vis_counter = 0
+        self.max_vis = 10
+
+        
         self.vis_sp_id = vis_sp_id
-        self.vis_sp = vis_sp
-        self.vis_gt = vis_gt
-        self.vis_spgt = vis_spgt
+        self.vis_sp = vis_sp 
+        self.vis_gt = vis_gt 
+        self.vis_spgt = vis_spgt        
         self.vis_pixel = vis_pixel
         self.log_reweight = log_reweight
         self.vis_sp_stage = vis_sp_stage
@@ -2874,6 +2884,22 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         if hasattr(block.reweight_sp, 'reweight'): 
                             param = (0.5 + torch.sigmoid(block.reweight_sp.reweight)).detach().cpu().numpy().astype(np.float32)
                             self.writer.add_scalar(f'{i}_stage_{j}_block_reweight_sp', param, self.forward_counter)
+
+        # if self.training is not True and self.vis_counter < self.max_vis:
+        #     self.vis_counter += 1          
+        #     self.vis_sp = True
+        #     self.vis_gt = True
+        #     self.vis_gt_eff = True
+        # else:
+        #     self.vis_sp_id = False
+        #     self.vis_sp = False
+        #     self.vis_gt = False
+        #     self.vis_spgt = False
+        #     self.vis_pixel = False
+        #     self.log_reweight = False
+        #     self.vis_sp_stage = False
+        #     self.vis_sp_block = False     
+                       
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt,sp_features_mid = self.forward_features(x)
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
