@@ -214,7 +214,7 @@ class GroupAttnBlock(nn.Module):
                  group_reweight_method:str = None,
                  use_ffn:bool = False,
                  concat: bool = False,
-                 reweigt_init_value: int = 1
+                 reweight_init_value: int = 1
                  
                 ):
         super().__init__()
@@ -228,11 +228,11 @@ class GroupAttnBlock(nn.Module):
         else:
             self.norm_key = None
         self.key_is_query = key_is_query
-        self.reweigt_init_value = reweigt_init_value
+        self.reweight_init_value = reweight_init_value
         if group_reweight_method is None:
             self.reweight = nn.Identity()
         elif group_reweight_method == 'reweight':
-            self.reweight = Reweight(reweigt_init_value=5)
+            self.reweight = Reweight(reweight_init_value)
         elif group_reweight_method == 'reweight_sigmoid':           
             self.reweight = ReweightSigmoid()
         self.writer = SummaryWriter()
@@ -292,7 +292,7 @@ class GroupAttnBlock(nn.Module):
             if self.forward_counter % self.log_interval == 0:               
                 if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:
                     if hasattr(self.reweight, 'reweight'):
-                        param =  (self.reweigt_init_value - 0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                        param =  (self.reweight_init_value - 0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
                         self.writer.add_scalar(f'reweight', param, self.forward_counter)                                    
                     elif hasattr(self.reweight, 'weight') : 
                         param =  (torch.sigmoid(self.reweight.weight)).detach().cpu().numpy().astype(np.float32)
