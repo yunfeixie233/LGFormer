@@ -1211,6 +1211,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         concat: bool = False,
         attn_fuse_conv: bool = False,
         use_final_attn: bool = False, #if True, will calculate loss for all gt attn
+        group_qk_scale = None,
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1453,6 +1454,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             vis_gt_eff = vis_gt_eff,
             layer_num = len(group_layers.keys()),
             output_dir = output_dir,
+            group_qk_scale = group_qk_scale,
             )
 
             print(group_cfg)
