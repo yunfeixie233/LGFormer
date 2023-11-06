@@ -1450,6 +1450,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             use_ffn = use_ffn,
             concat = concat,
             attn_fuse_conv = attn_fuse_conv,
+            vis_gt_eff = vis_gt_eff,
+            layer_num = len(group_layers.keys()),
+            output_dir = output_dir,
             )
 
             print(group_cfg)
@@ -3396,8 +3399,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
-            layer_idx = i //2
-            head = i % 2
+            layer_idx = i // 6
+            head = i % 6
             while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
                 counter += 1
 
