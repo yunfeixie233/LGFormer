@@ -117,7 +117,7 @@ work_dirs/
 mmseg/.mim
 runs
 continue_run.sh
-# **/sync.sh
+**/sync.sh
 
 # Pytorch
 *.pth
