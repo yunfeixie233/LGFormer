@@ -1198,7 +1198,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         ungroup_identity: bool =True,
         gt_iter: int = 1, #iteration each group layer
         group_pe_method: str = 'learnable',
-        group_reweight_method: str = None,      
+        group_reweight_method: str = None, 
+        group_reweight_init_value: int = 1,     
         use_gt_loss: bool = False,
         use_gt_cls: bool = False, #whether use group token for prediction
         use_gt_fuse: bool = False, #whether element-wise add for fuse group and sp
@@ -1455,6 +1456,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             layer_num = len(group_layers.keys()),
             output_dir = output_dir,
             group_qk_scale = group_qk_scale,
+            reweight_init_value = group_reweight_init_value
             )
 
             print(group_cfg)

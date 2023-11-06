@@ -176,13 +176,13 @@ class LayerScale(nn.Module):
         return x.mul_(self.gamma) if self.inplace else x * self.gamma
 
 class Reweight(nn.Module):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, init_value = 1,*args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-
+        self.init_value = init_value
         self.reweight = nn.Parameter(torch.zeros(1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * (0.5 + torch.sigmoid(self.reweight))
+        return x * (self.init_value  - 0.5 + torch.sigmoid(self.reweight))
 class ReweightSigmoid(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -213,6 +213,7 @@ class GroupAttnBlock(nn.Module):
                  group_reweight_method:str = None,
                  use_ffn:bool = False,
                  concat: bool = False,
+                 reweigt_init_value: int = 1
                  
                 ):
         super().__init__()
@@ -226,11 +227,11 @@ class GroupAttnBlock(nn.Module):
         else:
             self.norm_key = None
         self.key_is_query = key_is_query
-        
+        self.reweigt_init_value = reweigt_init_value
         if group_reweight_method is None:
             self.reweight = nn.Identity()
         elif group_reweight_method == 'reweight':
-            self.reweight = Reweight()
+            self.reweight = Reweight(reweigt_init_value=5)
         elif group_reweight_method == 'reweight_sigmoid':           
             self.reweight = ReweightSigmoid()
         self.writer = SummaryWriter()
@@ -280,17 +281,17 @@ class GroupAttnBlock(nn.Module):
                 x = self.proj(x)
             if self.identity:
                 if self.use_ffn is False:
-                    x = self.reweight(query) + self.drop_path(self.ls(new_x))
+                    x = query + self.reweight(self.drop_path(self.ls(new_x)))
                 else:
-                    x = self.reweight(query) + self.drop_path(self.ls(self.mlp((self.norm2(new_x)))))                   
+                    x = query + self.reweight(self.drop_path(self.ls(self.mlp((self.norm2(new_x))))))                  
             else:
                 x = new_x
 
             self.forward_counter += 1
-            if self.forward_counter % self.log_interval == 0:
-                if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:                
+            if self.forward_counter % self.log_interval == 0:               
+                if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:
                     if hasattr(self.reweight, 'reweight'):
-                        param =  (0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
+                        param =  (self.reweigt_init_value - 0.5 + torch.sigmoid(self.reweight.reweight)).detach().cpu().numpy().astype(np.float32)
                         self.writer.add_scalar(f'reweight', param, self.forward_counter)                                    
                     elif hasattr(self.reweight, 'weight') : 
                         param =  (torch.sigmoid(self.reweight.weight)).detach().cpu().numpy().astype(np.float32)
@@ -342,6 +343,7 @@ class GPBlock(nn.Module):
                  use_global_token: bool = False,  
                  log_interval: int = 50,
                  group_reweight_method: str = None,
+                 reweight_init_value: int = 1,
                  group_projector_method = None,
                  concat: bool = False,
                  attn_fuse_conv: bool = False,
@@ -494,7 +496,7 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             ls_init_value = group_ls_init_value,
             identity = group_identity,
-            group_reweight_method = group_reweight_method,)
+            group_reweight_method = None,)
         _group_att_cfg.update(group_att_cfg)
         _ungroup_att_cfg = dict(
             group_embed_dims=group_embed_dims,
@@ -511,6 +513,7 @@ class GPBlock(nn.Module):
             ls_init_value = ungroup_ls_init_value,
             identity = ungroup_identity,
             group_reweight_method = group_reweight_method,
+            reweight_init_value = reweight_init_value,
             concat = concat,)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _block_cfg = dict(
