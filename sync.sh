@@ -36,7 +36,7 @@ REMOTE_BASE_DIR="/data1/yunfei/log"
 REMOTE_PORT=20046
 
 configs=(
-    "/root/autodl-tmp/SpformerV1/configs/superformer/city/gt/pixel_extra_small_pre_p7p8p9p10_nols_lea64_fusesp_fusegt.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/city/gt/pixel_extra_small_pre_p7p8p9p10_nols_lea16_fusesp_fusegt_noscale.py"
 )
 should_skip_sync() {
     local skip_sync=false
