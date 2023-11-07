@@ -1215,6 +1215,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         attn_fuse_conv: bool = False,
         use_final_attn: bool = False, #if True, will calculate loss for all gt attn
         group_qk_scale = None,
+        addition = False,
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1459,7 +1460,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             layer_num = len(group_layers.keys()),
             output_dir = output_dir,
             group_qk_scale = group_qk_scale,
-            reweight_init_value = group_reweight_init_value
+            reweight_init_value = group_reweight_init_value,
+            addition = addition,
             )
 
             print(group_cfg)
@@ -1883,8 +1885,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                               'group_token_init_method': self.group_cfg["group_token_init_method"][i],
                                'num_group_token':self.group_cfg['group_layers'][i],
                                'group_projector':group_projector,
-                               'group_identity':self.group_cfg["group_identity"][i],
-                               'ungroup_identity':self.group_cfg["ungroup_identity"][i],                                            
+                               'group_identity':self.group_cfg["group_identity"][i] if isinstance(self.group_cfg["group_identity"], tuple) else self.group_cfg["group_identity"],
+                               'ungroup_identity':self.group_cfg["ungroup_identity"][i] if isinstance(self.group_cfg["ungroup_identity"], tuple) else self.group_cfg["ungroup_identity"],                                           
                                                 })
             group_layer = GPBlock(**group_cfg)
             merge_layer.append(group_layer)

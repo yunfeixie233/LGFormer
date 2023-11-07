@@ -214,7 +214,8 @@ class GroupAttnBlock(nn.Module):
                  group_reweight_method:str = None,
                  use_ffn:bool = False,
                  concat: bool = False,
-                 reweight_init_value: int = 1
+                 reweight_init_value: int = 1,
+                 addition: bool = False,
                  
                 ):
         super().__init__()
@@ -268,7 +269,9 @@ class GroupAttnBlock(nn.Module):
         self.concat = concat
         if self.concat:
             self.proj = nn.Linear(group_embed_dims * 2, group_embed_dims, bias=True)
-   
+        self.addition = addition    
+        if self.addition:
+            self.proj = nn.Linear(group_embed_dims, group_embed_dims, bias=True)
 
 
     def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
@@ -283,6 +286,8 @@ class GroupAttnBlock(nn.Module):
             if self.identity:
                 if self.use_ffn is False:
                     x = query + self.reweight(self.drop_path(self.ls(new_x)))
+                elif self.addition:
+                    x = query + self.reweight(self.drop_path(self.ls(self.proj(new_x + query))))
                 else:
                     x = query + self.reweight(self.drop_path(self.ls(self.mlp((self.norm2(new_x))))))                  
             else:
@@ -348,6 +353,7 @@ class GPBlock(nn.Module):
                  group_projector_method = None,
                  concat: bool = False,
                  attn_fuse_conv: bool = False,
+                 addition: bool = False,
                  **kwargs):
 
         super().__init__()
@@ -515,7 +521,8 @@ class GPBlock(nn.Module):
             identity = ungroup_identity,
             group_reweight_method = group_reweight_method,
             reweight_init_value = reweight_init_value,
-            concat = concat,)
+            concat = concat,
+            addition = addition)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _block_cfg = dict(
             dim=group_embed_dims,
