@@ -354,6 +354,7 @@ class GPBlock(nn.Module):
                  concat: bool = False,
                  attn_fuse_conv: bool = False,
                  addition: bool = False,
+                 ungroup_enable:bool = True,
                  **kwargs):
 
         super().__init__()
@@ -505,6 +506,8 @@ class GPBlock(nn.Module):
             identity = group_identity,
             group_reweight_method = None,)
         _group_att_cfg.update(group_att_cfg)
+        self.ungroup_enable = ungroup_enable
+      
         _ungroup_att_cfg = dict(
             group_embed_dims=group_embed_dims,
             num_heads=num_ungroup_heads,
@@ -547,8 +550,11 @@ class GPBlock(nn.Module):
         for i in range(gt_iter):
         
             pos_embed = nn.Parameter(torch.randn(1, num_group_token, group_embed_dims) * 0.02)      
-            group_layer = GroupAttnBlock(**_group_att_cfg)        
-            un_group_layer = GroupAttnBlock(**_ungroup_att_cfg)
+            group_layer = GroupAttnBlock(**_group_att_cfg)
+            if self.ungroup_enable:                      
+                un_group_layer = GroupAttnBlock(**_ungroup_att_cfg)
+            else:
+                un_group_layer = None
             blocks = nn.Sequential(
                 *[
                     Block(
@@ -566,6 +572,7 @@ class GPBlock(nn.Module):
         self.output_dir = output_dir
         self.layer_num = layer_num
         self.attn_fuse_conv = attn_fuse_conv
+
         if self.attn_fuse_conv:
             self.attn_fuse_conv = \
             nn.Sequential(                         
@@ -655,19 +662,22 @@ class GPBlock(nn.Module):
 
                  
         for i, (group_layer, pos_embed, un_group_layer, blocks) in enumerate(
-            zip(self.group_layers, self.pos_embeds, self.un_group_layers, self.gt_attn if self.gt_attn else [None]*len(self.group_layers))
+            zip(self.group_layers, self.pos_embeds, self.un_group_layers if self.ungroup_enable else [None]*len(self.group_layers), self.gt_attn if self.gt_attn else [None]*len(self.group_layers))
         ):
             if self.group_projector_method == "cross" and prev_token is not None:
-                gt, _= self.group_projector(query=gt, key=prev_token, value=prev_token)            
+                gt, _= self.group_projector(query=gt, key=prev_token, value=prev_token)
+                
+              
             gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
             if len(blocks) > 0 :           
                 gt = gt + pos_embed
 
                 gt = blocks(gt)
             
-         
-            
-            proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+            if self.ungroup_enable:              
+                proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+            else:
+                proj_tokens = x
             if self.attn_fuse_conv:
                 proj_tokens = rearrange(proj_tokens,
                                         'b (h w) c -> b c h w',
