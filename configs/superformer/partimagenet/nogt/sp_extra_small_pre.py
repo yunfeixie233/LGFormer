@@ -26,9 +26,9 @@ optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
     type='AdamW',
-    lr=0.00006,
+    lr=0.0002,
     betas=(0.9, 0.999),
-    weight_decay=0.01),
+    weight_decay=0.05),
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -43,23 +43,24 @@ optim_wrapper = dict(
             'seg_norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
+            'stages.0':dict(lr_mult=0.1),
+            'stages.1':dict(lr_mult=0.1),
         }))
 
-
+total_iter = 40000
 param_scheduler = [
     dict(
-        type='LinearLR', start_factor=1e-6, by_epoch=False, begin=0, end=1500),
-    dict(
-        type='PolyLR',
-        power=1.0,
-        begin=1500,
-        end=160000,
-        eta_min=0.0,
-        by_epoch=False,
+            type='MultiStepLR',
+            begin=0,                     # 从第0个epoch开始
+            end=total_iter,            # 在总训练周期结束时停止更新学习率
+            by_epoch=False,               # 通过epoch来更新学习率
+            milestones=[int(total_iter * 0.9), int(total_iter * 0.95)],  # 在第90个和第95个epoch降低学习率
+            gamma=0.1,                   # 学习率衰减因子
+            verbose=False                # 设置为True以打印每次更新的学习率
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=160000, val_interval=1000)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
