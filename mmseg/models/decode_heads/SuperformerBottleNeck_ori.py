@@ -431,6 +431,7 @@ class SuperformerStage(nn.Module):
         use_middle_pixel_features: bool = False,
         merge_layer = None,
         group_pos = None,
+        group_vit_pos = None,
         reweight: bool = False,
         use_global_token: bool = False,
         num_global_token: int = -1,
@@ -460,6 +461,8 @@ class SuperformerStage(nn.Module):
         self.use_middle_pixel_features = use_middle_pixel_features
         self.merge_layer = merge_layer
         self.group_pos = group_pos
+        self.group_vit_pos = group_vit_pos
+        
         self.use_gt_in_vit = use_gt_in_vit
         self.use_global_fuse = use_global_fuse
         if pre_norm_pixel:
@@ -722,7 +725,7 @@ class SuperformerStage(nn.Module):
         sp_featuers_mid = None
         for i in range(start, end):
             #whether use hierarchy structure: only forward group token in vit block
-            if self.use_gt_in_vit and gt != None:
+            if self.use_gt_in_vit and self.group_vit_pos and i in self.group_vit_pos and gt!= None:
                 gt = self.blocks[i](gt)
             else:
                 if self.vis_sp_block:
@@ -1193,6 +1196,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         group_init_strides = (4,),# group token init strides
         group_init_kernel_sizes = (4,),# group token init kernel sizes
         group_pos = ((),(8,),()), #position of inserting group in vit blocks
+        group_vit_pos = None,  #begin position of using group instead of sp
         group_ls_init_value = None, # ls in grouping attn
         ungroup_ls_init_value = 1e-5, # ls in ungrouping attn
         group_block_init_values = None, # ls in group self attn
@@ -1489,6 +1493,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             if self.use_group_token == 'mix':
                 group_cfg.update({'superpixel_shape': sp_shape})
                 group_pos = group_cfg['group_pos'][i]
+                if group_vit_pos:
+                    assert self.classification_feature == "group_extralayer"
+                    group_vit_pos = group_cfg['group_vit_pos'][i]
                 self.group_cfg = group_cfg                
                 merge_layer = self._make_group_layer(
                     stage = i,
@@ -1543,6 +1550,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_middle_pixel_features=use_middle_pixel_features,
                     merge_layer = merge_layer,
                     group_pos = group_pos,
+                    group_vit_pos = group_vit_pos,
                     reweight = reweight_pixel_update,
                     use_global_token = use_global_token,
                     num_global_token = num_global_token,
@@ -1590,6 +1598,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         use_middle_pixel_features=use_middle_pixel_features,
                         merge_layer = merge_layer,
                         group_pos = group_pos,
+                        group_vit_pos = group_vit_pos,
                         reweight = reweight_pixel_update,
                         use_global_token = use_global_token,
                         return_mid_sp = return_mid_sp,
@@ -2717,8 +2726,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             x_2d = einops.rearrange(sp_feature,
                           'b (h w) c -> b c h w',
                           h = sh, w = sw)
-            
-            info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
+            w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]            
+            gt_2d = rearrange(gt,'b (h w) c -> b c h w',
+                                h = h_g,
+                                w = w_g)
+            info, _, _ = last_sp_layer(pixel_feature, gt_2d)
 
             if info is None:
                 raise ValueError()
@@ -2741,64 +2754,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             similarities = einops.rearrange(
                 similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
             )
-
-
-            
-            if self.vis_sp_id:
-                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
-                 
-            if self.vis_spgt:
-                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
-              #classification
-            if not self.seg_specific_classifier:
-                raise ValueError("No segmentation head is found.")
-            h_g = w_g = int(math.sqrt(gt.shape[1]))
-            if self.expand_gt:
-                # b head n g 
-                attn_map = attn_dict_list[-1]
-                if self.keep_multihead:
-                    num_heads = self.group_cfg['num_ungroup_heads']
-                    _, n, hc = gt.shape             
-                    gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )        
-                    gt = attn_map.transpose(-1,-2) @ gt
-                    gt = rearrange(gt, ' b h n c ->  b n (h c)')        
-                else:
-                    attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
-                    attn_map = attn_map.squeeze(1)
-                    gt = attn_map.transpose(-1,-2) @ gt
-                h_g = w_g = int(math.sqrt(gt.shape[1]))
-
-                gt_logits = self.gt_head(self.gt_norm(gt))
-
-                gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                    h = h_g,
-                                    w = w_g)                                                            
-                gt_logits =superpixel_ops.expand_superpixel_features(
-                    gt_logits, similarities
-                ) 
-            # to_h5(gt = gt_[:,0,...], sp =x.view(b,sh,sw,-1).permute(0, 3, 1, 2),filename= '/data2/yunfei/vis.h5')                
-            if not self.seg_specific_classifier:
-                raise ValueError("No segmentation head is found.")
-            elif self.seg_specific_classifier=="Linear":
-                
-                sp_feature = self.seg_norm(sp_feature)
-                b, num, c = sp_feature.shape
-                sp_feature = sp_feature.reshape(b * num, c)
-
-                sp_logits = self.seg_head(sp_feature)
-                sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
-            elif self.seg_specific_classifier=="Conv":
-                sp_feature = self.seg_norm(sp_feature)
-                b, num, c = sp_feature.shape
-
-
-
-                sp_feature = sp_feature.view(b,sh,sw,-1).permute(0, 3, 1, 2) #B,C,sh,sw
-                sp_logits = self.seg_head_conv(sp_feature)
-            pixel_logits = superpixel_ops.expand_superpixel_features(
-                sp_logits, similarities
-            )            
-            ret['seg'] = pixel_logits
+            gt_logits =superpixel_ops.expand_superpixel_features(
+                gt_logits, similarities
+            ) 
+            ret['seg'] = gt_logits
 
         else:
             raise(NotImplementedError)

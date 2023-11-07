@@ -692,7 +692,7 @@ class GPBlock(nn.Module):
             
     def reshape_vis(self, tensor):
         if tensor.dim() == 3:
-            sw, sh =self.hw_shape
+            sw = sh = int(math.sqrt(tensor.shape[1]))
             tensor = tensor.detach().cpu().numpy()
             tensor = rearrange(tensor,
                             'b (h w) c -> b c h w ',
@@ -739,7 +739,7 @@ class GPBlock(nn.Module):
             self.write_vis(sp_diff,output_file,'sp_diff') 
             for attn_map in attn_dict_list:
                 attn_map = rearrange(attn_map,
-                                     'b head n (h w) -> h head n h w',
+                                     'b head n (h w) -> b head n h w',
                                      h = sh, w = sw)
                 self.write_vis(attn_map.detach().cpu().numpy(),output_file,'attn_map') 
 

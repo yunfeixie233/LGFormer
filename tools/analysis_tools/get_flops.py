@@ -74,7 +74,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
     model = revert_sync_batchnorm(model)
 
     data = torch.randn(input_shape).unsqueeze(0).cuda()
-
+    print(data.shape)
     model.eval()
     
     
