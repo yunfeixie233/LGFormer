@@ -1152,7 +1152,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         norm_layer=None,
         act_layer=None,
         drop_rate: float = 0.0,
-        drop_path_rate: float = 0.0,
+        drop_path_rate: float = 0.1,
         attn_drop_rate: float = 0.0,
         sp_ls_init_value: Optional[float] = 1e-5,
         pixel_ls_init_value: Optional[float] = 1e-5,
@@ -2623,9 +2623,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             
             info, pixel_feature, _ = last_sp_layer(pixel_feature,x_2d)
             
+            
             if self.vis_sp_id:
-                
-                self.visualize_superpixel(img = img, info = info, resize_similarities= True)
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                 
+            if self.vis_spgt:
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
             
             #classification for superpixel
             if not self.seg_specific_classifier:
@@ -2733,6 +2736,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                 h = h_g,
                                 w = w_g)
             info, _, _ = last_sp_layer(pixel_feature, gt_2d)
+            if self.vis_sp_id:
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                 
+            if self.vis_spgt:
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
 
             if info is None:
                 raise ValueError()
@@ -2869,8 +2877,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt,sp_features_mid = self.forward_features(x)
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
-        if self.vis_sp_id:
-            self.visualize_superpixel(img = x, info = None, resize_similarities= True)
+        # if self.vis_sp_id:
+        #     self.visualize_superpixel(img = x, info = None, resize_similarities= True)
         if self.vis_sp:
             to_h5(self.output_dir,max_keys_per_file = 1, sp_features = sp_features)        
         if self.use_group_token == 'post':
@@ -2990,7 +2998,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             association_glob,
                             'b h w sh sw-> b (h w) (sh sw)'
                         )
-                        
+
                         attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)
                         for layer_idx, attn_map in enumerate(attn_maps):
                             attn_map = rearrange(attn_map, 'b sh sw g -> b (sh sw) g')
@@ -3019,7 +3027,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     association_glob,
                     'b h w sh sw-> b h w (sh sw)'
                 )
-                attn_maps = self.get_attn_maps(sp_shape, attn_dict_list)
+                attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)
 
 
                 for i, attn_map in enumerate(attn_maps):

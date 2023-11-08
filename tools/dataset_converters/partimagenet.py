@@ -49,12 +49,12 @@ from PIL import Image
 import numpy as np
 
 # Define the directory paths
-input_directory = '/root/autodl-tmp/SpformerV1/data/PartImageNet/annotations/val'
+input_directory = '/data2/yunfei/SpformerV1/data/PartImageNet/annotations/train_whole'
 output_directory = '/root/autodl-tmp/val'
 
 # Create the output directory if it doesn't exist
-if not os.path.exists(output_directory):
-    os.makedirs(output_directory)
+# if not os.path.exists(output_directory):
+#     os.makedirs(output_directory)
 
 
 # Function to process and map image tensor based on annotations
@@ -62,13 +62,13 @@ def process_and_map_image_tensor(image_tensor, mappings):
     # Create an output tensor of the same shape as image_tensor
     mapped_tensor = np.zeros_like(image_tensor)
     print(np.unique(image_tensor))
-    if np.unique(image_tensor).max() > 40 or np.unique(image_tensor).min() <0:
-        raise(ValueError)
-    # Assume image_tensor contains class labels as pixel values
-    for original_label, new_label in mappings.items():
-        # Map the pixel values based on the class_mappings
-        mapped_tensor[image_tensor == original_label] = new_label
-    return mapped_tensor
+    # if np.unique(image_tensor).max() > 40 or np.unique(image_tensor).min() <0:
+    #     raise(ValueError)
+    # # Assume image_tensor contains class labels as pixel values
+    # for original_label, new_label in mappings.items():
+    #     # Map the pixel values based on the class_mappings
+    #     mapped_tensor[image_tensor == original_label] = new_label
+    # return mapped_tensor
 
 # Iterate over each file in the input directory
 for filename in os.listdir(input_directory):
@@ -81,12 +81,12 @@ for filename in os.listdir(input_directory):
         # Process and map the image tensor
         new_image_tensor = process_and_map_image_tensor(image_tensor, class_mappings)
 
-        # Convert the tensor back to an image
-        new_image = Image.fromarray(new_image_tensor.astype(np.uint8))
+        # # Convert the tensor back to an image
+        # new_image = Image.fromarray(new_image_tensor.astype(np.uint8))
 
-        # Save the new image to the output directory
-        new_image_path = os.path.join(output_directory, filename)
-        new_image.save(new_image_path)
+        # # Save the new image to the output directory
+        # new_image_path = os.path.join(output_directory, filename)
+        # new_image.save(new_image_path)
 
 print("Processing complete.")
 

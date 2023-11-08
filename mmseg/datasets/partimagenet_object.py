@@ -14,7 +14,7 @@ class PartImagenetDataset_Object(BaseSegDataset):
     """
     METAINFO = dict(
             classes = (
-                # 'Background',                                
+                'Background',                                
                 'Quadruped',
                 'Biped',
                 'Fish',
@@ -26,7 +26,10 @@ class PartImagenetDataset_Object(BaseSegDataset):
                 'Boat',
                 'Aeroplane',
                 'Bottle',              
-            ))
+            ),
+            palette=[[120, 120, 120], [180, 120, 120], [6, 230, 230], [80, 50, 50],
+                 [4, 200, 3], [120, 120, 80], [140, 140, 140], [204, 5, 255],
+                 [230, 230, 230], [4, 250, 7], [224, 5, 255], [235, 255, 7]],)
 
     def __init__(self,
                  img_suffix='.JPEG',
