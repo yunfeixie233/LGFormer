@@ -53,16 +53,15 @@ class PartImagenetDataset(BaseSegDataset):
                 'Aeroplane Wing',
                 'Aeroplane Tail',
                 'Bottle Mouth',
-                'Bottle Body'
+                'Bottle Body',
+                'background'
             ))
 
     def __init__(self,
                  img_suffix='.JPEG',
                  seg_map_suffix='.png',
-                 reduce_zero_label=True,
                  **kwargs) -> None:
         super().__init__(
             img_suffix=img_suffix,
             seg_map_suffix=seg_map_suffix,
-            reduce_zero_label=reduce_zero_label,
             **kwargs)

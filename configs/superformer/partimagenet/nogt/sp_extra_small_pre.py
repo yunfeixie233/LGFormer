@@ -19,6 +19,7 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
+    seg_num_classes = 41,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
@@ -47,7 +48,7 @@ optim_wrapper = dict(
             'stages.1':dict(lr_mult=0.1),
         }))
 
-total_iter = 40000
+total_iter = 50000
 param_scheduler = [
     dict(
             type='MultiStepLR',
