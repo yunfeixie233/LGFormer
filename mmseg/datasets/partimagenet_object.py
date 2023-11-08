@@ -14,7 +14,7 @@ class PartImagenetDataset_Object(BaseSegDataset):
     """
     METAINFO = dict(
             classes = (
-                'Background',                                
+                # 'Background',                                
                 'Quadruped',
                 'Biped',
                 'Fish',
@@ -31,7 +31,7 @@ class PartImagenetDataset_Object(BaseSegDataset):
     def __init__(self,
                  img_suffix='.JPEG',
                  seg_map_suffix='.png',
-                 reduce_zero_label=False,
+                 reduce_zero_label=True,
                  **kwargs) -> None:
         super().__init__(
             img_suffix=img_suffix,

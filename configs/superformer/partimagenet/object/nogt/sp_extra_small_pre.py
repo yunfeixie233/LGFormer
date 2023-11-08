@@ -19,7 +19,7 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    seg_num_classes = 12,
+    seg_num_classes = 11,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 

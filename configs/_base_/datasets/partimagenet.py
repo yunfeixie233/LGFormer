@@ -4,7 +4,8 @@ data_root = 'data/PartImageNet'
 crop_size = (512, 512)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations'),
+    # dict(type='LoadAnnotations',),
+    dict(type='LoadAnnotations',reduce_zero_label=True),
     dict(
         type='RandomResize',
         scale=(2048, 512),
@@ -20,7 +21,8 @@ test_pipeline = [
     dict(type='Resize', scale=(2048, 512), keep_ratio=True),
     # add loading annotation after ``Resize`` because ground truth
     # does not need to do resize data transform
-    dict(type='LoadAnnotations'),
+    # dict(type='LoadAnnotations'),
+    dict(type='LoadAnnotations',reduce_zero_label=True),
     dict(type='PackSegInputs')
 ]
 img_ratios = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]

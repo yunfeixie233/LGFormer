@@ -49,8 +49,8 @@ from PIL import Image
 import numpy as np
 
 # Define the directory paths
-input_directory = '/data1/yunfei/SpformerV1/data/PartImageNet/annotations/val'
-output_directory = '/data1/yunfei/SpformerV1/data/PartImageNet/annotations_object/val'
+input_directory = '/root/autodl-tmp/SpformerV1/data/PartImageNet/annotations/val'
+output_directory = '/root/autodl-tmp/val'
 
 # Create the output directory if it doesn't exist
 if not os.path.exists(output_directory):
@@ -61,6 +61,7 @@ if not os.path.exists(output_directory):
 def process_and_map_image_tensor(image_tensor, mappings):
     # Create an output tensor of the same shape as image_tensor
     mapped_tensor = np.zeros_like(image_tensor)
+    print(np.unique(image_tensor))
     if np.unique(image_tensor).max() > 40 or np.unique(image_tensor).min() <0:
         raise(ValueError)
     # Assume image_tensor contains class labels as pixel values
