@@ -30,7 +30,6 @@ optim_wrapper = dict(
     lr=0.0002,
     betas=(0.9, 0.999),
     weight_decay=0.05),
-    accumulative_counts= 2,
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -69,7 +68,7 @@ default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=1000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 
