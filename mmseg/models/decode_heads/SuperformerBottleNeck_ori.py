@@ -61,7 +61,7 @@ def to_h5(output_directory, max_keys_per_file=None,  max_file_per_fold=None, **k
     Returns:
     None
     """
-    if dist.get_rank() !=0:
+    if dist.is_available() and dist.is_initialized() and dist.get_rank() !=0:
         pass
     else:
         if not os.path.exists(output_directory):
@@ -594,6 +594,7 @@ class SuperformerStage(nn.Module):
         else:
             self.pos_embed = None
             self.pixel_pos_embed = None
+
         self.blocks = nn.Sequential(
             *[
                 block_fn(
