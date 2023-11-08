@@ -27,7 +27,7 @@ optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
     type='AdamW',
-    lr=0.007,
+    lr=0.00175,
     betas=(0.9, 0.999),
     weight_decay=0.0001),
     paramwise_cfg=dict(
@@ -47,11 +47,14 @@ optim_wrapper = dict(
         }))
 
 
+
 param_scheduler = [
+    dict(
+        type='LinearLR', start_factor=1e-6, by_epoch=False, begin=0, end=1500),
     dict(
         type='PolyLR',
         power=0.9,
-        begin=0,
+        begin=1500,
         end=40000,
         eta_min=0.0,
         by_epoch=False,
