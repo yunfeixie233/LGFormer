@@ -25,7 +25,7 @@ from .stare import STAREDataset
 from .synapse import SynapseDataset
 from .partimagenet import PartImagenetDataset
 from .partimagenet_object import PartImagenetDataset_Object
-
+from .partimagenet_158 import PartImagenetDataset_158
 # yapf: disable
 from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
                          BioMedical3DRandomCrop, BioMedical3DRandomFlip,
@@ -61,5 +61,6 @@ __all__ = [
     'MapillaryDataset_v2', 'Albu', 'LEVIRCDDataset',
     'LoadMultipleRSImageFromFile', 'LoadSingleRSImageFromFile',
     'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset',
-    'PascalPartDataset','PartImagenetDataset','PartImagenetDataset_Object'
+    'PascalPartDataset','PartImagenetDataset','PartImagenetDataset_Object',
+    'PartImagenetDataset_158'
 ]
