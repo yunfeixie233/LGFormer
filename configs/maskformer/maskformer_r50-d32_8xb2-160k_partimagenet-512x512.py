@@ -14,6 +14,8 @@ data_preprocessor = dict(
     seg_pad_val=255)
 # model_cfg
 num_classes = 12
+# num_classes = 11
+
 model = dict(
     type='EncoderDecoder',
     data_preprocessor=data_preprocessor,
@@ -122,7 +124,7 @@ optim_wrapper = dict(
     lr=0.0002,
     betas=(0.9, 0.999),
     weight_decay=0.05),
-    accumulative_counts= 2,
+    accumulative_counts= 1,
     paramwise_cfg=dict(custom_keys={
         'backbone': dict(lr_mult=0.1),
     }
@@ -142,7 +144,7 @@ param_scheduler = [
 ]
 
 # In MaskFormer implementation we use batch size 2 per GPU as default
-train_dataloader = dict(batch_size=8, num_workers=2)
+train_dataloader = dict(batch_size=16, num_workers=8)
 val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
 train_cfg = dict(

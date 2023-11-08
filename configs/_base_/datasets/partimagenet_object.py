@@ -43,8 +43,13 @@ tta_pipeline = [
         ])
 ]
 train_dataloader = dict(
+<<<<<<< Updated upstream
     batch_size=8,
     num_workers=8,
+=======
+    batch_size=16,
+    num_workers=4,
+>>>>>>> Stashed changes
     persistent_workers=True,
     sampler=dict(type='InfiniteSampler', shuffle=True),
     dataset=dict(
