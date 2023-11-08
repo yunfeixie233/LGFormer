@@ -665,7 +665,6 @@ class ResNet(BaseModule):
             x = self.norm1(x)
             x = self.relu(x)
         outs = []
-        outs.append(x)
         x = self.maxpool(x)
 
         for i, layer_name in enumerate(self.res_layers):

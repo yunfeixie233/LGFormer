@@ -49,8 +49,8 @@ from PIL import Image
 import numpy as np
 
 # Define the directory paths
-input_directory = '/root/autodl-tmp/SpformerV1/data/PartImageNet/annotations/test'
-output_directory = '/root/autodl-tmp/SpformerV1/data/PartImageNet/annotations_object/test'
+input_directory = '/data1/yunfei/SpformerV1/data/PartImageNet/annotations/val'
+output_directory = '/data1/yunfei/SpformerV1/data/PartImageNet/annotations_object/val'
 
 # Create the output directory if it doesn't exist
 if not os.path.exists(output_directory):
