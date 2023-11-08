@@ -49,7 +49,7 @@ optim_wrapper = dict(
             'stages.1':dict(lr_mult=0.1),
         }))
 
-total_iter = 50000
+total_iter = 100000
 param_scheduler = [
     dict(
             type='MultiStepLR',
@@ -62,7 +62,7 @@ param_scheduler = [
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=500)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
