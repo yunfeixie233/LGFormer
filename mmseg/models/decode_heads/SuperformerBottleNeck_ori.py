@@ -1223,6 +1223,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         addition = False,
         ungroup_enable: bool = True,
         group_drop_path_rate: float = 0.,
+        use_gumbel: bool = False,
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1471,6 +1472,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             addition = addition,
             ungroup_enable = ungroup_enable,
             group_drop_path_rate = group_drop_path_rate,
+            use_gumbel = use_gumbel,
             )
 
             print(group_cfg)

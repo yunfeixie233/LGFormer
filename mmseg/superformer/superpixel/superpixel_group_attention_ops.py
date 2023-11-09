@@ -108,7 +108,8 @@ class FullAttnModule(nn.Module):
                  proj_drop=0.,
                  q_project=True,
                  association_embedding = False,
-                 keep_multihead = True):
+                 keep_multihead = True,
+                 use_gumbel = False):
         super().__init__()
         if out_dim is None:
             out_dim = dim
@@ -119,7 +120,7 @@ class FullAttnModule(nn.Module):
         self.q_proj = nn.Linear(dim, dim, bias=qkv_bias) if q_project else None
         self.k_proj = nn.Linear(dim, dim, bias=qkv_bias)
         self.v_proj = nn.Linear(dim, dim, bias=qkv_bias)
-
+        self.use_gumbel = use_gumbel
         self.attn_drop = nn.Dropout(attn_drop)
         if self.keep_multihead:
             self.proj = nn.Sequential(nn.Linear(head_dim, out_dim // self.num_heads), nn.Dropout(proj_drop))
@@ -151,7 +152,10 @@ class FullAttnModule(nn.Module):
         if self.association_embedding:
             if len(attn_dict_list) >0:
                 attn = attn + attn_dict_list[-1].transpose(-2, -1)
-        attn = attn.softmax(dim=-1)
+        if self.use_gumbel:
+            attn = F.gumbel_softmax(attn, tau=10, hard=False, dim = -1)
+        else:
+            attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
         assert attn.shape == (bq, self.num_heads, nq, nk)
         if isinstance(attn_dict_list,list):
@@ -216,7 +220,7 @@ class GroupAttnBlock(nn.Module):
                  concat: bool = False,
                  reweight_init_value: int = 1,
                  addition: bool = False,
-                 
+                 use_gumbel: bool = False,
                 ):
         super().__init__()
 
@@ -253,7 +257,8 @@ class GroupAttnBlock(nn.Module):
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=proj_drop,
-            q_project=True,)
+            q_project=True,
+            use_gumbel = use_gumbel,)
         self.identity = identity
         self.use_ffn = use_ffn
         if self.identity:
@@ -355,6 +360,7 @@ class GPBlock(nn.Module):
                  attn_fuse_conv: bool = False,
                  addition: bool = False,
                  ungroup_enable:bool = True,
+                 use_gumbel:bool = False,
                  **kwargs):
 
         super().__init__()
@@ -525,7 +531,8 @@ class GPBlock(nn.Module):
             group_reweight_method = group_reweight_method,
             reweight_init_value = reweight_init_value,
             concat = concat,
-            addition = addition)
+            addition = addition,
+            use_gumbel = use_gumbel)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _block_cfg = dict(
             dim=group_embed_dims,
