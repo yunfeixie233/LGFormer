@@ -2028,13 +2028,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             #final info               
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
+        #firstly we will cls group token, gt logits will be upsample to sp shape
         if self.use_gt_loss:
             h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
             w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
             
             num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt.shape    
-            #get final attention map
+            #use final attention map
             if self.use_final_attn:
                 attn_map = attn_dict_list[-1]       
                 if self.gt_cls_method == "upsample_first":                       
@@ -2043,16 +2044,22 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     gt = rearrange(gt, ' b h n c ->  b n (h c)')
                     h_g = last_sp_layer.superpixel_shape[0]
                     w_g = last_sp_layer.superpixel_shape[1] 
+                    gt_logits = self.gt_head(self.gt_norm(gt))
+                    gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+                                        h = h_g,
+                                        w = w_g)                     
                 elif self.gt_cls_method == "cls_first":
                     attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
                     attn_map = attn_map.squeeze(1)
+                    gt_logits = self.gt_head(self.gt_norm(gt))
+                    gt_logits = attn_map.transpose(-1,-2) @ gt_logits              
+                    gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+                                        h = h_g *  self.group_init_strides[-1],
+                                        w = w_g *  self.group_init_strides[-1])                    
+                                              
                 else:
-                    raise(NotImplementedError)
-
-                gt_logits = self.gt_head(self.gt_norm(gt))
-                gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                    h = h_g,
-                                    w = w_g)                           
+                    raise(NotImplementedError)                         
+            #use all attention map            
             else:
                 gt_logits_list = []
                 gt_list = []
@@ -2727,11 +2734,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         elif self.classification_feature == "group_extralayer": 
             #final info               
-            x_2d = einops.rearrange(sp_feature,
-                          'b (h w) c -> b c h w',
-                          h = sh, w = sw)
-            h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
-            w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]            
             gt_2d = rearrange(gt,'b (h w) c -> b c h w',
                                 h = h_g,
                                 w = w_g)
@@ -2770,6 +2772,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             raise(NotImplementedError)
+        
         if self.use_gt_loss:
             if self.use_final_attn:    
                 if self.use_gt_extralayer:
