@@ -17,9 +17,12 @@ data_preprocessor = dict(
 num_classes = 12
 # num_classes = 11
 
+<<<<<<< Updated upstream
 =======
 num_classes = 159
 >>>>>>> 74f5813f1fa7e98c18045caa597b53036c2aeacc
+=======
+>>>>>>> Stashed changes
 model = dict(
     type='EncoderDecoder',
     data_preprocessor=data_preprocessor,
@@ -148,11 +151,15 @@ param_scheduler = [
 ]
 
 # In MaskFormer implementation we use batch size 2 per GPU as default
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 train_dataloader = dict(batch_size=16, num_workers=8)
 =======
 train_dataloader = dict(batch_size=8, num_workers=4)
 >>>>>>> 74f5813f1fa7e98c18045caa597b53036c2aeacc
+=======
+train_dataloader = dict(batch_size=16, num_workers=8)
+>>>>>>> Stashed changes
 val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
 train_cfg = dict(

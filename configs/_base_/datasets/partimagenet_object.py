@@ -44,9 +44,12 @@ tta_pipeline = [
 ]
 train_dataloader = dict(
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     batch_size=8,
     num_workers=8,
 =======
+=======
+>>>>>>> Stashed changes
     batch_size=16,
     num_workers=4,
 >>>>>>> Stashed changes
