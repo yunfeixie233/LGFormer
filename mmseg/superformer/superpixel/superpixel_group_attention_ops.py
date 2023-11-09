@@ -108,7 +108,9 @@ class FullAttnModule(nn.Module):
                  proj_drop=0.,
                  q_project=True,
                  association_embedding = False,
-                 keep_multihead = True):
+                 keep_multihead = True,
+                 use_gumbel = False,
+                 use_group_attn = False,):
         super().__init__()
         if out_dim is None:
             out_dim = dim
@@ -119,7 +121,7 @@ class FullAttnModule(nn.Module):
         self.q_proj = nn.Linear(dim, dim, bias=qkv_bias) if q_project else None
         self.k_proj = nn.Linear(dim, dim, bias=qkv_bias)
         self.v_proj = nn.Linear(dim, dim, bias=qkv_bias)
-
+        self.use_gumbel = use_gumbel
         self.attn_drop = nn.Dropout(attn_drop)
         if self.keep_multihead:
             self.proj = nn.Sequential(nn.Linear(head_dim, out_dim // self.num_heads), nn.Dropout(proj_drop))
@@ -127,7 +129,7 @@ class FullAttnModule(nn.Module):
             self.proj = nn.Sequential(nn.Linear(dim, out_dim), nn.Dropout(proj_drop))
         self.proj_drop = nn.Dropout(proj_drop)
         self.association_embedding = association_embedding
-        
+        self.use_group_attn = use_group_attn
     def forward(self, query, key, value, att_bias=None, attn_dict_list=None):
         bq, nq, cq = query.shape
         bk, nk, ck = key.shape
@@ -151,11 +153,18 @@ class FullAttnModule(nn.Module):
         if self.association_embedding:
             if len(attn_dict_list) >0:
                 attn = attn + attn_dict_list[-1].transpose(-2, -1)
-        attn = attn.softmax(dim=-1)
+        if self.use_gumbel:
+            attn = F.gumbel_softmax(attn, tau=10, hard=False, dim = -1)
+        else:
+            attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
         assert attn.shape == (bq, self.num_heads, nq, nk)
         if isinstance(attn_dict_list,list):
-            attn_dict_list.append(attn.transpose(-2, -1))
+            if self.use_group_attn:
+                attn_dict_list.append(attn)
+            else:
+                attn_dict_list.append(attn.transpose(-2, -1))
+            
         # [B, nh, N, C//nh] -> [B, N, C]
         # out = (attn @ v).transpose(1, 2).reshape(B, N, C)
         if self.keep_multihead:
@@ -216,7 +225,8 @@ class GroupAttnBlock(nn.Module):
                  concat: bool = False,
                  reweight_init_value: int = 1,
                  addition: bool = False,
-                 
+                 use_gumbel: bool = False,
+                 use_group_attn: bool = False,
                 ):
         super().__init__()
 
@@ -253,7 +263,9 @@ class GroupAttnBlock(nn.Module):
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=proj_drop,
-            q_project=True,)
+            q_project=True,
+            use_gumbel = use_gumbel,
+            use_group_attn = use_group_attn,)
         self.identity = identity
         self.use_ffn = use_ffn
         if self.identity:
@@ -355,6 +367,8 @@ class GPBlock(nn.Module):
                  attn_fuse_conv: bool = False,
                  addition: bool = False,
                  ungroup_enable:bool = True,
+                 use_gumbel:bool = False,
+                 use_group_attn: bool =False,
                  **kwargs):
 
         super().__init__()
@@ -504,7 +518,8 @@ class GPBlock(nn.Module):
             with_cp=with_cp,
             ls_init_value = group_ls_init_value,
             identity = group_identity,
-            group_reweight_method = None,)
+            group_reweight_method = None,
+            use_group_attn = use_group_attn,)
         _group_att_cfg.update(group_att_cfg)
         self.ungroup_enable = ungroup_enable
       
@@ -525,7 +540,8 @@ class GPBlock(nn.Module):
             group_reweight_method = group_reweight_method,
             reweight_init_value = reweight_init_value,
             concat = concat,
-            addition = addition)
+            addition = addition,
+            use_gumbel = use_gumbel)
         _ungroup_att_cfg.update(ungroup_att_cfg)
         _block_cfg = dict(
             dim=group_embed_dims,
@@ -572,7 +588,7 @@ class GPBlock(nn.Module):
         self.output_dir = output_dir
         self.layer_num = layer_num
         self.attn_fuse_conv = attn_fuse_conv
-
+        self.use_group_attn = use_group_attn
         if self.attn_fuse_conv:
             self.attn_fuse_conv = \
             nn.Sequential(                         
@@ -667,15 +683,20 @@ class GPBlock(nn.Module):
             if self.group_projector_method == "cross" and prev_token is not None:
                 gt, _= self.group_projector(query=gt, key=prev_token, value=prev_token)
                 
-              
-            gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
+            if self.use_group_attn:  
+                gt, attn_dict_list = group_layer(query=gt, key=x, value=x, attn_dict_list = attn_dict_list)
+            else:
+                gt, _ = group_layer(query=gt, key=x, value=x, attn_dict_list = None)
             if len(blocks) > 0 :           
                 gt = gt + pos_embed
 
                 gt = blocks(gt)
             
-            if self.ungroup_enable:              
-                proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)
+            if self.ungroup_enable:
+                if self.use_group_attn:        
+                    proj_tokens, _ = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = None)
+                else:        
+                    proj_tokens, attn_dict_list = un_group_layer(query=x, key=gt, value=gt, attn_dict_list = attn_dict_list)                    
             else:
                 proj_tokens = x
             if self.attn_fuse_conv:

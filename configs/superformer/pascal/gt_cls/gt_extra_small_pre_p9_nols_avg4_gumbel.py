@@ -1,0 +1,10 @@
+_base_ = [
+    './gt_extra_small_pre_p9_nols_avg4.py',
+]
+model = dict(
+    type='EncoderDecoder',
+    decode_head=dict(
+    use_gumbel = True,
+    vis_gt_eff = True,
+    output_dir = "/data2/yunfei/vis"
+))

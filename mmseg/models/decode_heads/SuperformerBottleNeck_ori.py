@@ -1222,6 +1222,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         group_qk_scale = None,
         addition = False,
         ungroup_enable: bool = True,
+        group_drop_path_rate: float = 0.,
+        use_gumbel: bool = False,
+        use_group_attn: bool = False,
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1469,6 +1472,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             reweight_init_value = group_reweight_init_value,
             addition = addition,
             ungroup_enable = ungroup_enable,
+            group_drop_path_rate = group_drop_path_rate,
+            use_gumbel = use_gumbel,
+            use_group_attn = use_group_attn,
             )
 
             print(group_cfg)
@@ -1479,7 +1485,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         num_stages = len(depths)
         stages = []
-
 
         stage_in_dim = stem_channels_list[-1]
         self.use_gt_extralayer = use_gt_extralayer 
@@ -1493,6 +1498,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             )
             if self.use_group_token == 'mix':
                 group_cfg.update({'superpixel_shape': sp_shape})
+                
                 group_pos = group_cfg['group_pos'][i]
                 if group_vit_pos:
                     assert self.classification_feature == "group_extralayer"
@@ -1871,6 +1877,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         elif self.use_group_token == 'mix':
             depth = len(self.group_cfg['group_pos'][stage])
         merge_layer = nn.ModuleList()
+        dpr = np.linspace(0, group_cfg['group_drop_path_rate'], len(group_cfg['group_layers'].keys()))
+
         for i in range(depth):
             if i >0 :
                 if self.group_cfg["group_projector_method"] == 'linear':
@@ -1899,7 +1907,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                'group_projector':group_projector,
                                'group_identity':self.group_cfg["group_identity"][i] if isinstance(self.group_cfg["group_identity"], tuple) else self.group_cfg["group_identity"],
                                'ungroup_identity':self.group_cfg["ungroup_identity"][i] if isinstance(self.group_cfg["ungroup_identity"], tuple) else self.group_cfg["ungroup_identity"],
-                               'ungroup_enable':self.group_cfg["ungroup_enable"][i] if isinstance(self.group_cfg["ungroup_enable"], tuple) else self.group_cfg["ungroup_enable"],                                           
+                               'ungroup_enable':self.group_cfg["ungroup_enable"][i] if isinstance(self.group_cfg["ungroup_enable"], tuple) else self.group_cfg["ungroup_enable"],
+                               'drop_path':dpr[i],                                           
                                                 })
             group_layer = GPBlock(**group_cfg)
             merge_layer.append(group_layer)

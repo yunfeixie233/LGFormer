@@ -7,6 +7,6 @@ model = dict(
         heads=(12, 12, -1),
         sp_heads=(3, 3, 1),
         stem_channels_list=(96,),
-        drop_path_rate = 0.5,     
+        drop_path_rate = 0.1,     
 ))
 
