@@ -1,5 +1,5 @@
 _base_ = [
-    '../_base_/datasets/partimagenet_object.py', '../_base_/default_runtime.py',
+    '../_base_/datasets/partimagenet_158.py', '../_base_/default_runtime.py',
     '../_base_/schedules/schedule_160k.py'
 ]
 norm_cfg = dict(type='SyncBN', requires_grad=True)
@@ -13,9 +13,13 @@ data_preprocessor = dict(
     pad_val=0,
     seg_pad_val=255)
 # model_cfg
+<<<<<<< HEAD
 num_classes = 12
 # num_classes = 11
 
+=======
+num_classes = 159
+>>>>>>> 74f5813f1fa7e98c18045caa597b53036c2aeacc
 model = dict(
     type='EncoderDecoder',
     data_preprocessor=data_preprocessor,
@@ -130,7 +134,7 @@ optim_wrapper = dict(
     }
         ))
 
-total_iter = 50000
+total_iter = 100000
 param_scheduler = [
     dict(
             type='MultiStepLR',
@@ -144,7 +148,11 @@ param_scheduler = [
 ]
 
 # In MaskFormer implementation we use batch size 2 per GPU as default
+<<<<<<< HEAD
 train_dataloader = dict(batch_size=16, num_workers=8)
+=======
+train_dataloader = dict(batch_size=8, num_workers=4)
+>>>>>>> 74f5813f1fa7e98c18045caa597b53036c2aeacc
 val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
 train_cfg = dict(
@@ -155,7 +163,7 @@ default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=1000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 
