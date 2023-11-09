@@ -4,10 +4,10 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
-    group_pos = ((),(7,8,),()), 
+    group_pos = ((1,),(8,),()), 
     group_init_strides = (3,3,),
     group_init_kernel_sizes = (3,3,),
     group_layers = {0:100,1:100,},    
     group_token_init_method = ('avgpool','from_feature',), 
-    
+    ungroup_ls_init_value = 1e-5,
 ))

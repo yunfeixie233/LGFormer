@@ -1908,6 +1908,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                'group_identity':self.group_cfg["group_identity"][i] if isinstance(self.group_cfg["group_identity"], tuple) else self.group_cfg["group_identity"],
                                'ungroup_identity':self.group_cfg["ungroup_identity"][i] if isinstance(self.group_cfg["ungroup_identity"], tuple) else self.group_cfg["ungroup_identity"],
                                'ungroup_enable':self.group_cfg["ungroup_enable"][i] if isinstance(self.group_cfg["ungroup_enable"], tuple) else self.group_cfg["ungroup_enable"],
+                               
                                'drop_path':dpr[i],                                           
                                                 })
             group_layer = GPBlock(**group_cfg)

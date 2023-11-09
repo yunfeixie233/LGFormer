@@ -5,6 +5,7 @@ model = dict(
     type='EncoderDecoder',
     decode_head=dict(
     use_final_attn = False,
+    use_group_attn = True,    
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=0.7),
