@@ -2077,16 +2077,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
                         gt_new = attn_map.transpose(-1,-2) @ gt_new
                         gt_new = rearrange(gt_new, ' b h n c ->  b n (h c)')
-                        h_g = last_sp_layer.superpixel_shape[0]
-                        w_g = last_sp_layer.superpixel_shape[1]
                         gt_list.append(gt_new)
                     else:
                         raise(NotImplementedError)
 
                     gt_logits = self.gt_head(self.gt_norm(gt_new))
                     gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                        h = h_g,
-                                        w = w_g)
+                                        h = h_g *  self.group_init_strides[-1],
+                                        w = w_g *  self.group_init_strides[-1])       
                     gt_logits_list.append(gt_logits) 
                     
 
