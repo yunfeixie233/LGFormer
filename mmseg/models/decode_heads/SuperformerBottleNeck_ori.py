@@ -1152,7 +1152,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         norm_layer=None,
         act_layer=None,
         drop_rate: float = 0.0,
-        drop_path_rate: float = 0.1,
+        drop_path_rate: float = 0.1 ,
         attn_drop_rate: float = 0.0,
         sp_ls_init_value: Optional[float] = 1e-5,
         pixel_ls_init_value: Optional[float] = 1e-5,
@@ -1215,10 +1215,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_global_token: bool = False,
         num_global_token: int = -1,
         use_global_fuse:bool = True,
-        use_ffn: bool = False, #whether use ffn in group attn
+        use_ffn: bool = True, #whether use ffn in group attn
         concat: bool = False,
         attn_fuse_conv: bool = False,
-        use_final_attn: bool = False, #if True, will calculate loss for all gt attn
+        use_final_attn: bool = True, #if False, will calculate loss for all gt attn
         group_qk_scale = None,
         addition = False,
         ungroup_enable: bool = True,
