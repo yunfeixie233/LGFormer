@@ -4,7 +4,7 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
-    use_final_attn = False,
+    use_final_group = False,
     use_group_attn = True,    
     loss_decode=[
             dict(

@@ -6,5 +6,7 @@ model = dict(
     decode_head=dict( 
     group_init_strides = (2,),
     group_init_kernel_sizes = (2,),
-    group_layers = {0:225,},    
+    group_layers = {0:225,},  
+    use_group_attn = True,
+  
 ))

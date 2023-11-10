@@ -435,7 +435,7 @@ class SuperformerStage(nn.Module):
         reweight: bool = False,
         use_global_token: bool = False,
         num_global_token: int = -1,
-        use_global_fuse: bool = True,
+        use_global_fuse: bool = False,
         return_mid_sp: int = None,
         use_gt_in_vit: bool = False,
         vis_sp_block: bool = False,
@@ -708,7 +708,7 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt: torch.Tensor = None,global_token: torch.Tensor = None
+        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt_list: list = None,global_token: torch.Tensor = None
 
     ) -> torch.Tensor:
         #global token concat and forward with image token, default to False
@@ -738,7 +738,7 @@ class SuperformerStage(nn.Module):
   
             if self.merge_layer and i in self.group_pos:
                 #unpack when cross attention
-
+                gt = gt_list[-1] if gt_list else None         
                 if self.use_global_token: 
                     x, global_token = einops.unpack(x, ps, 'b * d') 
                 if self.use_global_fuse: 
@@ -752,14 +752,15 @@ class SuperformerStage(nn.Module):
                 )
                 if self.use_global_token: 
                     x, ps = einops.pack([x, gt], 'b * d ')             
-              
+                if gt is not None:
+                    gt_list.append(gt)
 
               
         if self.use_global_token:
             x, global_token = einops.unpack(x, ps, 'b * d')
         if self.vis_sp_block:
             to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
-        return x,attn_dict_list, gt, sp_featuers_mid, global_token
+        return x,attn_dict_list, gt_list, sp_featuers_mid, global_token
 
     def add_pos_embed(self, x):
         if self.no_embed_class:
@@ -951,7 +952,7 @@ class SuperformerStage(nn.Module):
         x: torch.Tensor,
         sp_features_last: Optional[torch.Tensor],
         attn_dict_list:list = None,
-        gt: torch.Tensor = None,
+        gt_list: torch.Tensor = None,
         global_token: torch.Tensor = None,
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         
@@ -1019,9 +1020,11 @@ class SuperformerStage(nn.Module):
         if vis_sp_block:
             sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
-        sp_features_seg, attn_dict_list, gt, sp_featuers_mid,global_token = self.forward_blocks_range(
-            sp_features, 0, self.seg_block_idx, attn_dict_list, gt, global_token
+
+        sp_features_seg, attn_dict_list, gt_list, sp_featuers_mid,global_token = self.forward_blocks_range(
+            sp_features, 0, self.seg_block_idx, attn_dict_list, gt_list, global_token
         )
+
         sp_features = sp_features_seg
         if vis_sp_block:
             import h5py
@@ -1089,7 +1092,7 @@ class SuperformerStage(nn.Module):
             sp_features,
             sp_features_seg,
             attn_dict_list,
-            gt,
+            gt_list,
             sp_featuers_mid,
             global_token,
         )
@@ -1218,7 +1221,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_ffn: bool = True, #whether use ffn in group attn
         concat: bool = False,
         attn_fuse_conv: bool = False,
-        use_final_attn: bool = True, #if False, will calculate loss for all gt attn
+        use_final_group: bool = True, #if False, will calculate loss for all gt attn
         group_qk_scale = None,
         addition = False,
         ungroup_enable: bool = True,
@@ -1716,7 +1719,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_gt_loss = use_gt_loss 
         self.gt_cls_method = gt_cls_method
         self.use_gt_fuse = use_gt_fuse
-        self.use_final_attn = use_final_attn
+        self.use_final_group = use_final_group
         if self.use_gt_fuse:
             self.group_fuse_conv = \
                 nn.Sequential(                         
@@ -1951,20 +1954,21 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 pixel_features=x
             sp_features_last = self.init_superpixel_features(pixel_features)
             assert len(self.stages) > 0
-            gt = None
             global_token = None   
             if self.use_group_token == 'mix':
                 attn_dict_list = []
+                gt_list = []
             else:
-                attn_dict_list = None         
+                attn_dict_list = None 
+                gt_list = None        
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
 
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
-                    pixel_features, sp_features, sp_features_seg,attn_dict_list, gt,sp_features_mid,global_token = stage(
+                    pixel_features, sp_features, sp_features_seg,attn_dict_list, gt_list,sp_features_mid,global_token = stage(
                         pixel_features,
                         sp_features_last,
                         attn_dict_list,
-                        gt,
+                        gt_list,
                         global_token, 
                     )
                     sp_features_last = sp_features
@@ -1984,7 +1988,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:
                 #     endpoints[f"pixel_features_stage{i}"] = pixel_features
-            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt, sp_features_mid
+            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt_list, sp_features_mid
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.norm(x)
@@ -2017,7 +2021,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         return affinity
     def forward_segmentation(
         self, sp_feature: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
-        img = None,attn_dict_list = None, gt = None, sp_features_mid = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        img = None,attn_dict_list = None, gt_list = None, sp_features_mid = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Get prediction via different methods.
 
         classification_feature:
@@ -2039,25 +2043,27 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
         #firstly we will cls group token, gt logits will be upsample to sp shape
+
         if self.use_gt_loss:
             h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
             w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
             
             num_heads = self.group_cfg['num_ungroup_heads']
-            _, n, hc = gt.shape    
+            _, n, hc = gt_list[-1].shape    
             #use final attention map
-            if self.use_final_attn:
-                attn_map = attn_dict_list[-1]       
+            if self.use_final_group:
+                attn_map = attn_dict_list[-1] 
+                gt = gt_list[-1]    
                 if self.gt_cls_method == "upsample_first":                       
                     gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
                     gt = attn_map.transpose(-1,-2) @ gt
                     gt = rearrange(gt, ' b h n c ->  b n (h c)')
-                    h_g = last_sp_layer.superpixel_shape[0]
-                    w_g = last_sp_layer.superpixel_shape[1] 
+                    h_g = h_g *  self.group_init_strides[-1]
+                    w_g = w_g *  self.group_init_strides[-1]
                     gt_logits = self.gt_head(self.gt_norm(gt))
                     gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                        h = h_g,
-                                        w = w_g)                     
+                                        h = h_g *  self.group_init_strides[-1],
+                                        w = w_g *  self.group_init_strides[-1])                     
                 elif self.gt_cls_method == "cls_first":
                     attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
                     attn_map = attn_map.squeeze(1)
@@ -2072,13 +2078,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             #use all attention map            
             else:
                 gt_logits_list = []
-                gt_list = []
-                for attn_map in attn_dict_list:
+            
+                for i, (gt, attn_map) in enumerate(zip(gt_list,attn_dict_list)):
+                    print(len(gt_list))
+                    print(len(attn_map))
                     if self.gt_cls_method == "upsample_first":                       
                         gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
                         gt_new = attn_map.transpose(-1,-2) @ gt_new
                         gt_new = rearrange(gt_new, ' b h n c ->  b n (h c)')
-                        gt_list.append(gt_new)
+                       
+                        gt_list[i] = gt_new
                     else:
                         raise(NotImplementedError)
 
@@ -2087,8 +2096,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                         h = h_g *  self.group_init_strides[-1],
                                         w = w_g *  self.group_init_strides[-1])       
                     gt_logits_list.append(gt_logits) 
-                    
-
+                gt = gt_list[-1]
+                h_g = h_g *  self.group_init_strides[-1]
+                w_g = w_g *  self.group_init_strides[-1]     
                                               
                     
 
@@ -2475,7 +2485,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     raise ValueError()
         elif self.classification_feature == "superpixel_extralayer": 
             if self.use_gt_loss and self.use_gt_fuse:
-                if self.use_final_attn:
+                if self.use_final_group:
                     sp_feature = sp_feature + gt
                 else:
                     sp_feature = sp_feature + gt_list[-1]
@@ -2782,7 +2792,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             raise(NotImplementedError)
         
         if self.use_gt_loss:
-            if self.use_final_attn:    
+            if self.use_final_group:    
                 if self.use_gt_extralayer:
                     if self.resize_similarity:
                         scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
@@ -2885,7 +2895,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #     self.vis_sp_stage = False
         #     self.vis_sp_block = False     
                        
-        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt,sp_features_mid = self.forward_features(x)
+        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt_list ,sp_features_mid = self.forward_features(x)
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
         # if self.vis_sp_id:
@@ -2904,9 +2914,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)
         
         if generate_seg:
+
             ret = self.forward_segmentation(
                 sp_feature = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
-                img = x, attn_dict_list = attn_dict_list, gt = gt
+                img = x, attn_dict_list = attn_dict_list, gt_list = gt_list
             )
         return ret
     def compute_compact_loss(self, x: torch.Tensor,sp_features: torch.Tensor):
