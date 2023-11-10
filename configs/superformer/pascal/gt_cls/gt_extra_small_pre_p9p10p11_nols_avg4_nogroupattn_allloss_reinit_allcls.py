@@ -5,5 +5,6 @@ model = dict(
     type='EncoderDecoder',
     decode_head=dict(
     use_group_attn = False,
+    use_final_group_cls = False,        
         
 ))
