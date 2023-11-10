@@ -1195,7 +1195,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         num_ungroup_heads = 6,# cross attention head num
         num_block_heads = 6,#group token head num              
         group_block_depth = 1,#self attention block num
-        group_projector_method = 'linear', # projection method if having token from prev layer
+        group_projector_method = None, # projection method if having token from prev layer
         group_token_init_method: Sequence[str]  = ("avgpool",), 
         group_init_strides = (4,),# group token init strides
         group_init_kernel_sizes = (4,),# group token init kernel sizes
@@ -1263,7 +1263,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
-
+        
+        
+        
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
         self.reweight_pixel_update_last = reweight_pixel_update_last
@@ -2051,8 +2053,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
             
             num_heads = self.group_cfg['num_ungroup_heads']
-            _, n, hc = gt_list[-1].shape    
-            #use final attention map
+            _, n, hc = gt_list[-1].shape 
+            gt_logits_list = []               
+            # use final attention map
             if self.use_final_group:
                 attn_map = attn_dict_list[-1] 
                 gt = gt_list[-1]    
@@ -2060,8 +2063,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
                     gt = attn_map.transpose(-1,-2) @ gt
                     gt = rearrange(gt, ' b h n c ->  b n (h c)')
-                    h_g = h_g *  self.group_init_strides[-1]
-                    w_g = w_g *  self.group_init_strides[-1]
                     gt_logits = self.gt_head(self.gt_norm(gt))
                     gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
                                         h = h_g *  self.group_init_strides[-1],
@@ -2079,8 +2080,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     raise(NotImplementedError)                         
             #use all attention map            
             else:
-                gt_logits_list = []
-            
                 for i, (gt, attn_map) in enumerate(zip(gt_list,attn_dict_list)):
                     if self.gt_cls_method == "upsample_first":                       
                         gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
@@ -2096,9 +2095,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                         h = h_g *  self.group_init_strides[-1],
                                         w = w_g *  self.group_init_strides[-1])       
                     gt_logits_list.append(gt_logits) 
+                
+                # set gt variance for the last group when supervised all group
                 gt = gt_list[-1]
-                h_g = h_g *  self.group_init_strides[-1]
-                w_g = w_g *  self.group_init_strides[-1]     
+            h_g = h_g *  self.group_init_strides[-1]
+            w_g = w_g *  self.group_init_strides[-1]     
                                               
                     
 
@@ -2751,12 +2752,42 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             ret['seg'] = pixel_logits
 
         elif self.classification_feature == "group_extralayer": 
-            #final info
+            # final output
             final_group_logits = None
-            for i,(gt,gt_logits) in enumerate(zip(gt_list,gt_logits_list)):
-                if self.use_final_group_cls and i != len(gt_list) -1:
-                    continue
-                else:       
+            # only ose final group for classification
+            if self.use_final_group_cls:
+                gt_2d = rearrange(gt,'b (h w) c -> b c h w',
+                                    h = h_g,
+                                    w = w_g)
+                info, _, _ = last_sp_layer(pixel_feature, gt_2d)
+                if self.vis_sp_id:
+                    self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                    
+                if self.vis_spgt:
+                    self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
+
+                if info is None:
+                    raise ValueError()
+                if self.resize_similarity:
+                    scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                else:
+                    scale_factor = 1
+                similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                similarities = prepare_similarities(
+                    last_sp_layer,
+                    similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                    scale_factor=scale_factor,
+                    resize_version = self.resize_version
+                )
+                similarities = similarities.softmax(1)
+                similarities = einops.rearrange(
+                    similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                )
+                final_group_logits =superpixel_ops.expand_superpixel_features(
+                    gt_logits, similarities
+                )
+            else:       
+                for i,(gt,gt_logits) in enumerate(zip(gt_list,gt_logits_list)):
                     gt_2d = rearrange(gt,'b (h w) c -> b c h w',
                                         h = h_g,
                                         w = w_g)

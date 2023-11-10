@@ -663,8 +663,8 @@ class GPBlock(nn.Module):
             gt = global_token
         # if prev_token is None:
         #     gt = group_token
-        # elif self.group_projector_method in ["linear","conv",'conv_relu']:
-        #     gt = group_token + self.group_projector(prev_token)
+        if self.group_projector_method in ["linear","conv",'conv_relu']:
+            gt = gt + self.group_projector(prev_token)
         # elif self.group_projector_method == "cross" or self.group_projector_method == None:
         #     gt = group_token 
         
