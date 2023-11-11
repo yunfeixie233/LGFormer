@@ -49,7 +49,7 @@ from PIL import Image
 import numpy as np
 
 # Define the directory paths
-input_directory = '/data2/yunfei/SpformerV1/data/PartImageNet/annotations/train_whole'
+input_directory = '/data2/yunfei/SpformerV1/data/VOCdevkit/VOC2010/parts58'
 output_directory = '/root/autodl-tmp/val'
 
 # Create the output directory if it doesn't exist
