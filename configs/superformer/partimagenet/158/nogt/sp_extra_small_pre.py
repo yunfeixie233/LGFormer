@@ -22,7 +22,8 @@ model = dict(
     seg_num_classes = 159,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
-
+accumulative_counts = 4
+total_iter=500000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
@@ -30,7 +31,7 @@ optim_wrapper = dict(
     lr=0.0002,
     betas=(0.9, 0.999),
     weight_decay=0.05),
-    accumulative_counts=2,    
+    accumulative_counts=accumulative_counts,    
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -49,7 +50,6 @@ optim_wrapper = dict(
             'stages.1':dict(lr_mult=0.1),
         }))
 
-total_iter = 100000
 param_scheduler = [
     dict(
             type='MultiStepLR',
