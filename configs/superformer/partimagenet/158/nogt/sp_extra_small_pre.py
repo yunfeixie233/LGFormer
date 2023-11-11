@@ -23,7 +23,7 @@ model = dict(
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 accumulative_counts = 4
-total_iter=500000 * accumulative_counts
+total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
