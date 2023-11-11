@@ -5,7 +5,7 @@ param_scheduler = [
     dict(
         type='PolyLR',
         power=0.9,
-        begin=0,
+        begin=1500,
         end=40000,
         eta_min=0.0,
         by_epoch=False,

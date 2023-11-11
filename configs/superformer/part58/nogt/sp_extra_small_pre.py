@@ -24,12 +24,13 @@ model = dict(
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 optim_wrapper = dict(
+    _delete_ = True,
     type='OptimWrapper',
     optimizer=dict(
-    type='AdamW',
+    type='SGD',
     lr=0.007,
-    betas=(0.9, 0.999), 
-    weight_decay=0.0001),
+    momentum=0.9,
+    weight_decay=1e-4,),
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -49,7 +50,6 @@ optim_wrapper = dict(
         }))
 
 
-
 param_scheduler = [
     dict(
         type='LinearLR', start_factor=1e-6, by_epoch=False, begin=0, end=1500),
@@ -62,6 +62,7 @@ param_scheduler = [
         by_epoch=False,
     )
 ]
+
 train_cfg = dict(
     type='IterBasedTrainLoop', max_iters=40000, val_interval=1000)
 val_cfg = dict(type='ValLoop')
