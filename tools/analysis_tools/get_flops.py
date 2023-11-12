@@ -72,20 +72,28 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
     if torch.cuda.is_available():
         model.cuda()
     model = revert_sync_batchnorm(model)
-
-    data = torch.randn(input_shape).unsqueeze(0).cuda()
-    print(data.shape)
+    result['ori_shape'] = input_shape[-2:]
+    result['pad_shape'] = input_shape[-2:]
+    data_batch = {
+        'inputs': [torch.rand(input_shape)],
+        'data_samples': [SegDataSample(metainfo=result)]
+    }
+    data = model.data_preprocessor(data_batch)
     model.eval()
-    
-    
-    from fvcore.nn import flop_count
-    from fvcore.nn import FlopCountAnalysis
-    from fvcore.nn import flop_count_table
-
-    flops = FlopCountAnalysis(model, data)
-    
-    print(flop_count_table(flops, max_depth=6))
-
+    if cfg.model.decode_head.type in ['MaskFormerHead', 'Mask2FormerHead']:
+        # TODO: Support MaskFormer and Mask2Former
+        raise NotImplementedError('MaskFormer and Mask2Former are not '
+                                  'supported yet.')
+    outputs = get_model_complexity_info(
+        model,
+        input_shape,
+        inputs=data['inputs'],
+        show_table=False,
+        show_arch=False)
+    result['flops'] = _format_size(outputs['flops'])
+    result['params'] = _format_size(outputs['params'])
+    result['compute_type'] = 'direct: randomly generate a picture'
+    return result
 
 
 def main():
@@ -93,8 +101,23 @@ def main():
     args = parse_args()
     logger = MMLogger.get_instance(name='MMLogger')
 
-    inference(args, logger)
+    result = inference(args, logger)
     split_line = '=' * 30
+    ori_shape = result['ori_shape']
+    pad_shape = result['pad_shape']
+    flops = result['flops']
+    params = result['params']
+    compute_type = result['compute_type']
+
+    if pad_shape != ori_shape:
+        print(f'{split_line}\nUse size divisor set input shape '
+              f'from {ori_shape} to {pad_shape}')
+    print(f'{split_line}\nCompute type: {compute_type}\n'
+          f'Input shape: {pad_shape}\nFlops: {flops}\n'
+          f'Params: {params}\n{split_line}')
+    print('!!!Please be cautious if you use the results in papers. '
+          'You may need to check if all ops are supported and verify '
+          'that the flops computation is correct.')
 
 
 if __name__ == '__main__':

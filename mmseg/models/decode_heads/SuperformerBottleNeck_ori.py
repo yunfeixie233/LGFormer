@@ -1659,7 +1659,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         
             elif self.classification_feature in['pixel','pixel_extralayer']:
                 if self.use_sp_fuse:
-                    self.pixel_projection = nn.Conv2d(stem_channels_list[-1], self.embed_dim, stride = 1,) 
+                    self.pixel_projection = nn.Conv2d(stem_channels_list[-1], self.embed_dim,kernel_size =1, stride = 1) 
                     
                     self.sp_fuse_conv = \
                         nn.Sequential(                         
