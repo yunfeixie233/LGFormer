@@ -2188,18 +2188,18 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     sp_feature = superpixel_ops.expand_superpixel_features(
                         sp_feature, similarities
                     )
-                pixel_feature = self.pixel_projection(pixel_feature)                
-                pixel_feature = pixel_feature + sp_feature
-                pixel_feature = self.sp_fuse_conv(pixel_feature)
+                pixel_feature_proj = self.pixel_projection(pixel_feature)                
+                pixel_feature_proj = pixel_feature_proj + sp_feature
+                pixel_feature_proj = self.sp_fuse_conv(pixel_feature_proj)
 
-            pixel_feature = self.seg_norm(rearrange(pixel_feature,
+            pixel_feature_proj = self.seg_norm(rearrange(pixel_feature_proj,
                                         "b c h w -> b (h w) c"))
-            pixel_logits = self.seg_head(pixel_feature)
+            pixel_logits = self.seg_head(pixel_feature_proj)
             pixel_logits = rearrange(pixel_logits,
                                      "b (h w) c -> b c h w",
                                      h = h,w = w)
             ret['seg'] = pixel_logits        
-            return ret
+
         elif self.classification_feature == "superpixel":
             if not self.seg_specific_classifier:
                 raise ValueError("No segmentation head is found.")
@@ -2882,7 +2882,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt_2d = rearrange(gt,'b (h w) c -> b c h w',
                                         h = h_g,
                                         w = w_g) 
-                        info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
+                        info_gt, _, _ = gt_layer(pixel_feature, gt_2d)
                         del(_)
                         similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
                         similarities_gt = prepare_similarities(
