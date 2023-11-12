@@ -2048,7 +2048,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         last_sp_layer = last_stage.patch_embed
         #firstly we will cls group token, gt logits will be upsample to sp shape
 
-        if self.use_gt_loss:
+        if self.use_gt_loss and self.use_gt_fuse:
             h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
             w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
             
@@ -2100,8 +2100,19 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 gt = gt_list[-1]
             h_g = h_g *  self.group_init_strides[-1]
             w_g = w_g *  self.group_init_strides[-1]     
-                                              
-                    
+        elif self.use_gt_fuse:
+            h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
+            w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
+            
+            num_heads = self.group_cfg['num_ungroup_heads']
+            _, n, hc = gt_list[-1].shape 
+            gt_logits_list = []           
+            attn_map = attn_dict_list[-1] 
+            gt = gt_list[-1]    
+            gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
+            gt = attn_map.transpose(-1,-2) @ gt
+            gt = rearrange(gt, ' b h n c ->  b n (h c)')                                              
+                
 
          
         if isinstance(last_sp_layer, nn.AvgPool2d):
@@ -2132,7 +2143,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             '''
             
             _, _, h, w = pixel_feature.shape
-            if self.use_gt_loss and self.use_gt_fuse:
+            if self.use_gt_loss or self.use_gt_fuse:
                 sp_feature = sp_feature + gt      
                 sp_feature = self.group_fuse_conv(rearrange(sp_feature,
                           'b (h w) c -> b c h w',
@@ -2485,7 +2496,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 else:
                     raise ValueError()
         elif self.classification_feature == "superpixel_extralayer": 
-            if self.use_gt_loss and self.use_gt_fuse:
+            if self.use_gt_loss or self.use_gt_fuse:
                 if self.use_final_group:
                     sp_feature = sp_feature + gt
                 else:
