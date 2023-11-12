@@ -24,7 +24,7 @@ from .refuge import REFUGEDataset
 from .stare import STAREDataset
 from .synapse import SynapseDataset
 from .partimagenet import PartImagenetDataset
-from .partimagenet_object import PartImagenetDataset_Object
+from .partimagenet_part import PartImagenetDataset_part
 from .partimagenet_158 import PartImagenetDataset_158
 # yapf: disable
 from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
@@ -61,6 +61,6 @@ __all__ = [
     'MapillaryDataset_v2', 'Albu', 'LEVIRCDDataset',
     'LoadMultipleRSImageFromFile', 'LoadSingleRSImageFromFile',
     'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset',
-    'PascalPartDataset','PartImagenetDataset','PartImagenetDataset_Object',
+    'PascalPartDataset','PartImagenetDataset','PartImagenetDataset_part',
     'PartImagenetDataset_158'
 ]

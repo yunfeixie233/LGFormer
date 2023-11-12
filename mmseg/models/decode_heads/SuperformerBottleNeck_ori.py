@@ -2891,9 +2891,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     ret[f'gt_{i}'] = gt_logits
                 return ret 
         else:
-           gt_logits = None
-
-        ret['gt'] =  gt_logits        
+           gt_logits = None    
 
 
         return ret        

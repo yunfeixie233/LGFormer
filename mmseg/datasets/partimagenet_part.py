@@ -4,7 +4,7 @@ from .basesegdataset import BaseSegDataset
 
 
 @DATASETS.register_module()
-class PartImagenetDataset_Object(BaseSegDataset):
+class PartImagenetDataset_part(BaseSegDataset):
     """PARTIMAGENET dataset.
 
     In segmentation map annotation for ADE20K, 0 stands for background, which
