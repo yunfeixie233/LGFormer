@@ -23,7 +23,7 @@ model = dict(
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
-accumulative_counts = 2
+accumulative_counts = 4
 total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
@@ -63,7 +63,7 @@ param_scheduler = [
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=50000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(

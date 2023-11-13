@@ -2070,48 +2070,64 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             _, n, hc = gt_list[-1].shape 
             gt_logits_list = []               
             # use final attention map
-            if self.use_final_group:
-                attn_map = attn_dict_list[-1] 
-                gt = gt_list[-1]    
-                if self.gt_cls_method == "upsample_first":                       
-                    gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
-                    gt = attn_map.transpose(-1,-2) @ gt
-                    gt = rearrange(gt, ' b h n c ->  b n (h c)')
-                    gt_logits = self.gt_head(self.gt_norm(gt))
-                    gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                        h = h_g *  self.group_init_strides[-1],
-                                        w = w_g *  self.group_init_strides[-1])                     
-                elif self.gt_cls_method == "cls_first":
-                    attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
-                    attn_map = attn_map.squeeze(1)
-                    gt_logits = self.gt_head(self.gt_norm(gt))
-                    gt_logits = attn_map.transpose(-1,-2) @ gt_logits              
-                    gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                        h = h_g *  self.group_init_strides[-1],
-                                        w = w_g *  self.group_init_strides[-1])                    
+            # if self.use_final_group:
+            #     attn_map = attn_dict_list[-1] 
+            #     gt = gt_list[-1]    
+            #     if self.gt_cls_method == "upsample_first":                       
+            #         gt = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )  
+            #         gt = attn_map.transpose(-1,-2) @ gt
+            #         gt = rearrange(gt, ' b h n c ->  b n (h c)')
+            #         gt_logits = self.gt_head(self.gt_norm(gt))
+            #         gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+            #                             h = h_g *  self.group_init_strides[-1],
+            #                             w = w_g *  self.group_init_strides[-1])                     
+            #     elif self.gt_cls_method == "cls_first":
+            #         attn_map = torch.sum(attn_map, dim = 1)/ math.sqrt( attn_map.shape[1] )
+            #         attn_map = attn_map.squeeze(1)
+            #         gt_logits = self.gt_head(self.gt_norm(gt))
+            #         gt_logits = attn_map.transpose(-1,-2) @ gt_logits              
+            #         gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+            #                             h = h_g *  self.group_init_strides[-1],
+            #                             w = w_g *  self.group_init_strides[-1])                    
                                               
-                else:
-                    raise(NotImplementedError)                         
+            #     else:
+                    # raise(NotImplementedError)                         
             #use all attention map            
-            else:
-                for i, (gt, attn_map) in enumerate(zip(gt_list,attn_dict_list)):
-                    if self.gt_cls_method == "upsample_first":                       
-                        gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
-                        gt_new = attn_map.transpose(-1,-2) @ gt_new
-                        gt_new = rearrange(gt_new, ' b h n c ->  b n (h c)')
-                       
-                        gt_list[i] = gt_new
-                    else:
-                        raise(NotImplementedError)
+            # else:
+            #     for i, (gt, attn_map) in enumerate(zip(gt_list,attn_dict_list)):
+            #         if self.gt_cls_method == "upsample_first":                       
+            #             gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
+            #             gt_new = attn_map.transpose(-1,-2) @ gt_new
+            #             gt_new = rearrange(gt_new, ' b h n c ->  b n (h c)')
+            #             gt_list[i] = gt_new
+            #         else:
+            #             raise(NotImplementedError)
 
-                    gt_logits = self.gt_head(self.gt_norm(gt_new))
-                    gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                        h = h_g *  self.group_init_strides[-1],
-                                        w = w_g *  self.group_init_strides[-1])       
-                    gt_logits_list.append(gt_logits) 
-                
+            #         gt_logits = self.gt_head(self.gt_norm(gt_new))
+            #         gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+            #                             h = h_g *  self.group_init_strides[-1],
+            #                             w = w_g *  self.group_init_strides[-1])       
+            #         gt_logits_list.append(gt_logits) 
+            # else:
+            final_gt = None
+            for i, (gt, attn_map) in enumerate(zip(gt_list,attn_dict_list)):
+                if self.gt_cls_method == "upsample_first":                       
+                    gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
+                    gt_new = attn_map.transpose(-1,-2) @ gt_new
+                    gt_new = rearrange(gt_new, ' b h n c ->  b n (h c)')
+                    if final_gt == None:
+                        final_gt = gt_new
+                    else:
+                        final_gt += gt_new
+
+                else:
+                    raise(NotImplementedError)
+
+                gt_logits = self.gt_head(self.gt_norm(final_gt))
+                gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+                                    h = h_g *  self.group_init_strides[-1],
+                                    w = w_g *  self.group_init_strides[-1])       
                 # set gt variance for the last group when supervised all group
-                gt = gt_list[-1]
             h_g = h_g *  self.group_init_strides[-1]
             w_g = w_g *  self.group_init_strides[-1]     
         elif self.use_gt_fuse:
@@ -2851,12 +2867,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_group_logits = gt_logits
                     else:
                         final_group_logits += gt_logits
-                
             ret['seg'] = final_group_logits
         elif self.classification_feature == 'joint_extralayer':
             if self.use_gt_loss or self.use_gt_fuse:
                 if self.use_final_group:
-                    sp_feature = sp_feature + gt
+                    sp_feature = sp_feature + final_gt
                 else:
                     sp_feature = sp_feature + gt_list[-1]
                 sp_feature = self.group_fuse_conv(rearrange(sp_feature,
@@ -2931,9 +2946,76 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-            
-            
+            if self.use_gt_loss:
+                if self.use_final_group:    
+                    if self.use_gt_extralayer:
+                        if self.resize_similarity:
+                            scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                        else:
+                            scale_factor = 1                
+                        gt_layer = self.gt_stages.patch_embed
+                        gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
+                                        h = h_g,
+                                        w = w_g) 
+                        info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
+                        del(_)
+                        similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
+                        similarities_gt = prepare_similarities(
+                            gt_layer,
+                            similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
+                            scale_factor=scale_factor,
+                        )
+                        similarities_gt = similarities_gt.softmax(1)
+                        similarities_gt = einops.rearrange(
+                            similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                        )
+                    else:
+                        similarities_gt = similarities
+                    gt_logits =superpixel_ops.expand_superpixel_features(
+                        gt_logits, similarities_gt
+                    )
+                else:
+                    final_gt_logits = None
+                    for i, (gt, gt_logits) in enumerate(zip(gt_list, gt_logits_list)):                
+                        if self.use_gt_extralayer:
+                            if self.resize_similarity:
+                                scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                            else:
+                                scale_factor = 1                
+                            gt_layer = self.gt_stages.patch_embed
+                            gt_2d = rearrange(gt,'b (h w) c -> b c h w',
+                                            h = h_g,
+                                            w = w_g) 
+                            info_gt, _, _ = gt_layer(pixel_feature, gt_2d)
+                            del(_)
+                            similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
+                            similarities_gt = prepare_similarities(
+                                gt_layer,
+                                similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
+                                scale_factor=scale_factor,
+                            )
+                            similarities_gt = similarities_gt.softmax(1)
+                            similarities_gt = einops.rearrange(
+                                similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                            )
+                        else:
+                            similarities_gt = similarities
+                        gt_logits =superpixel_ops.expand_superpixel_features(
+                            gt_logits, similarities_gt
+                        )
+                        if final_gt_logits == None:
+                            final_gt_logits = gt_logits
+                        else:
+                            final_gt_logits += gt_logits
+                    ret['seg'] = pixel_logits                    
+                    ret['gt'] = final_gt_logits/len(gt_list)
+                    
+                    return ret 
+            else:
+                gt_logits = None    
             ret['seg'] = pixel_logits
+            ret['gt'] = gt_logits
+            return ret                
             
         else:
             raise(NotImplementedError)

@@ -95,7 +95,7 @@ class LoadAnnotations(MMCV_LoadAnnotations):
         Returns:
             dict: The dict contains loaded semantic segmentation annotations.
         """
-        if 'seg_map_path' in results"
+        if 'seg_map_path' in results:
             img_bytes = fileio.get(
                 results['seg_map_path'], backend_args=self.backend_args)
             gt_semantic_seg = mmcv.imfrombytes(
