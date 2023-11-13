@@ -2119,6 +2119,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_gt = gt_new
                     else:
                         final_gt += gt_new
+                        final_gt = self.group_fuse_conv(final_gt)
 
                 else:
                     raise(NotImplementedError)
