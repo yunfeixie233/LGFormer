@@ -95,35 +95,76 @@ class LoadAnnotations(MMCV_LoadAnnotations):
         Returns:
             dict: The dict contains loaded semantic segmentation annotations.
         """
+        if 'seg_map_path' in results"
+            img_bytes = fileio.get(
+                results['seg_map_path'], backend_args=self.backend_args)
+            gt_semantic_seg = mmcv.imfrombytes(
+                img_bytes, flag='unchanged',
+                backend=self.imdecode_backend).squeeze().astype(np.uint8)
+            if self.reduce_zero_label is None:
+                self.reduce_zero_label = results['reduce_zero_label']
+            assert self.reduce_zero_label == results['reduce_zero_label'], \
+                'Initialize dataset with `reduce_zero_label` as ' \
+                f'{results["reduce_zero_label"]} but when load annotation ' \
+                f'the `reduce_zero_label` is {self.reduce_zero_label}'
 
-        img_bytes = fileio.get(
-            results['seg_map_path'], backend_args=self.backend_args)
-        gt_semantic_seg = mmcv.imfrombytes(
-            img_bytes, flag='unchanged',
-            backend=self.imdecode_backend).squeeze().astype(np.uint8)
+            if self.reduce_zero_label:
+                # avoid using underflow conversion
+                gt_semantic_seg[gt_semantic_seg == 0] = 255
+                gt_semantic_seg = gt_semantic_seg - 1
+                gt_semantic_seg[gt_semantic_seg == 254] = 255
+            # modify if custom classes
+            if results.get('label_map', None) is not None:
+                # Add deep copy to solve bug of repeatedly
+                # replace `gt_semantic_seg`, which is reported in
+                # https://github.com/open-mmlab/mmsegmentation/pull/1445/
+                gt_semantic_seg_copy = gt_semantic_seg.copy()
+                for old_id, new_id in results['label_map'].items():
+                    gt_semantic_seg[gt_semantic_seg_copy == old_id] = new_id
+            results['gt_seg_map'] = gt_semantic_seg
+            results['seg_fields'].append('gt_seg_map')
+        elif 'part_map_path' in results and 'obj_map_path' in results:
+            img_part_bytes = fileio.get(
+                results['part_map_path'], backend_args=self.backend_args)
+            gt_part_semantic_seg = mmcv.imfrombytes(
+                img_part_bytes, flag='unchanged',
+                backend=self.imdecode_backend).squeeze().astype(np.uint8)
+            
+            img_obj_bytes = fileio.get(
+                results['obj_map_path'], backend_args=self.backend_args)
+            gt_obj_semantic_seg = mmcv.imfrombytes(
+                img_obj_bytes, flag='unchanged',
+                backend=self.imdecode_backend).squeeze().astype(np.uint8)        
 
-        # reduce zero_label
-        if self.reduce_zero_label is None:
-            self.reduce_zero_label = results['reduce_zero_label']
-        assert self.reduce_zero_label == results['reduce_zero_label'], \
-            'Initialize dataset with `reduce_zero_label` as ' \
-            f'{results["reduce_zero_label"]} but when load annotation ' \
-            f'the `reduce_zero_label` is {self.reduce_zero_label}'
-        if self.reduce_zero_label:
-            # avoid using underflow conversion
-            gt_semantic_seg[gt_semantic_seg == 0] = 255
-            gt_semantic_seg = gt_semantic_seg - 1
-            gt_semantic_seg[gt_semantic_seg == 254] = 255
-        # modify if custom classes
-        if results.get('label_map', None) is not None:
-            # Add deep copy to solve bug of repeatedly
-            # replace `gt_semantic_seg`, which is reported in
-            # https://github.com/open-mmlab/mmsegmentation/pull/1445/
-            gt_semantic_seg_copy = gt_semantic_seg.copy()
-            for old_id, new_id in results['label_map'].items():
-                gt_semantic_seg[gt_semantic_seg_copy == old_id] = new_id
-        results['gt_seg_map'] = gt_semantic_seg
-        results['seg_fields'].append('gt_seg_map')
+            # reduce zero_label
+            if self.reduce_zero_label is None:
+                self.reduce_zero_label = results['reduce_zero_label']
+            assert self.reduce_zero_label == results['reduce_zero_label'], \
+                'Initialize dataset with `reduce_zero_label` as ' \
+                f'{results["reduce_zero_label"]} but when load annotation ' \
+                f'the `reduce_zero_label` is {self.reduce_zero_label}'
+            if self.reduce_zero_label:
+                # avoid using underflow conversion
+                gt_part_semantic_seg[gt_part_semantic_seg == 0] = 255
+                gt_part_semantic_seg = gt_part_semantic_seg - 1
+                gt_part_semantic_seg[gt_part_semantic_seg == 254] = 255
+                gt_obj_semantic_seg[gt_obj_semantic_seg == 0] = 255
+                gt_obj_semantic_seg = gt_obj_semantic_seg - 1
+                gt_obj_semantic_seg[gt_obj_semantic_seg == 254] = 255            
+            # # modify if custom classes
+            # if results.get('label_map', None) is not None:
+            #     # Add deep copy to solve bug of repeatedly
+            #     # replace `gt_semantic_seg`, which is reported in
+            #     # https://github.com/open-mmlab/mmsegmentation/pull/1445/
+            #     gt_obj_semantic_seg_copy = gt_obj_semantic_seg.copy()
+            #     for old_id, new_id in results['label_map'].items():
+            #         gt_obj_semantic_seg[gt_semantic_seg_copy == old_id] = new_id
+            results['gt_obj_seg_map'] = gt_obj_semantic_seg
+            results['gt_part_seg_map'] = gt_part_semantic_seg        
+            results['seg_fields'].append('gt_obj_seg_map')
+            results['seg_fields'].append('gt_part_seg_map')        
+        else:
+            raise(NotImplementedError)
 
     def __repr__(self) -> str:
         repr_str = self.__class__.__name__

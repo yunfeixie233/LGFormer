@@ -26,6 +26,7 @@ from .synapse import SynapseDataset
 from .partimagenet import PartImagenetDataset
 from .partimagenet_part import PartImagenetDataset_part
 from .partimagenet_158 import PartImagenetDataset_158
+from .partimagenet_joint import PartImagenetDataset_joint
 # yapf: disable
 from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
                          BioMedical3DRandomCrop, BioMedical3DRandomFlip,
@@ -62,5 +63,5 @@ __all__ = [
     'LoadMultipleRSImageFromFile', 'LoadSingleRSImageFromFile',
     'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset',
     'PascalPartDataset','PartImagenetDataset','PartImagenetDataset_part',
-    'PartImagenetDataset_158'
+    'PartImagenetDataset_158','PartImagenetDataset_joint'
 ]

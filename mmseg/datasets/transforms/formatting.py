@@ -84,8 +84,33 @@ class PackSegInputs(BaseTransform):
                               f'{results["gt_seg_map"].shape}')
                 data = to_tensor(results['gt_seg_map'].astype(np.int64))
             gt_sem_seg_data = dict(data=data)
-            data_sample.gt_sem_seg = PixelData(**gt_sem_seg_data)
-
+            data_sample.gt_sem_seg = PixelData(**gt_sem_seg_data)            
+        elif 'gt_obj_seg_map' in results and 'gt_part_seg_map' in results:
+            if len(results['gt_obj_seg_map'].shape) == 2:
+                data = to_tensor(results['gt_obj_seg_map'][None,
+                                                       ...].astype(np.int64))
+            else:
+                warnings.warn('Please pay attention your ground truth '
+                              'segmentation map, usually the segmentation '
+                              'map is 2D, but got '
+                              f'{results["gt_obj_seg_map"].shape}')
+                data = to_tensor(results['gt_obj_seg_map'].astype(np.int64))
+            gt_obj_sem_seg_data = dict(data=data)
+            data_sample.gt_obj_sem_seg = PixelData(**gt_obj_sem_seg_data)
+            
+            if len(results['gt_part_seg_map'].shape) == 2:
+                data = to_tensor(results['gt_part_seg_map'][None,
+                                                       ...].astype(np.int64))
+            else:
+                warnings.warn('Please pay attention your ground truth '
+                              'segmentation map, usually the segmentation '
+                              'map is 2D, but got '
+                              f'{results["gt_part_seg_map"].shape}')
+                data = to_tensor(results['gt_part_seg_map'].astype(np.int64))
+            gt_part_sem_seg_data = dict(data=data)
+            data_sample.gt_part_sem_seg = PixelData(**gt_part_sem_seg_data)            
+        else:
+            raise(NotImplementedError)
         if 'gt_edge_map' in results:
             gt_edge_data = dict(
                 data=to_tensor(results['gt_edge_map'][None,

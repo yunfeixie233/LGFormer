@@ -16,7 +16,7 @@ from scipy.ndimage import gaussian_filter
 
 from mmseg.datasets.dataset_wrappers import MultiImageMixDataset
 from mmseg.registry import TRANSFORMS
-
+from mmcv.image.geometric import _scale_size
 try:
     import albumentations
     from albumentations import Compose
@@ -279,7 +279,14 @@ class RandomCrop(BaseTransform):
         if self.cat_max_ratio < 1.:
             # Repeat 10 times
             for _ in range(10):
-                seg_temp = self.crop(results['gt_seg_map'], crop_bbox)
+                #original mmseg
+                if 'gt_seg_map' in results.keys():
+                    seg_temp = self.crop(results['gt_seg_map'], crop_bbox)
+                #here we get crop box from part seg map because we need to justify the class variety
+                elif 'gt_obj_seg_map' in results.keys() and 'gt_part_seg_map' in results.keys():
+                    seg_temp = self.crop(results['gt_part_seg_map'], crop_bbox)
+                else:
+                    raise(NotImplementedError)
                 labels, cnt = np.unique(seg_temp, return_counts=True)
                 cnt = cnt[labels != self.ignore_index]
                 if len(cnt) > 1 and np.max(cnt) / np.sum(
@@ -2320,4 +2327,407 @@ class ConcatCDInput(BaseTransform):
     def __repr__(self):
         repr_str = self.__class__.__name__
         repr_str += f'(input_keys={self.input_keys}, '
+        return repr_str
+@TRANSFORMS.register_module()
+class Resize(BaseTransform):
+    """Resize images & bbox & seg & keypoints.
+
+    This transform resizes the input image according to ``scale`` or
+    ``scale_factor``. Bboxes, seg map and keypoints are then resized with the
+    same scale factor.
+    if ``scale`` and ``scale_factor`` are both set, it will use ``scale`` to
+    resize.
+
+    Required Keys:
+
+    - img
+    - gt_bboxes (optional)
+    - gt_seg_map (optional)
+    - gt_keypoints (optional)
+
+    Modified Keys:
+
+    - img
+    - gt_bboxes
+    - gt_seg_map
+    - gt_keypoints
+    - img_shape
+
+    Added Keys:
+
+    - scale
+    - scale_factor
+    - keep_ratio
+
+    Args:
+        scale (int or tuple): Images scales for resizing. Defaults to None
+        scale_factor (float or tuple[float]): Scale factors for resizing.
+            Defaults to None.
+        keep_ratio (bool): Whether to keep the aspect ratio when resizing the
+            image. Defaults to False.
+        clip_object_border (bool): Whether to clip the objects
+            outside the border of the image. In some dataset like MOT17, the gt
+            bboxes are allowed to cross the border of images. Therefore, we
+            don't need to clip the gt bboxes in these cases. Defaults to True.
+        backend (str): Image resize backend, choices are 'cv2' and 'pillow'.
+            These two backends generates slightly different results. Defaults
+            to 'cv2'.
+        interpolation (str): Interpolation method, accepted values are
+            "nearest", "bilinear", "bicubic", "area", "lanczos" for 'cv2'
+            backend, "nearest", "bilinear" for 'pillow' backend. Defaults
+            to 'bilinear'.
+    """
+
+    def __init__(self,
+                 scale: Optional[Union[int, Tuple[int, int]]] = None,
+                 scale_factor: Optional[Union[float, Tuple[float,
+                                                           float]]] = None,
+                 keep_ratio: bool = False,
+                 clip_object_border: bool = True,
+                 backend: str = 'cv2',
+                 interpolation='bilinear') -> None:
+        assert scale is not None or scale_factor is not None, (
+            '`scale` and'
+            '`scale_factor` can not both be `None`')
+        if scale is None:
+            self.scale = None
+        else:
+            if isinstance(scale, int):
+                self.scale = (scale, scale)
+            else:
+                self.scale = scale
+
+        self.backend = backend
+        self.interpolation = interpolation
+        self.keep_ratio = keep_ratio
+        self.clip_object_border = clip_object_border
+        if scale_factor is None:
+            self.scale_factor = None
+        elif isinstance(scale_factor, float):
+            self.scale_factor = (scale_factor, scale_factor)
+        elif isinstance(scale_factor, tuple):
+            assert (len(scale_factor)) == 2
+            self.scale_factor = scale_factor
+        else:
+            raise TypeError(
+                f'expect scale_factor is float or Tuple(float), but'
+                f'get {type(scale_factor)}')
+
+    def _resize_img(self, results: dict) -> None:
+        """Resize images with ``results['scale']``."""
+
+        if results.get('img', None) is not None:
+            if self.keep_ratio:
+                img, scale_factor = mmcv.imrescale(
+                    results['img'],
+                    results['scale'],
+                    interpolation=self.interpolation,
+                    return_scale=True,
+                    backend=self.backend)
+                # the w_scale and h_scale has minor difference
+                # a real fix should be done in the mmcv.imrescale in the future
+                new_h, new_w = img.shape[:2]
+                h, w = results['img'].shape[:2]
+                w_scale = new_w / w
+                h_scale = new_h / h
+            else:
+                img, w_scale, h_scale = mmcv.imresize(
+                    results['img'],
+                    results['scale'],
+                    interpolation=self.interpolation,
+                    return_scale=True,
+                    backend=self.backend)
+            results['img'] = img
+            results['img_shape'] = img.shape[:2]
+            results['scale_factor'] = (w_scale, h_scale)
+            results['keep_ratio'] = self.keep_ratio
+
+    def _resize_bboxes(self, results: dict) -> None:
+        """Resize bounding boxes with ``results['scale_factor']``."""
+        if results.get('gt_bboxes', None) is not None:
+            bboxes = results['gt_bboxes'] * np.tile(
+                np.array(results['scale_factor']), 2)
+            if self.clip_object_border:
+                bboxes[:, 0::2] = np.clip(bboxes[:, 0::2], 0,
+                                          results['img_shape'][1])
+                bboxes[:, 1::2] = np.clip(bboxes[:, 1::2], 0,
+                                          results['img_shape'][0])
+            results['gt_bboxes'] = bboxes
+
+    def _resize_seg(self, results: dict) -> None:
+        """Resize semantic segmentation map with ``results['scale']``."""
+        if results.get('gt_seg_map', None) is not None:
+            if self.keep_ratio:
+                gt_seg = mmcv.imrescale(
+                    results['gt_seg_map'],
+                    results['scale'],
+                    interpolation='nearest',
+                    backend=self.backend)
+            else:
+                gt_seg = mmcv.imresize(
+                    results['gt_seg_map'],
+                    results['scale'],
+                    interpolation='nearest',
+                    backend=self.backend)
+            results['gt_seg_map'] = gt_seg
+        if 'gt_obj_seg_map' in results:     
+            if self.keep_ratio:
+                gt_obj_seg = mmcv.imrescale(
+                    results['gt_obj_seg_map'],
+                    results['scale'],
+                    interpolation='nearest',
+                    backend=self.backend)              
+            else:
+                gt_obj_seg = mmcv.imresize(
+                    results['gt_obj_seg_map'],
+                    results['scale'],
+                    interpolation='nearest',
+                    backend=self.backend)   
+            results['gt_obj_seg_map'] = gt_obj_seg 
+                                                     
+        if 'gt_part_seg_map' in results:     
+            if self.keep_ratio:
+                gt_part_seg = mmcv.imrescale(
+                    results['gt_part_seg_map'],
+                    results['scale'],
+                    interpolation='nearest',
+                    backend=self.backend)           
+            else:
+                gt_part_seg = mmcv.imresize(
+                    results['gt_part_seg_map'],
+                    results['scale'],
+                    interpolation='nearest',
+                    backend=self.backend)                   
+            results['gt_part_seg_map'] = gt_part_seg                        
+
+    def _resize_keypoints(self, results: dict) -> None:
+        """Resize keypoints with ``results['scale_factor']``."""
+        if results.get('gt_keypoints', None) is not None:
+            keypoints = results['gt_keypoints']
+
+            keypoints[:, :, :2] = keypoints[:, :, :2] * np.array(
+                results['scale_factor'])
+            if self.clip_object_border:
+                keypoints[:, :, 0] = np.clip(keypoints[:, :, 0], 0,
+                                             results['img_shape'][1])
+                keypoints[:, :, 1] = np.clip(keypoints[:, :, 1], 0,
+                                             results['img_shape'][0])
+            results['gt_keypoints'] = keypoints
+
+    def transform(self, results: dict) -> dict:
+        """Transform function to resize images, bounding boxes, semantic
+        segmentation map and keypoints.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Resized results, 'img', 'gt_bboxes', 'gt_seg_map',
+            'gt_keypoints', 'scale', 'scale_factor', 'img_shape',
+            and 'keep_ratio' keys are updated in result dict.
+        """
+
+        if self.scale:
+            results['scale'] = self.scale
+        else:
+            img_shape = results['img'].shape[:2]
+            results['scale'] = _scale_size(img_shape[::-1],
+                                           self.scale_factor)  # type: ignore
+        self._resize_img(results)
+        self._resize_bboxes(results)
+        self._resize_seg(results)
+        self._resize_keypoints(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(scale={self.scale}, '
+        repr_str += f'scale_factor={self.scale_factor}, '
+        repr_str += f'keep_ratio={self.keep_ratio}, '
+        repr_str += f'clip_object_border={self.clip_object_border}), '
+        repr_str += f'backend={self.backend}), '
+        repr_str += f'interpolation={self.interpolation})'
+        return repr_str
+
+@TRANSFORMS.register_module()
+class RandomResize(BaseTransform):
+    """Random resize images & bbox & keypoints.
+
+    How to choose the target scale to resize the image will follow the rules
+    below:
+
+    - if ``scale`` is a sequence of tuple
+
+    .. math::
+        target\\_scale[0] \\sim Uniform([scale[0][0], scale[1][0]])
+    .. math::
+        target\\_scale[1] \\sim Uniform([scale[0][1], scale[1][1]])
+
+    Following the resize order of weight and height in cv2, ``scale[i][0]``
+    is for width, and ``scale[i][1]`` is for height.
+
+    - if ``scale`` is a tuple
+
+    .. math::
+        target\\_scale[0] \\sim Uniform([ratio\\_range[0], ratio\\_range[1]])
+            * scale[0]
+    .. math::
+        target\\_scale[1] \\sim Uniform([ratio\\_range[0], ratio\\_range[1]])
+            * scale[1]
+
+    Following the resize order of weight and height in cv2, ``ratio_range[0]``
+    is for width, and ``ratio_range[1]`` is for height.
+
+    - if ``keep_ratio`` is True, the minimum value of ``target_scale`` will be
+      used to set the shorter side and the maximum value will be used to
+      set the longer side.
+
+    - if ``keep_ratio`` is False, the value of ``target_scale`` will be used to
+      reisze the width and height accordingly.
+
+    Required Keys:
+
+    - img
+    - gt_bboxes
+    - gt_seg_map
+    - gt_keypoints
+
+    Modified Keys:
+
+    - img
+    - gt_bboxes
+    - gt_seg_map
+    - gt_keypoints
+    - img_shape
+
+    Added Keys:
+
+    - scale
+    - scale_factor
+    - keep_ratio
+
+    Args:
+        scale (tuple or Sequence[tuple]): Images scales for resizing.
+            Defaults to None.
+        ratio_range (tuple[float], optional): (min_ratio, max_ratio).
+            Defaults to None.
+        resize_type (str): The type of resize class to use. Defaults to
+            "Resize".
+        **resize_kwargs: Other keyword arguments for the ``resize_type``.
+
+    Note:
+        By defaults, the ``resize_type`` is "Resize", if it's not overwritten
+        by your registry, it indicates the :class:`mmcv.Resize`. And therefore,
+        ``resize_kwargs`` accepts any keyword arguments of it, like
+        ``keep_ratio``, ``interpolation`` and so on.
+
+        If you want to use your custom resize class, the class should accept
+        ``scale`` argument and have ``scale`` attribution which determines the
+        resize shape.
+    """
+
+    def __init__(
+        self,
+        scale: Union[Tuple[int, int], Sequence[Tuple[int, int]]],
+        ratio_range: Tuple[float, float] = None,
+        resize_type: str = 'Resize',
+        **resize_kwargs,
+    ) -> None:
+
+        self.scale = scale
+        self.ratio_range = ratio_range
+
+        self.resize_cfg = dict(type=resize_type, **resize_kwargs)
+        # create a empty Reisize object
+        self.resize = TRANSFORMS.build({'scale': 0, **self.resize_cfg})
+
+    @staticmethod
+    def _random_sample(scales: Sequence[Tuple[int, int]]) -> tuple:
+        """Private function to randomly sample a scale from a list of tuples.
+
+        Args:
+            scales (list[tuple]): Images scale range for sampling.
+                There must be two tuples in scales, which specify the lower
+                and upper bound of image scales.
+
+        Returns:
+            tuple: The targeted scale of the image to be resized.
+        """
+
+        assert mmengine.is_list_of(scales, tuple) and len(scales) == 2
+        scale_0 = [scales[0][0], scales[1][0]]
+        scale_1 = [scales[0][1], scales[1][1]]
+        edge_0 = np.random.randint(min(scale_0), max(scale_0) + 1)
+        edge_1 = np.random.randint(min(scale_1), max(scale_1) + 1)
+        scale = (edge_0, edge_1)
+        return scale
+
+    @staticmethod
+    def _random_sample_ratio(scale: tuple, ratio_range: Tuple[float,
+                                                              float]) -> tuple:
+        """Private function to randomly sample a scale from a tuple.
+
+        A ratio will be randomly sampled from the range specified by
+        ``ratio_range``. Then it would be multiplied with ``scale`` to
+        generate sampled scale.
+
+        Args:
+            scale (tuple): Images scale base to multiply with ratio.
+            ratio_range (tuple[float]): The minimum and maximum ratio to scale
+                the ``scale``.
+
+        Returns:
+            tuple: The targeted scale of the image to be resized.
+        """
+
+        assert isinstance(scale, tuple) and len(scale) == 2
+        min_ratio, max_ratio = ratio_range
+        assert min_ratio <= max_ratio
+        ratio = np.random.random_sample() * (max_ratio - min_ratio) + min_ratio
+        scale = int(scale[0] * ratio), int(scale[1] * ratio)
+        return scale
+
+    @cache_randomness
+    def _random_scale(self) -> tuple:
+        """Private function to randomly sample an scale according to the type
+        of ``scale``.
+
+        Returns:
+            tuple: The targeted scale of the image to be resized.
+        """
+
+        if mmengine.is_tuple_of(self.scale, int):
+            assert self.ratio_range is not None and len(self.ratio_range) == 2
+            scale = self._random_sample_ratio(
+                self.scale,  # type: ignore
+                self.ratio_range)
+        elif mmengine.is_seq_of(self.scale, tuple):
+            scale = self._random_sample(self.scale)  # type: ignore
+        else:
+            raise NotImplementedError('Do not support sampling function '
+                                      f'for "{self.scale}"')
+
+        return scale
+
+    def transform(self, results: dict) -> dict:
+        """Transform function to resize images, bounding boxes, semantic
+        segmentation map.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Resized results, ``img``, ``gt_bboxes``, ``gt_semantic_seg``,
+            ``gt_keypoints``, ``scale``, ``scale_factor``, ``img_shape``, and
+            ``keep_ratio`` keys are updated in result dict.
+        """
+        results['scale'] = self._random_scale()
+        self.resize.scale = results['scale']
+        results = self.resize(results)
+        return results
+
+    def __repr__(self) -> str:
+        repr_str = self.__class__.__name__
+        repr_str += f'(scale={self.scale}, '
+        repr_str += f'ratio_range={self.ratio_range}, '
+        repr_str += f'resize_cfg={self.resize_cfg})'
         return repr_str

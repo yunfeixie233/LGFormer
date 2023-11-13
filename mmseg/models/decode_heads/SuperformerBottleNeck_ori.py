@@ -1173,6 +1173,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_middle_pixel_features: bool = False,
         seg_specific_classifier: str = None,
         seg_num_classes: int = 150,
+        part_seg_num_classes: int = 41,
+        obj_seg_num_classes: int = 159,
         use_stem: bool = True,
         classification_feature: str = 'superpixel',
         pixel_projection = None,
@@ -1318,6 +1320,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.norm_layer_2d = norm_layer_2d
         
         self.seg_num_classes = seg_num_classes
+        self.part_seg_num_classes = part_seg_num_classes
+        self.obj_seg_num_classes = obj_seg_num_classes
+        
         self.seg_specific_classifier = seg_specific_classifier
 
         conv_norm_layer = conv_norm_layer or partial(timm_layers.LayerNorm2d, eps=1e-6)
@@ -1701,6 +1706,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     print(self.seg_specific_classifier)
                     raise ValueError()
                 self.seg_norm = norm_layer(self.embed_dim)
+            elif self.classification_feature == 'joint_extralayer':
+                self.seg_head = nn.Linear(self.embed_dim, self.part_seg_num_classes)    
+                self.seg_norm = norm_layer(self.embed_dim)
+
+                
             else:
                 raise(NotImplementedError)
             
@@ -1744,8 +1754,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 timm_layers.LayerNorm2d(group_embed_dims),
                 nn.GELU())
         if self.use_gt_loss:
-            self.gt_norm = norm_layer(self.embed_dim)
-            self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+            if self.classification_feature == 'joint_extralayer':
+                self.gt_norm = norm_layer(self.embed_dim)
+                self.gt_head = nn.Linear(self.embed_dim, self.obj_seg_num_classes)
+            else:                
+                self.gt_norm = norm_layer(self.embed_dim)
+                self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
         delattr(self, 'conv_seg')
         delattr(self, 'fc_norm')
         delattr(self, 'head')        
@@ -2839,7 +2853,88 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_group_logits += gt_logits
                 
             ret['seg'] = final_group_logits
+        elif self.classification_feature == 'joint_extralayer':
+            if self.use_gt_loss or self.use_gt_fuse:
+                if self.use_final_group:
+                    sp_feature = sp_feature + gt
+                else:
+                    sp_feature = sp_feature + gt_list[-1]
+                sp_feature = self.group_fuse_conv(rearrange(sp_feature,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw))
+                sp_feature = rearrange(sp_feature,
+                          'b c h w -> b (h w) c')
+            if self.use_pixel_fuse:
+                sp_feature = rearrange(sp_feature,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)
+                sp_feature = self.pixel_fuse_conv(sp_feature + self.pixel_projection(pixel_feature))
+                sp_feature = rearrange(sp_feature,
+                          'b c h w -> b (h w) c')                
+            x_2d = einops.rearrange(sp_feature,
+                        'b (h w) c -> b c h w',
+                        h = sh, w = sw)
 
+ 
+            info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            
+            if self.vis_sp_id:
+                self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                 
+            if self.vis_spgt:
+                self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
+                
+
+                
+                
+            sp_feature = self.seg_norm(sp_feature)
+            b, num, c = sp_feature.shape
+            sp_feature = sp_feature.reshape(b * num, c)
+
+            sp_logits = self.seg_head(sp_feature)
+            sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+
+            pixel_logits = None
+            if return_pixel_logits:
+                if isinstance(last_sp_layer, nn.AvgPool2d):
+                    raise NotImplementedError()
+                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    if info is None:
+                        raise ValueError()
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
+                    # raise NotImplementedError(
+                    #     "TODO(meijier): use pixel similarities & not merge"
+                    # )
+
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                    similarities = prepare_similarities(
+                        last_sp_layer,
+                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                        scale_factor=scale_factor,
+                        resize_version = self.resize_version
+                    )
+                    similarities = similarities.softmax(1)
+                    similarities = einops.rearrange(
+                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                    )
+                    vis_sim = False
+                    if vis_sim:
+                        to_h5(self.output_dir,max_file_per_fold=20,max_keys_per_file=1,similarities = similarities)
+                    
+                    if self.use_similarity_head:
+                        similarities = self.similarity_head(similarities)
+                    pixel_logits = superpixel_ops.expand_superpixel_features(
+                        sp_logits, similarities
+                    )
+                else:
+                    raise ValueError()
+            
+            
+            ret['seg'] = pixel_logits
+            
         else:
             raise(NotImplementedError)
         
@@ -2900,6 +2995,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt_logits, similarities_gt
                     )
                     ret[f'gt_{i}'] = gt_logits
+                # ret['seg'] = gt_logits
                 return ret 
         else:
            gt_logits = None    

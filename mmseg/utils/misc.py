@@ -94,20 +94,43 @@ def stack_batch(inputs: List[torch.Tensor],
         # pad gt_sem_seg
         if data_samples is not None:
             data_sample = data_samples[i]
-            gt_sem_seg = data_sample.gt_sem_seg.data
-            del data_sample.gt_sem_seg.data
-            data_sample.gt_sem_seg.data = F.pad(
-                gt_sem_seg, padding_size, value=seg_pad_val)
+            if 'gt_sem_seg' in data_sample:
+                gt_sem_seg = data_sample.gt_sem_seg.data
+                del data_sample.gt_sem_seg.data
+                data_sample.gt_sem_seg.data = F.pad(
+                    gt_sem_seg, padding_size, value=seg_pad_val)
+            elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
+                gt_obj_sem_seg = data_sample.gt_obj_sem_seg.data
+                
+                del data_sample.gt_obj_sem_seg.data
+                data_sample.gt_obj_sem_seg.data = F.pad(
+                    gt_obj_sem_seg, padding_size, value=seg_pad_val)
+                gt_part_sem_seg = data_sample.gt_part_sem_seg.data
+                del data_sample.gt_part_sem_seg.data
+                data_sample.gt_part_sem_seg.data = F.pad(
+                    gt_part_sem_seg, padding_size, value=seg_pad_val)
+            else:
+                raise(NotImplementedError)                                 
             if 'gt_edge_map' in data_sample:
                 gt_edge_map = data_sample.gt_edge_map.data
                 del data_sample.gt_edge_map.data
                 data_sample.gt_edge_map.data = F.pad(
                     gt_edge_map, padding_size, value=seg_pad_val)
-            data_sample.set_metainfo({
-                'img_shape': tensor.shape[-2:],
-                'pad_shape': data_sample.gt_sem_seg.shape,
-                'padding_size': padding_size
-            })
+            if 'gt_sem_seg' in data_sample:                
+                data_sample.set_metainfo({
+                    'img_shape': tensor.shape[-2:],
+                    'pad_shape': data_sample.gt_sem_seg.shape,
+                    'padding_size': padding_size
+                })
+            elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
+                data_sample.set_metainfo({
+                    'img_shape': tensor.shape[-2:],
+                    'pad_shape': data_sample.gt_part_sem_seg.shape,
+                    'padding_size': padding_size
+                })
+            else:
+                raise(NotImplementedError)                                 
+                                
             padded_samples.append(data_sample)
         else:
             padded_samples.append(

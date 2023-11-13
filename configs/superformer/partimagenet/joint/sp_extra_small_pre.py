@@ -1,6 +1,6 @@
 _base_ = [
     '../../../_base_/default_runtime.py', 
-    '../../../_base_/datasets/partimagenet_part.py',
+    '../../../_base_/datasets/partimagenet_joint.py',
     '../../superformer_baseline.py'
 ]
 crop_size = (512, 512)
@@ -70,7 +70,7 @@ default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=1000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 

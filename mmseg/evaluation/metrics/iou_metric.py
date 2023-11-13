@@ -79,11 +79,18 @@ class IoUMetric(BaseMetric):
             pred_label = data_sample['pred_sem_seg']['data'].squeeze()
             # format_only always for test dataset without ground truth
             if not self.format_only:
-                label = data_sample['gt_sem_seg']['data'].squeeze().to(
-                    pred_label)
-                self.results.append(
-                    self.intersect_and_union(pred_label, label, num_classes,
-                                             self.ignore_index))
+                if 'gt_sem_seg' in data_sample:
+                    label = data_sample['gt_sem_seg']['data'].squeeze().to(
+                        pred_label)
+                    self.results.append(
+                        self.intersect_and_union(pred_label, label, num_classes,
+                                                self.ignore_index))
+                elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
+                    label = data_sample['gt_part_sem_seg']['data'].squeeze().to(
+                        pred_label)
+                    self.results.append(
+                        self.intersect_and_union(pred_label, label, num_classes,
+                                                self.ignore_index))                    
             # format_result
             if self.output_dir is not None:
                 basename = osp.splitext(osp.basename(
