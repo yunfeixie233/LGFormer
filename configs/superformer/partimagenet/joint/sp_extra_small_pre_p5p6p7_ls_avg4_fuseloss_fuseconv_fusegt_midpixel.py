@@ -6,5 +6,5 @@ model = dict(
     type='EncoderDecoder',
     decode_head=dict(
     classification_feature = 'joint_extralayer',       
-    use_gt_extralayer = False,     
+    return_mid_pixel=True,     
 ))

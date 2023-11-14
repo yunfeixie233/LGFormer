@@ -760,6 +760,7 @@ class SuperformerStage(nn.Module):
             x, global_token = einops.unpack(x, ps, 'b * d')
         if self.vis_sp_block:
             to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
+           
         return x,attn_dict_list, gt_list, sp_featuers_mid, global_token
 
     def add_pos_embed(self, x):
@@ -1236,7 +1237,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         reweight_pixel_update_last:bool = False,
         reweight_sp_update: bool = False,
         reweight_pixel_sim: bool = False,
-        return_mid_sp: bool = False,        
+        return_mid_sp: bool = False,
+        return_mid_pixel:bool = False,        
         #visualize param
         vis_sp_id: bool =False,
         vis_sp: bool = False,
@@ -1785,6 +1787,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             self.forward_counter = 0
             self.log_interval = log_interval
         self.return_mid_sp = return_mid_sp
+        self.return_mid_pixel = return_mid_pixel        
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
@@ -1989,6 +1992,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt_list,
                         global_token, 
                     )
+                    if self.return_mid_pixel: 
+                        if i == 0:
+                            pixel_features_mid = pixel_features
+                    else:
+                        pixel_features_mid = None
+
                     sp_features_last = sp_features
                 if self.vis_sp_stage:
                     import h5py
@@ -2006,7 +2015,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:
                 #     endpoints[f"pixel_features_stage{i}"] = pixel_features
-            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt_list, sp_features_mid
+            return sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt_list, sp_features_mid,pixel_features_mid
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.norm(x)
@@ -2039,7 +2048,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         return affinity
     def forward_segmentation(
         self, sp_feature: torch.Tensor, return_pixel_logits: bool = True, stride: int = 2,pixel_feature: torch.Tensor = None,
-        img = None,attn_dict_list = None, gt_list = None, sp_features_mid = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        img = None,attn_dict_list = None, gt_list = None, sp_features_mid = None,pixel_features_mid = None,) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Get prediction via different methods.
 
         classification_feature:
@@ -2963,7 +2972,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
                                         h = h_g,
                                         w = w_g) 
-                        info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
+                        if pixel_features_mid is not None:
+                        #we will use pixel_features_mid to get similarity by default if exists     
+                            info_gt, _, _ = gt_layer(pixel_features_mid,gt_2d)
+                        else:
+                            info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
                         del(_)
                         similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
                         similarities_gt = prepare_similarities(
@@ -2992,7 +3005,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             gt_2d = rearrange(gt,'b (h w) c -> b c h w',
                                             h = h_g,
                                             w = w_g) 
-                            info_gt, _, _ = gt_layer(pixel_feature, gt_2d)
+                            if pixel_features_mid is not None:
+                            #we will use pixel_features_mid to get similarity by default if exists     
+                                info_gt, _, _ = gt_layer(pixel_features_mid,gt_2d)
+                            else:
+                                info_gt, _, _ = gt_layer(pixel_feature,gt_2d)                                            
+
                             del(_)
                             similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
                             similarities_gt = prepare_similarities(
@@ -3128,8 +3146,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #     self.log_reweight = False
         #     self.vis_sp_stage = False
         #     self.vis_sp_block = False     
-                       
-        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt_list ,sp_features_mid = self.forward_features(x)
+        sp_features, sp_features_seg, endpoints, pixel_features, attn_dict_list, gt_list ,sp_features_mid,pixel_features_mid = self.forward_features(x)
+
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
         # if self.vis_sp_id:
@@ -3151,7 +3169,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
             ret = self.forward_segmentation(
                 sp_feature = sp_features_seg, return_pixel_logits = return_pixel_logits, stride=seg_stride,pixel_feature=pixel_features,
-                img = x, attn_dict_list = attn_dict_list, gt_list = gt_list
+                img = x, attn_dict_list = attn_dict_list, gt_list = gt_list,pixel_features_mid = pixel_features_mid,
             )
         return ret
     def compute_compact_loss(self, x: torch.Tensor,sp_features: torch.Tensor):
