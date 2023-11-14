@@ -2062,7 +2062,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         last_sp_layer = last_stage.patch_embed
         #firstly we will cls group token, gt logits will be upsample to sp shape
 
-        if self.use_gt_loss and self.use_gt_fuse:
+        if self.use_gt_loss:
             h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
             w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
             
@@ -2119,7 +2119,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_gt = gt_new
                     else:
                         final_gt += gt_new
+                        final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
+                                    h = h_g *  self.group_init_strides[-1],
+                                    w = w_g *  self.group_init_strides[-1]) 
                         final_gt = self.group_fuse_conv(final_gt)
+                        final_gt = rearrange(final_gt,'b c h w ->b (h w) c')
+                        
 
                 else:
                     raise(NotImplementedError)
@@ -2870,23 +2875,23 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_group_logits += gt_logits
             ret['seg'] = final_group_logits
         elif self.classification_feature == 'joint_extralayer':
-            if self.use_gt_loss or self.use_gt_fuse:
-                if self.use_final_group:
-                    sp_feature = sp_feature + final_gt
-                else:
-                    sp_feature = sp_feature + gt_list[-1]
-                sp_feature = self.group_fuse_conv(rearrange(sp_feature,
-                          'b (h w) c -> b c h w',
-                          h = sh, w = sw))
-                sp_feature = rearrange(sp_feature,
-                          'b c h w -> b (h w) c')
-            if self.use_pixel_fuse:
-                sp_feature = rearrange(sp_feature,
-                          'b (h w) c -> b c h w',
-                          h = sh, w = sw)
-                sp_feature = self.pixel_fuse_conv(sp_feature + self.pixel_projection(pixel_feature))
-                sp_feature = rearrange(sp_feature,
-                          'b c h w -> b (h w) c')                
+            # if self.use_gt_loss or self.use_gt_fuse:
+            #     if self.use_final_group:
+            #         sp_feature = sp_feature + final_gt
+            #     else:
+            #         sp_feature = sp_feature + gt_list[-1]
+            #     sp_feature = self.group_fuse_conv(rearrange(sp_feature,
+            #               'b (h w) c -> b c h w',
+            #               h = sh, w = sw))
+            #     sp_feature = rearrange(sp_feature,
+            #               'b c h w -> b (h w) c')
+            # if self.use_pixel_fuse:
+            #     sp_feature = rearrange(sp_feature,
+            #               'b (h w) c -> b c h w',
+            #               h = sh, w = sw)
+            #     sp_feature = self.pixel_fuse_conv(sp_feature + self.pixel_projection(pixel_feature))
+            #     sp_feature = rearrange(sp_feature,
+            #               'b c h w -> b (h w) c')                
             x_2d = einops.rearrange(sp_feature,
                         'b (h w) c -> b c h w',
                         h = sh, w = sw)
@@ -3010,7 +3015,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             final_gt_logits += gt_logits
                     ret['seg'] = pixel_logits                    
                     ret['gt'] = final_gt_logits/len(gt_list)
-                    
+                    # ret['seg'] = final_gt_logits/len(gt_list)
                     return ret 
             else:
                 gt_logits = None    
