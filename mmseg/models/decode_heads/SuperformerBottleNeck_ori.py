@@ -2812,9 +2812,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             final_group_logits = None
             # only ose final group for classification
             if self.use_final_group_cls:
-                gt_2d = rearrange(gt,'b (h w) c -> b c h w',
-                                    h = h_g,
-                                    w = w_g)
+                gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
+                                    h = h_g, 
+                                    w = w_g)   
                 info, _, _ = last_sp_layer(pixel_feature, gt_2d)
                 if self.vis_sp_id:
                     self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
@@ -2883,6 +2883,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     else:
                         final_group_logits += gt_logits
             ret['seg'] = final_group_logits
+            return ret
         elif self.classification_feature == 'joint_extralayer':
             if self.use_gt_fuse:
                 if self.use_final_group:

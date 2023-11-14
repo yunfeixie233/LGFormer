@@ -83,6 +83,7 @@ class PackSegInputs(BaseTransform):
                               'map is 2D, but got '
                               f'{results["gt_seg_map"].shape}')
                 data = to_tensor(results['gt_seg_map'].astype(np.int64))
+                
             gt_sem_seg_data = dict(data=data)
             data_sample.gt_sem_seg = PixelData(**gt_sem_seg_data)            
         elif 'gt_obj_seg_map' in results and 'gt_part_seg_map' in results:

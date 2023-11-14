@@ -643,7 +643,8 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             gt_semantic_segs = [
                 data_sample.gt_sem_seg.data for data_sample in batch_data_samples
             ]
-            return (torch.stack(gt_semantic_segs, dim=0))
+            
+            return (torch.stack(gt_semantic_segs, dim=0),)
                 
         elif 'gt_obj_sem_seg' in batch_data_samples[-1] and 'gt_part_sem_seg' in batch_data_samples[-1]:
             gt_obj_semantic_segs = []  
@@ -674,6 +675,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         seg_label = self._stack_batch_gt(batch_data_samples)
         # compute loss separately        
         if len(seg_label) == 1:
+            seg_label = seg_label[0]
             loss = dict()
             if not isinstance(self.loss_decode, nn.ModuleList):
                 losses_decode = [self.loss_decode]
