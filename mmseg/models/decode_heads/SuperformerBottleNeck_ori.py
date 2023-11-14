@@ -1259,8 +1259,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
     ):
         super().__init__(in_channels=3,
         channels=256,
-        num_classes=seg_num_classes,
-        out_channels=seg_num_classes,
+        # num_classes=159,
+        # out_channels=159,
+        num_classes=part_seg_num_classes,
+        out_channels=part_seg_num_classes,
         in_index=0,
         use_gt_cls = use_gt_cls,
 **kwargs)
@@ -3032,14 +3034,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             final_gt_logits = gt_logits
                         else:
                             final_gt_logits += gt_logits
-                    ret['seg'] = pixel_logits                    
-                    ret['gt'] = final_gt_logits/len(gt_list)
-                    # ret['seg'] = final_gt_logits/len(gt_list)
+                    # ret['seg'] = pixel_logits                    
+                    # ret['gt'] = final_gt_logits/len(gt_list)
+                    ret['seg'] = final_gt_logits/len(gt_list)
                     return ret 
             else:
                 gt_logits = None    
             ret['seg'] = pixel_logits
             ret['gt'] = gt_logits
+            # ret['seg'] = gt_logits
+           
             return ret                
             
         else:

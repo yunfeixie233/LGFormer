@@ -88,6 +88,9 @@ class IoUMetric(BaseMetric):
                 elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
                     label = data_sample['gt_part_sem_seg']['data'].squeeze().to(
                         pred_label)
+                    # label = data_sample['gt_obj_sem_seg']['data'].squeeze().to(
+                    #     pred_label)
+                    
                     self.results.append(
                         self.intersect_and_union(pred_label, label, num_classes,
                                                 self.ignore_index))                    

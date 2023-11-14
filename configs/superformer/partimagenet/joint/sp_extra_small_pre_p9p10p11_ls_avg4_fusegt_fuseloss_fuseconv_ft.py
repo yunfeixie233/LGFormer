@@ -3,6 +3,12 @@ _base_ = [
 ]
 accumulative_counts = 4
 total_iter=10000 * accumulative_counts
+model = dict(
+    type='EncoderDecoder',
+    decode_head=dict(
+    use_gt_loss = True,          
+))
+
 optim_wrapper = dict(
     _delete_ = True,
     type='OptimWrapper',
