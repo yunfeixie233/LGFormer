@@ -4,7 +4,6 @@ _base_ = [
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
-    use_gt_fuse = True,  
     use_gt_extralayer = True,        
     use_gt_loss = True,
     group_pos = ((),(7,),()), 

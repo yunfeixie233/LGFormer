@@ -2875,16 +2875,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_group_logits += gt_logits
             ret['seg'] = final_group_logits
         elif self.classification_feature == 'joint_extralayer':
-            # if self.use_gt_loss or self.use_gt_fuse:
-            #     if self.use_final_group:
-            #         sp_feature = sp_feature + final_gt
-            #     else:
-            #         sp_feature = sp_feature + gt_list[-1]
-            #     sp_feature = self.group_fuse_conv(rearrange(sp_feature,
-            #               'b (h w) c -> b c h w',
-            #               h = sh, w = sw))
-            #     sp_feature = rearrange(sp_feature,
-            #               'b c h w -> b (h w) c')
+            if self.use_gt_fuse:
+                if self.use_final_group:
+                    sp_feature = sp_feature + final_gt
+                else:
+                    sp_feature = sp_feature + gt_list[-1]
+                sp_feature = self.group_fuse_conv(rearrange(sp_feature,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw))
+                sp_feature = rearrange(sp_feature,
+                          'b c h w -> b (h w) c')
             # if self.use_pixel_fuse:
             #     sp_feature = rearrange(sp_feature,
             #               'b (h w) c -> b c h w',
