@@ -1259,10 +1259,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
     ):
         super().__init__(in_channels=3,
         channels=256,
-        num_classes=159,
-        out_channels=159,
-        # num_classes=part_seg_num_classes,
-        # out_channels=part_seg_num_classes,
+        num_classes=seg_num_classes,
+        out_channels=seg_num_classes,
         in_index=0,
         use_gt_cls = use_gt_cls,
 **kwargs)

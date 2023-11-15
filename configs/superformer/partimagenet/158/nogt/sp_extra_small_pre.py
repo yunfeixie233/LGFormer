@@ -46,9 +46,24 @@ optim_wrapper = dict(
             'seg_norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
-            'stages.0':dict(lr_mult=0.1),
-            'stages.1':dict(lr_mult=0.1),
-        }))
+            'stem':dict(lr_mult=0.1),
+            'sp_init':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.0':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),
+            'stages.0.sp_project':dict(lr_mult=0.1),
+            'stages.0.blocks':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.0':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),         
+            'stages.1.blocks':dict(lr_mult=0.1)},    
+        ))
 
 param_scheduler = [
     dict(

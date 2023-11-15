@@ -1,6 +1,6 @@
 _base_ = [
     '../../../_base_/default_runtime.py', 
-    '../../../_base_/datasets/partimagenet_part.py',
+    '../../../_base_/datasets/pascal_voc12_part.py',
     '../../superformer_baseline.py'
 ]
 crop_size = (512, 512)
@@ -19,12 +19,12 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    seg_num_classes = 41,
+    seg_num_classes = 58,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 accumulative_counts = 2
-total_iter=50000 * accumulative_counts
+total_iter=10000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
@@ -47,24 +47,9 @@ optim_wrapper = dict(
             'seg_norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
-            'stem':dict(lr_mult=0.1),
-            'sp_init':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.0':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),
-            'stages.0.sp_project':dict(lr_mult=0.1),
-            'stages.0.blocks':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.0':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),         
-            'stages.1.blocks':dict(lr_mult=0.1)},    
-        ))
+            'stages.0':dict(lr_mult=0.1),
+            'stages.1':dict(lr_mult=0.1),
+        }))
 
 param_scheduler = [
     dict(
@@ -85,7 +70,7 @@ default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 
