@@ -644,7 +644,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                 data_sample.gt_sem_seg.data for data_sample in batch_data_samples
             ]
             
-            return (torch.stack(gt_semantic_segs, dim=0),)
+            return torch.stack(gt_semantic_segs, dim=0)
                 
         elif 'gt_obj_sem_seg' in batch_data_samples[-1] and 'gt_part_sem_seg' in batch_data_samples[-1]:
             gt_obj_semantic_segs = []  
@@ -673,57 +673,9 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         """
         
         seg_label = self._stack_batch_gt(batch_data_samples)
-        # compute loss separately        
-        if len(seg_label) == 1:
-            seg_label = seg_label[0]
-            loss = dict()
-            if not isinstance(self.loss_decode, nn.ModuleList):
-                losses_decode = [self.loss_decode]
-            else:
-                losses_decode = self.loss_decode
-            
-            for i, (logit, loss_decode) in enumerate(zip(logits.values(),losses_decode)):
-                if logit is None:
-                    continue
-                logit = resize(
-                    input=logit,
-                    size=seg_label.shape[2:],
-                    mode='bilinear',
-                    align_corners=self.align_corners)
-
-
-
-                if self.sampler is not None:
-                    seg_weight = self.sampler.sample(logit[0], seg_label)
-                else:
-                    seg_weight = None
-
-                if loss_decode.loss_name not in loss:
-                    loss[loss_decode.loss_name] = loss_decode(
-                        logit,
-                        seg_label.squeeze(1),
-                        weight=seg_weight,
-                        ignore_index=self.ignore_index)
-                else:
-                    loss[loss_decode.loss_name] += loss_decode(
-                        logit,
-                        seg_label.squeeze(1) ,
-                        weight=seg_weight,
-                        ignore_index=self.ignore_index)
-            #     if i == 0:
-            #         loss[f'acc_seg_gt'] = accuracy(
-            #             logit, seg_label, ignore_index=self.ignore_index)
-            #     elif i == 1:
-            #         loss[f'acc_seg_sp'] = accuracy(
-            #             logit, seg_label, ignore_index=self.ignore_index)
-            # elif len(logits) == 1:
-            #     loss[f'acc_seg_sp'] = accuracy(
-            #         logit, seg_label, ignore_index=self.ignore_index)
-            # else:
-            #     raise(ValueError)
+        # compute loss separately    
+        if isinstance(seg_label,tuple):    
         # compute loss jointly        
-
-        elif len(seg_label) == 2:
             obj_label, part_label = seg_label
             loss = dict()
             if not isinstance(self.loss_decode, nn.ModuleList):
@@ -758,6 +710,42 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                     loss[loss_decode.loss_name] += loss_decode(
                         logit,
                         label.squeeze(1) ,
+                        weight=seg_weight,
+                        ignore_index=self.ignore_index)            
+
+        else:
+            loss = dict()
+            if not isinstance(self.loss_decode, nn.ModuleList):
+                losses_decode = [self.loss_decode]
+            else:
+                losses_decode = self.loss_decode
+            
+            for i, (logit, loss_decode) in enumerate(zip(logits.values(),losses_decode)):
+                if logit is None:
+                    continue
+                logit = resize(
+                    input=logit,
+                    size=seg_label.shape[2:],
+                    mode='bilinear',
+                    align_corners=self.align_corners)
+
+
+
+                if self.sampler is not None:
+                    seg_weight = self.sampler.sample(logit[0], seg_label)
+                else:
+                    seg_weight = None
+
+                if loss_decode.loss_name not in loss:
+                    loss[loss_decode.loss_name] = loss_decode(
+                        logit,
+                        seg_label.squeeze(1),
+                        weight=seg_weight,
+                        ignore_index=self.ignore_index)
+                else:
+                    loss[loss_decode.loss_name] += loss_decode(
+                        logit,
+                        seg_label.squeeze(1) ,
                         weight=seg_weight,
                         ignore_index=self.ignore_index)            
         return loss

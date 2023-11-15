@@ -22,7 +22,7 @@ model = dict(
     seg_num_classes = 159,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
-accumulative_counts = 4
+accumulative_counts = 2
 total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
@@ -69,7 +69,7 @@ default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=100000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=1000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
 
