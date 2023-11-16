@@ -3153,8 +3153,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         if self.vis_pixel:
             to_h5(self.output_dir,max_keys_per_file = 1, pixel_features = pixel_features)        
-        # if self.vis_sp_id:
-        #     self.visualize_superpixel(img = x, info = None, resize_similarities= True)
+        if self.vis_sp_id:
+            self.visualize_superpixel(img = x, info = None, resize_similarities= True)
         if self.vis_sp:
             to_h5(self.output_dir,max_keys_per_file = 1, sp_features = sp_features)        
         if self.use_group_token == 'post':
@@ -3654,7 +3654,31 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             i+=1
 
         return attn_maps
+    def merge_regions(self, group_result,num_group):
+        from scipy.ndimage import label, find_objects
+        labeled_tensor, _ = label(group_result)
 
+    # Finding the slices (bounding boxes) for each region
+        regions = find_objects(group_result)
+
+        # Placeholder for the logic to decide which regions to merge
+        # This part of the code would need to be expanded with specific logic
+        # to decide which regions to merge based on their size, shape, and adjacency.
+
+        # For this example, let's assume we merge based on size (small to large).
+        # This is a simplified example and may not cover all real-world scenarios.
+
+        # Counting the pixels in each region
+        region_sizes = [np.sum(labeled_tensor[region] == i+1) for i, region in enumerate(regions)]
+
+        # Sorting regions by size
+        sorted_regions = sorted(zip(region_sizes, range(1, len(regions) + 1)), reverse=True)
+        # Merging smaller regions into larger ones
+        # This is a simplified approach and may not be optimal for all cases.
+        for _, region_id in sorted_regions[num_group:]:
+            group_result[labeled_tensor == region_id] = 0  # Merging into background
+
+        return group_result
     def visualize_grouptoken_v2(self, img, sp_shape, attn_dict_list):
         import os.path as osp
         import os
@@ -3670,23 +3694,26 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         directory = osp.dirname(out_file)
         if not osp.exists(directory):
             os.makedirs(directory)
-        attn_maps = self.get_attn_maps(sp_shape, attn_dict_list) 
+        attn_maps = self.get_attn_maps_v2(sp_shape, attn_dict_list)[-1].unsqueeze(0) 
         num_groups = [attn_maps[layer_idx].shape[-1] for layer_idx in range(len(attn_maps))]
         for i, attn_map in enumerate(attn_maps):
             attn_map = rearrange(attn_map, 'b h w g -> b g h w')
             attn_map = F.interpolate(
                 attn_map, size=img.shape[2:], mode='bilinear', align_corners=self.align_corners)
             group_result = attn_map.argmax(dim=1).cpu().numpy()
-
+            group_result = self.merge_regions(group_result.squeeze(),attn_map.shape[1]).unsqueeze(0)
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
-            layer_idx = i // 6
-            head = i % 6
-            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
+            layer_idx = i 
+            # head = i % 6
+            # while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
+            #     counter += 1
+
+            # layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
+            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"):
                 counter += 1
 
-            layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
-
+            layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"
             
             GROUP_PALETTE = np.loadtxt('mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
             uni = np.unique(group_result)
@@ -3695,7 +3722,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 result=group_result,
                 palette=GROUP_PALETTE,
                 out_file=layer_out_file,
-                opacity=0.5)
+                # opacity=0.5)
+                opacity=1.0)
 
 @register_model
 def asym_bottleneck_small_nofinal_head4(pretrained=False, **kwargs):
