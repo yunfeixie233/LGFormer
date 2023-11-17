@@ -624,7 +624,10 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             Tensor: Outputs segmentation logits map.
         """
-        ret = self.forward(inputs)
+        if 'gt' in batch_img_metas[0]:
+            ret = self.forward(inputs,ground_truth = batch_img_metas[0]['gt'].squeeze().cpu().numpy())
+        else:
+            ret = self.forward(inputs)
         seg_logits = ret['seg']
          
         # if self.use_gt_cls:

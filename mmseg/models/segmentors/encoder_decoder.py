@@ -9,7 +9,7 @@ from mmseg.registry import MODELS
 from mmseg.utils import (ConfigType, OptConfigType, OptMultiConfig,
                          OptSampleList, SampleList, add_prefix)
 from .base import BaseSegmentor
-
+import mmcv
 
 @MODELS.register_module()
 class EncoderDecoder(BaseSegmentor):
@@ -214,7 +214,9 @@ class EncoderDecoder(BaseSegmentor):
                     pad_shape=inputs.shape[2:],
                     padding_size=[0, 0, 0, 0])
             ] * inputs.shape[0]
-
+        merge = False
+        if merge:
+            batch_img_metas[0]['gt'] = data_samples[0].gt_sem_seg.data
         seg_logits = self.inference(inputs, batch_img_metas)
 
         return self.postprocess_result(seg_logits, data_samples)
@@ -265,6 +267,10 @@ class EncoderDecoder(BaseSegmentor):
         w_grids = max(w_img - w_crop + w_stride - 1, 0) // w_stride + 1
         preds = inputs.new_zeros((batch_size, out_channels, h_img, w_img))
         count_mat = inputs.new_zeros((batch_size, 1, h_img, w_img))
+        merge = False  
+        #for eval object
+        if merge == True:
+            gt = mmcv.imread( batch_img_metas[0]['seg_map_path'])
         for h_idx in range(h_grids):
             for w_idx in range(w_grids):
                 y1 = h_idx * h_stride
@@ -276,6 +282,7 @@ class EncoderDecoder(BaseSegmentor):
                 crop_img = inputs[:, :, y1:y2, x1:x2]
                 # change the image shape to patch shape
                 batch_img_metas[0]['img_shape'] = crop_img.shape[2:]
+                # batch_img_metas[0]['crop_gt'] = crop_gt
                 # the output of encode_decode is seg logits tensor map
                 # with shape [N, C, H, W]
                 if crop_img.shape[-1] !=  crop_img.shape[-2]:
@@ -309,7 +316,12 @@ class EncoderDecoder(BaseSegmentor):
             Tensor: The segmentation results, seg_logits from model of each
                 input image.
         """
-
+        merge = False
+        if merge == True:
+            # split = batch_img_metas[0]['seg_map_path'].split('/')
+            # split[-2] = 'test_whole'
+            # whole_seg_map_path = '/'.join(path_parts)
+            gt = mmcv.imread(batch_img_metas[0]['seg_map_path'])
         seg_logits = self.encode_decode(inputs, batch_img_metas)
 
         return seg_logits

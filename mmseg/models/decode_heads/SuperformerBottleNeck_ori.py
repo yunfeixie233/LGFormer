@@ -17,7 +17,7 @@ import timm
 from timm.models.vision_transformer import Block, _cfg
 from timm.models.registry import register_model
 from timm.models import layers as timm_layers
-
+import mmcv
 from ...superformer.superpixel.dual_path_transformer_ops import Conv2D
 from .decode_head import BaseDecodeHead, MultiLossBaseDecodeHead
 from ..builder import HEADS
@@ -42,7 +42,93 @@ import numpy as np
 import os.path as osp
 from timm.models import layers as timm_layers
 from mmcv.cnn import ConvModule, DepthwiseSeparableConvModule
+import matplotlib.pyplot as plt
+import cv2
+import numpy as np
 
+def pad_ground_truth(ground_truth, target_shape, pad_val=255):
+    """
+    Pad the ground truth image to match the target shape using bottom-right padding.
+    
+    Args:
+        ground_truth (np.ndarray): The original ground truth image.
+        target_shape (tuple): The target shape to pad to.
+        pad_val (int): Padding value for ground truth. Defaults to 255.
+
+    Returns:
+        np.ndarray: Padded ground truth image.
+    """
+    # 计算需要填充的高度和宽度
+    pad_height = max(target_shape[0] - ground_truth.shape[0], 0)
+    pad_width = max(target_shape[1] - ground_truth.shape[1], 0)
+    
+    # 创建填充的大小，格式为：(top, bottom), (left, right)
+    padding = ((0, pad_height), (0, pad_width))
+
+    # 使用np.pad进行填充
+    return np.pad(ground_truth, padding, mode='constant', constant_values=pad_val)
+
+
+def read_ground_truth(folder_path, counter):
+    # 获取文件夹中所有png文件的列表
+    files = sorted([f for f in os.listdir(folder_path) if f.endswith('.png')])
+    
+    # 确保counter在文件列表的范围内
+    if counter < len(files):
+        file_path = os.path.join(folder_path, files[counter])
+        ground_truth = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+        return ground_truth
+    else:
+        print(f"No file found for counter {counter}")
+        return None
+
+def intersect_and_union(pred_regions, gt_regions, ignore_index=255):
+    mask = (gt_regions != ignore_index)
+    pred_regions = pred_regions[mask]
+    gt_regions = gt_regions[mask]
+    intersect = pred_regions[pred_regions == gt_regions]
+    area_intersect = np.bincount(intersect, minlength=ignore_index +1)
+    area_pred = np.bincount(pred_regions, minlength=ignore_index +1)
+    area_gt = np.bincount(gt_regions, minlength=ignore_index +1)
+    area_union = area_pred + area_gt - area_intersect
+
+    return np.sum(area_intersect), np.sum(area_union), np.sum(area_pred), np.sum(area_gt)
+
+def process_regions(regions, ground_truth, top_k=5):
+    if regions.shape != ground_truth.shape:
+        ground_truth = pad_ground_truth(ground_truth, regions.shape)
+    new_regions = np.full(ground_truth.shape, 158)  # 初始化为背景类
+    unique_classes = np.unique(ground_truth)
+    print(unique_classes)
+    for class_id in unique_classes:
+        if class_id == 158:  # 跳过背景
+            continue
+
+        class_mask = ground_truth == class_id
+        overlap_iou = []
+
+        for region_id in np.unique(regions):
+            region_mask = regions == region_id
+            intersect = np.logical_and(region_mask, class_mask)
+            union = np.logical_or(region_mask, class_mask)
+            if np.any(intersect):
+                iou = np.sum(intersect) / np.sum(union)
+                overlap_iou.append((region_id, iou))
+
+        # 选择top k个IoU的region
+        top_regions = sorted(overlap_iou, key=lambda x: x[1], reverse=True)[:top_k]
+        for region_id, _ in top_regions:
+            new_regions[regions == region_id] = class_id
+
+    return new_regions,ground_truth
+def visualize_regions(regions, file_path):
+    # 可视化并保存regions
+    plt.imshow(regions, cmap=plt.cm.nipy_spectral)
+    plt.title("Processed Regions")
+    plt.colorbar()  # 可选，为了更好地理解图像中的颜色代表的值
+    plt.savefig(file_path)
+    plt.close()  # 关闭图像，以防止在后续操作中显示
+    
 def to_h5(output_directory, max_keys_per_file=None,  max_file_per_fold=None, **kwargs):
     """
     Save input tensors or numpy arrays to an H5 file in a specified directory with automatic numbering.
@@ -3117,6 +3203,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         generate_seg: bool = True,
         return_pixel_logits: bool = True,
         seg_stride: int = 1,
+        ground_truth = None,
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         #visualize reweight
@@ -3166,7 +3253,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     sp_features_seg,hw_shape, attn_dict_list=attn_dict_list, prev_token=gt)
         if self.use_group_token in ['post','mix'] and  self.vis_gt:
             sp_shape = self.stages[-1].patch_embed.superpixel_shape
-            self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list)
+            self.visualize_grouptoken_v2(x, sp_shape , attn_dict_list,)
         
         if generate_seg:
 
@@ -3380,6 +3467,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     res[f"{key}_layer_idx{layer_idx}_head{head}"] = vis
                 
         counter = 0
+        
         base_name, file_ext = osp.splitext(out_file)
         for i,(key, val) in enumerate(res.items()):
             
@@ -3654,32 +3742,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             i+=1
 
         return attn_maps
-    def merge_regions(self, group_result,num_group):
-        from scipy.ndimage import label, find_objects
-        labeled_tensor, _ = label(group_result)
 
-    # Finding the slices (bounding boxes) for each region
-        regions = find_objects(group_result)
-
-        # Placeholder for the logic to decide which regions to merge
-        # This part of the code would need to be expanded with specific logic
-        # to decide which regions to merge based on their size, shape, and adjacency.
-
-        # For this example, let's assume we merge based on size (small to large).
-        # This is a simplified example and may not cover all real-world scenarios.
-
-        # Counting the pixels in each region
-        region_sizes = [np.sum(labeled_tensor[region] == i+1) for i, region in enumerate(regions)]
-
-        # Sorting regions by size
-        sorted_regions = sorted(zip(region_sizes, range(1, len(regions) + 1)), reverse=True)
-        # Merging smaller regions into larger ones
-        # This is a simplified approach and may not be optimal for all cases.
-        for _, region_id in sorted_regions[num_group:]:
-            group_result[labeled_tensor == region_id] = 0  # Merging into background
-
-        return group_result
-    def visualize_grouptoken_v2(self, img, sp_shape, attn_dict_list):
+            
+                    
+    def visualize_grouptoken_v2(self, img, sp_shape, attn_dict_list,):
         import os.path as osp
         import os
         img = img.detach()
@@ -3701,10 +3767,30 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             attn_map = F.interpolate(
                 attn_map, size=img.shape[2:], mode='bilinear', align_corners=self.align_corners)
             group_result = attn_map.argmax(dim=1).cpu().numpy()
-            group_result = self.merge_regions(group_result.squeeze(),attn_map.shape[1]).unsqueeze(0)
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
-            layer_idx = i 
+            layer_idx = i            
+            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"):
+                counter += 1                        
+            merge_region = True
+            if merge_region:
+                import mmcv
+                ground_truth = read_ground_truth('/root/autodl-tmp/SpformerV1/data/PartImageNet/annotations/test_whole', counter)
+                ground_truth = mmcv.imresize(
+                    ground_truth,
+                    np.squeeze(group_result).shape,
+                    interpolation = 'nearest'
+                    )
+                processed_regions,ground_truth = process_regions(regions = np.squeeze(group_result), ground_truth = ground_truth)
+                
+                area_intersect, area_union, _, _ = intersect_and_union(processed_regions, ground_truth) 
+                iou = area_intersect / area_union if area_union != 0 else 0
+                print(f"Total IoU: {iou:.3f}")   
+                
+                # visualize_regions(processed_regions,file_path = self.output_dir)                        
+            # group_result = self.merge_regions(group_result.squeeze(),attn_map.shape[1]).unsqueeze(0)
+
+ 
             # head = i % 6
             # while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
             #     counter += 1
@@ -3722,8 +3808,26 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 result=group_result,
                 palette=GROUP_PALETTE,
                 out_file=layer_out_file,
-                # opacity=0.5)
-                opacity=1.0)
+                opacity=0.5)
+                # opacity=1.0)
+            merge_out_file = f"{base_name}_{counter}_merge{layer_idx}_{file_ext}"
+            self.blend_result(
+                img=img.transpose(0, 2, 3, 1),
+                result=processed_regions[np.newaxis,:],
+                palette=GROUP_PALETTE,
+                out_file=merge_out_file,
+                opacity=0.5)
+                # opacity=1.0)    
+            gt_out_file = f"{base_name}_{counter}_gt{layer_idx}_{file_ext}"
+            self.blend_result(
+                img=img.transpose(0, 2, 3, 1),
+                result=ground_truth[np.newaxis,:],
+                palette=GROUP_PALETTE,
+                out_file=gt_out_file,
+                opacity=0.5)
+                # opacity=1.0)    
+            
+                        
 
 @register_model
 def asym_bottleneck_small_nofinal_head4(pretrained=False, **kwargs):
