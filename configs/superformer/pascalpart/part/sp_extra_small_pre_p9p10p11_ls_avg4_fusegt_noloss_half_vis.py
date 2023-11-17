@@ -1,30 +1,17 @@
 _base_ = [
-    '../../../_base_/default_runtime.py', 
-    '../../../_base_/datasets/partimagenet_part.py',
-    '../../superformer_baseline.py'
+    './sp_extra_small_pre_p9p10p11_ls_avg4_fusegt_noloss.py',
 ]
-crop_size = (512, 512)
-data_preprocessor = dict(size=crop_size)
 model = dict(
-    data_preprocessor=data_preprocessor,
+    type='EncoderDecoder',
     decode_head=dict(
-    img_size=(512,512),
-    classification_feature = 'superpixel_extralayer',
-    resize_similarity =  True,          
-    depths=(2,10,0,),
-    dims=(384,384,384,),
-    heads=(6,6,-1,),
-    strides=(1,1,1,),
-    sp_sizes=(4,4,4,),
-    sp_heads=(2,2,1,),
-    sp_features_init_methods=("from_feature","from_feature","from_feature",),
-    ls_init_value = 1e-5,
-    seg_num_classes = 41,
-),
-    test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
+    output_dir = "/root/autodl-tmp/vis",
+    vis_spgt = True,
+    vis_sp_id = True, 
+    vis_gt = True,      
 
+))
 accumulative_counts = 2
-total_iter=50000 * accumulative_counts
+total_iter=25000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
@@ -77,8 +64,9 @@ param_scheduler = [
             verbose=False                # 设置为True以打印每次更新的学习率
     )
 ]
+
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=10)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
@@ -87,6 +75,4 @@ default_hooks = dict(
     param_scheduler=dict(type='ParamSchedulerHook'),
     checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
-    # visualization=dict(type='SegVisualizationHook',draw = True, interval = 1))
     visualization=dict(type='SegVisualizationHook'))
-find_unused_parameters=True

@@ -1,10 +1,11 @@
 _base_ = [
     '../../../_base_/default_runtime.py', 
-    '../../../_base_/datasets/partimagenet_part.py',
+    '../../../_base_/datasets/pascal_part.py',
     '../../superformer_baseline.py'
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
+seg_num_classes = 55
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
@@ -19,12 +20,12 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    seg_num_classes = 41,
+    seg_num_classes = seg_num_classes,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 accumulative_counts = 2
-total_iter=50000 * accumulative_counts
+total_iter=10000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(

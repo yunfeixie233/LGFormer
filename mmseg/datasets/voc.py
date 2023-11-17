@@ -47,19 +47,60 @@ class PascalPartDataset(BaseSegDataset):
         split (str): Split txt file for Pascal VOC.
     """
     METAINFO = dict(
-        classes=('Background', 'Aeroplane_Body', 'Aeroplane_Engine', 'Aeroplane_Wing',
-                'Aeroplane_Stern', 'Aeroplane_Wheel', 'Bicycle_Wheel', 'Bicycle_Body',
-                'Bird_Head', 'Bird_Wing', 'Bird_Leg', 'Bird_Torso', 'Boat', 
-                'Bottle_Cap', 'Bottle_Body', 'Bus_Window', 'Bus_Wheel', 'Bus_Body',
-                'Car_Window', 'Car_Wheel', 'Car_Light', 'Car_Plate', 'Car_Body',
-                'Cat_Head', 'Cat_Leg', 'Cat_Tail', 'Cat_Torso', 'Chair', 'Cow_Head',
-                'Cow_Tail', 'Cow_Leg', 'Cow_Torso', 'Dining_Table', 'Dog_Head',
-                'Dog_Leg', 'Dog_Tail', 'Dog_Torso', 'Horse_Head', 'Horse_Tail',
-                'Horse_Leg', 'Horse_Torso', 'Motorbike_Wheel', 'Motorbike_Body',
-                'Person_Head', 'Person_Torso', 'Person_Lower_Arm', 'Person_Upper_Arm',
-                'Person_Lower_Leg', 'Person_Upper_Leg', 'Potted_Plant_Pot',
-                'Potted_Plant_Plant', 'Sheep_Head', 'Sheep_Leg', 'Sheep_Torso',
-                'Sofa', 'Train', 'TV_Screen', 'TV_Frame'))
+classes = (
+    'object 1', 'object 2', 'object 3', 'object 4', 'object 5', 
+    'object 6', 'object 7', 'object 8', 'object 9', 'object 10', 
+    'object 11', 'object 12', 'object 13', 'object 14', 'object 15', 
+    'object 16', 'object 17', 'object 18', 'object 19', 'object 20', 
+    'object 21', 'object 22', 'object 23', 'object 24', 'object 25', 
+    'object 26', 'object 27', 'object 28', 'object 29', 'object 30', 
+    'object 31', 'object 32', 'object 33', 'object 34', 'object 35', 
+    'object 36', 'object 37', 'object 38', 'object 39', 'object 40', 
+    'object 41', 'object 42', 'object 43', 'object 44', 'object 45', 
+    'object 46', 'object 47', 'object 48', 'object 49', 'object 50', 
+    'object 51', 'object 52', 'object 53', 'object 54', )) 
+
+        # palette=[[0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
+        #          [0, 0, 128], [128, 0, 128], [0, 128, 128], [128, 128, 128],
+        #          [64, 0, 0], [192, 0, 0], [64, 128, 0], [192, 128, 0],
+        #          [64, 0, 128], [192, 0, 128], [64, 128, 128], [192, 128, 128],
+        #          [0, 64, 0], [128, 64, 0], [0, 192, 0], [128, 192, 0],
+        #          [0, 64, 128]])
+
+    def __init__(self,
+                 ann_file,
+                 img_suffix='.jpg',
+                 seg_map_suffix='.png',
+                 **kwargs) -> None:
+        super().__init__(
+            img_suffix=img_suffix,
+            seg_map_suffix=seg_map_suffix,
+            ann_file=ann_file,
+            **kwargs)
+        assert fileio.exists(self.data_prefix['img_path'],
+                             self.backend_args) and osp.isfile(self.ann_file)
+
+
+@DATASETS.register_module()
+class PascalPartDataset_2(BaseSegDataset):
+    """Pascal VOC dataset.
+
+    Args:
+        split (str): Split txt file for Pascal VOC.
+    """
+    METAINFO = dict(
+classes = (
+    'object 1', 'object 2', 'object 3', 'object 4', 'object 5', 
+    'object 6', 'object 7', 'object 8', 'object 9', 'object 10', 
+    'object 11', 'object 12', 'object 13', 'object 14', 'object 15', 
+    'object 16', 'object 17', 'object 18', 'object 19', 'object 20', 
+    'object 21', 'object 22', 'object 23', 'object 24', 'object 25', 
+    'object 26', 'object 27', 'object 28', 'object 29', 'object 30', 
+    'object 31', 'object 32', 'object 33', 'object 34', 'object 35', 
+    'object 36', 'object 37', 'object 38', 'object 39', 'object 40', 
+    'object 41', 'object 42', 'object 43', 'object 44', 'object 45', 
+    'object 46', 'object 47', 'object 48', 'object 49', 'object 50', 
+    'object 51', 'object 52', 'object 53', 'object 54','object 55',)) 
 
         # palette=[[0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
         #          [0, 0, 128], [128, 0, 128], [0, 128, 128], [128, 128, 128],

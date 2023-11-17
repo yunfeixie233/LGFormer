@@ -20,6 +20,8 @@ model = dict(
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
     seg_num_classes = 41,
+    vis_sp_id = True,
+    output_dir = '/data3/yunfei'
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
@@ -47,24 +49,9 @@ optim_wrapper = dict(
             'seg_norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
-            'stem':dict(lr_mult=0.1),
-            'sp_init':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.0':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),
-            'stages.0.sp_project':dict(lr_mult=0.1),
-            'stages.0.blocks':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.0':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
-            'stages.1.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
-            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),         
-            'stages.1.blocks':dict(lr_mult=0.1)},    
-        ))
+            'stages.0':dict(lr_mult=0.1),
+            'stages.1':dict(lr_mult=0.1),
+        }))
 
 param_scheduler = [
     dict(
@@ -78,7 +65,7 @@ param_scheduler = [
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=10)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
@@ -87,6 +74,6 @@ default_hooks = dict(
     param_scheduler=dict(type='ParamSchedulerHook'),
     checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
-    # visualization=dict(type='SegVisualizationHook',draw = True, interval = 1))
-    visualization=dict(type='SegVisualizationHook'))
+    visualization=dict(type='SegVisualizationHook',draw = True, interval = 1))
+
 find_unused_parameters=True
