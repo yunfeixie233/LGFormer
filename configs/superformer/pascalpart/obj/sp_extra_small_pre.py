@@ -1,11 +1,11 @@
 _base_ = [
     '../../../_base_/default_runtime.py', 
-    '../../../_base_/datasets/pascal_part.py',
+    '../../../_base_/datasets/pascal_obj.py',
     '../../superformer_baseline.py'
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
-seg_num_classes = 55
+seg_num_classes = 17
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(

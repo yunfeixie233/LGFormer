@@ -27,7 +27,6 @@ from .partimagenet import PartImagenetDataset
 from .partimagenet_part import PartImagenetDataset_part
 from .partimagenet_158 import PartImagenetDataset_158
 from .partimagenet_joint import PartImagenetDataset_joint
-from .voc import PascalPartDataset_2
 # yapf: disable
 from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
                          BioMedical3DRandomCrop, BioMedical3DRandomFlip,
@@ -41,7 +40,7 @@ from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
                          RandomMosaic, RandomRotate, RandomRotFlip, Rerange,
                          ResizeShortestEdge, ResizeToMultiple, RGB2Gray,
                          SegRescale)
-from .voc import PascalVOCDataset,PascalPartDataset,PascalPartDataset_2
+from .voc import PascalVOCDataset,PascalPartDataset,PascalPartDataset_2,PascalPartDataset_obj
 
 # yapf: enable
 __all__ = [
@@ -64,5 +63,5 @@ __all__ = [
     'LoadMultipleRSImageFromFile', 'LoadSingleRSImageFromFile',
     'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset',
     'PascalPartDataset','PartImagenetDataset','PartImagenetDataset_part',
-    'PartImagenetDataset_158','PartImagenetDataset_joint','PascalPartDataset_2'
+    'PartImagenetDataset_158','PartImagenetDataset_joint','PascalPartDataset_2','PascalPartDataset_obj'
 ]

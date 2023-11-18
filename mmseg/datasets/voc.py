@@ -121,3 +121,37 @@ classes = (
             **kwargs)
         assert fileio.exists(self.data_prefix['img_path'],
                              self.backend_args) and osp.isfile(self.ann_file)
+        
+@DATASETS.register_module()
+class PascalPartDataset_obj(BaseSegDataset):
+    """Pascal VOC dataset.
+
+    Args:
+        split (str): Split txt file for Pascal VOC.
+    """
+    METAINFO = dict(
+classes = (
+    'object 1', 'object 2', 'object 3', 'object 4', 'object 5', 
+    'object 6', 'object 7', 'object 8', 'object 9', 'object 10', 
+    'object 11', 'object 12', 'object 13', 'object 14', 'object 15', 
+    'object 16', 'object 17',)) 
+
+        # palette=[[0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
+        #          [0, 0, 128], [128, 0, 128], [0, 128, 128], [128, 128, 128],
+        #          [64, 0, 0], [192, 0, 0], [64, 128, 0], [192, 128, 0],
+        #          [64, 0, 128], [192, 0, 128], [64, 128, 128], [192, 128, 128],
+        #          [0, 64, 0], [128, 64, 0], [0, 192, 0], [128, 192, 0],
+        #          [0, 64, 128]])
+
+    def __init__(self,
+                 ann_file,
+                 img_suffix='.jpg',
+                 seg_map_suffix='.png',
+                 **kwargs) -> None:
+        super().__init__(
+            img_suffix=img_suffix,
+            seg_map_suffix=seg_map_suffix,
+            ann_file=ann_file,
+            **kwargs)
+        assert fileio.exists(self.data_prefix['img_path'],
+                             self.backend_args) and osp.isfile(self.ann_file)        

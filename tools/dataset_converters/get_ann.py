@@ -16,6 +16,6 @@ def save_image_names_to_file(folder_path, output_file):
                 file.write(os.path.splitext(filename)[0] + '\n')
 
 # 使用示例
-folder_path = '/data2/yunfei/SpformerV1/data/VOCdevkit/VOC2010/part_annotations/val'  # 替换为你的图片文件夹路径
-output_file = '/data2/yunfei/SpformerV1/data/VOCdevkit/VOC2010/part_annotations/val.txt'            # 输出文件的名称
+folder_path = '/data3/yunfei/SpformerV1/data/VOCdevkit/VOC2010/part_annotations/train_whole'  # 替换为你的图片文件夹路径
+output_file = '/data3/yunfei/SpformerV1/data/VOCdevkit/VOC2010/part_annotations/train_whole.txt'            # 输出文件的名称
 save_image_names_to_file(folder_path, output_file)
