@@ -1392,10 +1392,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         **kwargs
 
     ):
+        if classification_feature == 'joint_extralayer':
+            out_channels = part_seg_num_classes
+        else:
+            out_channels=seg_num_classes
         super().__init__(in_channels=3,
         channels=256,
-        num_classes=seg_num_classes,
-        out_channels=seg_num_classes,
+        num_classes=out_channels,
+        out_channels=out_channels,
         in_index=0,
         use_gt_cls = use_gt_cls,
 **kwargs)
