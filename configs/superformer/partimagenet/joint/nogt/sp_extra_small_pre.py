@@ -1,6 +1,6 @@
 _base_ = [
     '../../../../_base_/default_runtime.py', 
-    '../../../../_base_/datasets/partimagenet_object.py',
+    '../../../../_base_/datasets/partimagenet_joint.py',
     '../../../superformer_baseline.py'
 ]
 crop_size = (512, 512)
@@ -19,10 +19,12 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    seg_num_classes = 12,
+    part_seg_num_classes = 41,
+    obj_seg_num_classes = 159,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
-
+accumulative_counts = 2
+total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
@@ -30,6 +32,7 @@ optim_wrapper = dict(
     lr=0.0002,
     betas=(0.9, 0.999),
     weight_decay=0.05),
+    accumulative_counts=accumulative_counts,    
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -44,11 +47,25 @@ optim_wrapper = dict(
             'seg_norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
-            'stages.0':dict(lr_mult=0.1),
-            'stages.1':dict(lr_mult=0.1),
-        }))
+            'stem':dict(lr_mult=0.1),
+            'sp_init':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.0':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),
+            'stages.0.sp_project':dict(lr_mult=0.1),
+            'stages.0.blocks':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.0':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),         
+            'stages.1.blocks':dict(lr_mult=0.1)},    
+        ))
 
-total_iter = 50000
 param_scheduler = [
     dict(
             type='MultiStepLR',
@@ -61,16 +78,15 @@ param_scheduler = [
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=500)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=500),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=1000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
-    visualization=dict(type='SegVisualizationHook', draw=True,interval=1))
-
+    visualization=dict(type='SegVisualizationHook'))
 
 find_unused_parameters=True

@@ -34,6 +34,8 @@ from ..utils import PatchEmbed, resize
 from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 writer = SummaryWriter()
+GROUP_PALETTE = np.loadtxt('mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
+
 import time
 import os
 import h5py
@@ -81,8 +83,8 @@ def read_ground_truth(folder_path, counter):
     else:
         print(f"No file found for counter {counter}")
         return None
-
-def intersect_and_union(pred_regions, gt_regions, ignore_index=255):
+bg_class = 40
+def intersect_and_union(pred_regions, gt_regions, ignore_index=bg_class):
     mask = (gt_regions != ignore_index)
     pred_regions = pred_regions[mask]
     gt_regions = gt_regions[mask]
@@ -94,33 +96,80 @@ def intersect_and_union(pred_regions, gt_regions, ignore_index=255):
 
     return np.sum(area_intersect), np.sum(area_union), np.sum(area_pred), np.sum(area_gt)
 
-def process_regions(regions, ground_truth, top_k=5):
+# def intersect_and_union(pred_label: torch.tensor, label: torch.tensor,
+#                         num_classes: int, ignore_index: int):
+#     """Calculate Intersection and Union.
+
+#     Args:
+#         pred_label (torch.tensor): Prediction segmentation map
+#             or predict result filename. The shape is (H, W).
+#         label (torch.tensor): Ground truth segmentation map
+#             or label filename. The shape is (H, W).
+#         num_classes (int): Number of categories.
+#         ignore_index (int): Index that will be ignored in evaluation.
+
+#     Returns:
+#         torch.Tensor: The intersection of prediction and ground truth
+#             histogram on all classes.
+#         torch.Tensor: The union of prediction and ground truth histogram on
+#             all classes.
+#         torch.Tensor: The prediction histogram on all classes.
+#         torch.Tensor: The ground truth histogram on all classes.
+#     """
+
+#     mask = (label != ignore_index)
+#     pred_label = pred_label[mask]
+#     label = label[mask]
+
+#     intersect = pred_label[pred_label == label]
+#     area_intersect = torch.histc(
+#         intersect.float(), bins=(num_classes), min=0,
+#         max=num_classes - 1).cpu()
+#     area_pred_label = torch.histc(
+#         pred_label.float(), bins=(num_classes), min=0,
+#         max=num_classes - 1).cpu()
+#     area_label = torch.histc(
+#         label.float(), bins=(num_classes), min=0,
+#         max=num_classes - 1).cpu()
+#     area_union = area_pred_label + area_label - area_intersect
+#     return area_intersect, area_union, area_pred_label, area_label
+
+
+def process_regions(regions, ground_truth, top_k=10):
     if regions.shape != ground_truth.shape:
         ground_truth = pad_ground_truth(ground_truth, regions.shape)
-    new_regions = np.full(ground_truth.shape, 158)  # 初始化为背景类
+    new_regions = np.full(ground_truth.shape, bg_class)  # Initialize as background class
     unique_classes = np.unique(ground_truth)
     print(unique_classes)
     for class_id in unique_classes:
-        if class_id == 158:  # 跳过背景
+        if class_id == bg_class:  # Skip background
             continue
 
         class_mask = ground_truth == class_id
         overlap_iou = []
-
         for region_id in np.unique(regions):
             region_mask = regions == region_id
             intersect = np.logical_and(region_mask, class_mask)
             union = np.logical_or(region_mask, class_mask)
-            if np.any(intersect):
+
+            # Check for complete containment
+            if np.all(region_mask == intersect):
+                new_regions[region_mask] = class_id
+            elif np.any(intersect):
+                # Calculate IoU for partial overlap
                 iou = np.sum(intersect) / np.sum(union)
+                
                 overlap_iou.append((region_id, iou))
 
-        # 选择top k个IoU的region
+        # Select top k regions based on IoU
         top_regions = sorted(overlap_iou, key=lambda x: x[1], reverse=True)[:top_k]
         for region_id, _ in top_regions:
             new_regions[regions == region_id] = class_id
 
-    return new_regions,ground_truth
+    return new_regions, ground_truth
+
+
+    # return torch.tensor(new_regions),torch.tensor(ground_truth)
 def visualize_regions(regions, file_path):
     # 可视化并保存regions
     plt.imshow(regions, cmap=plt.cm.nipy_spectral)
@@ -1873,7 +1922,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             self.forward_counter = 0
             self.log_interval = log_interval
         self.return_mid_sp = return_mid_sp
-        self.return_mid_pixel = return_mid_pixel        
+        self.return_mid_pixel = return_mid_pixel      
+        if self.vis_gt:
+            self.total_iou = 0. 
+            self.forward_counter = 0
+        elif self.vis_sp_id:
+            self.total_iou = 0. 
+            self.forward_counter = 0
+            self.sp_counter = 0                
+        else:
+            self.forward_counter = None
     def init_weights(self, mode=""):
         assert mode in (
             "jax",
@@ -2896,7 +2954,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         elif self.classification_feature == "group_extralayer": 
             # final output
             final_group_logits = None
-            # only ose final group for classification
+            # only use final group for classification
             if self.use_final_group_cls:
                 gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
                                     h = h_g, 
@@ -2971,23 +3029,47 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             ret['seg'] = final_group_logits
             return ret
         elif self.classification_feature == 'joint_extralayer':
-            if self.use_gt_fuse:
-                if self.use_final_group:
-                    sp_feature = sp_feature + final_gt
+        #firstly use group token to get object segment
+        #implementation is same with "group_extralayer"
+            # final output
+            final_group_logits = None
+            # only use final group for classification
+            if self.use_final_group_cls:
+                gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
+                                    h = h_g, 
+                                    w = w_g)   
+                info, _, _ = last_sp_layer(pixel_feature, gt_2d)
+                if self.vis_sp_id:
+                    self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                    
+                if self.vis_spgt:
+                    self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
+
+                if info is None:
+                    raise ValueError()
+                if self.resize_similarity:
+                    scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
                 else:
-                    sp_feature = sp_feature + gt_list[-1]
-                sp_feature = self.group_fuse_conv(rearrange(sp_feature,
-                          'b (h w) c -> b c h w',
-                          h = sh, w = sw))
-                sp_feature = rearrange(sp_feature,
-                          'b c h w -> b (h w) c')
-            # if self.use_pixel_fuse:
-            #     sp_feature = rearrange(sp_feature,
-            #               'b (h w) c -> b c h w',
-            #               h = sh, w = sw)
-            #     sp_feature = self.pixel_fuse_conv(sp_feature + self.pixel_projection(pixel_feature))
-            #     sp_feature = rearrange(sp_feature,
-            #               'b c h w -> b (h w) c')                
+                    scale_factor = 1
+                similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                similarities = prepare_similarities(
+                    last_sp_layer,
+                    similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                    scale_factor=scale_factor,
+                    resize_version = self.resize_version
+                )
+                similarities = similarities.softmax(1)
+                similarities = einops.rearrange(
+                    similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                )
+                final_group_logits =superpixel_ops.expand_superpixel_features(
+                    gt_logits, similarities
+                )
+            else:
+                raise(NotImplementedError)  
+        #then use superpixel to get part segment
+        #implementation is same with "superpixel_extralayer"
+                  
             x_2d = einops.rearrange(sp_feature,
                         'b (h w) c -> b c h w',
                         h = sh, w = sw)
@@ -3000,14 +3082,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                  
             if self.vis_spgt:
                 self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
-                
-
-                
-                
             sp_feature = self.seg_norm(sp_feature)
             b, num, c = sp_feature.shape
             sp_feature = sp_feature.reshape(b * num, c)
-
             sp_logits = self.seg_head(sp_feature)
             sp_logits = sp_logits.view(b, sh, sw, -1).permute(0, 3, 1, 2)
 
@@ -3048,87 +3125,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-            if self.use_gt_loss:
-                if self.use_final_group:    
-                    if self.use_gt_extralayer:
-                        if self.resize_similarity:
-                            scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                        else:
-                            scale_factor = 1                
-                        gt_layer = self.gt_stages.patch_embed
-                        gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
-                                        h = h_g,
-                                        w = w_g) 
-                        if pixel_features_mid is not None:
-                        #we will use pixel_features_mid to get similarity by default if exists     
-                            info_gt, _, _ = gt_layer(pixel_features_mid,gt_2d)
-                        else:
-                            info_gt, _, _ = gt_layer(pixel_feature,gt_2d)
-                        del(_)
-                        similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
-                        similarities_gt = prepare_similarities(
-                            gt_layer,
-                            similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
-                            scale_factor=scale_factor,
-                        )
-                        similarities_gt = similarities_gt.softmax(1)
-                        similarities_gt = einops.rearrange(
-                            similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
-                        )
-                    else:
-                        similarities_gt = similarities
-                    gt_logits =superpixel_ops.expand_superpixel_features(
-                        gt_logits, similarities_gt
-                    )
-                else:
-                    final_gt_logits = None
-                    for i, (gt, gt_logits) in enumerate(zip(gt_list, gt_logits_list)):                
-                        if self.use_gt_extralayer:
-                            if self.resize_similarity:
-                                scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                            else:
-                                scale_factor = 1                
-                            gt_layer = self.gt_stages.patch_embed
-                            gt_2d = rearrange(gt,'b (h w) c -> b c h w',
-                                            h = h_g,
-                                            w = w_g) 
-                            if pixel_features_mid is not None:
-                            #we will use pixel_features_mid to get similarity by default if exists     
-                                info_gt, _, _ = gt_layer(pixel_features_mid,gt_2d)
-                            else:
-                                info_gt, _, _ = gt_layer(pixel_feature,gt_2d)                                            
-
-                            del(_)
-                            similarities_gt = st.get_final_similarity(info_gt, gt_layer.num_blocks,merge= False)
-                            similarities_gt = prepare_similarities(
-                                gt_layer,
-                                similarities_gt,  # pyright: ignore [reportGeneralTypeIssues]
-                                scale_factor=scale_factor,
-                            )
-                            similarities_gt = similarities_gt.softmax(1)
-                            similarities_gt = einops.rearrange(
-                                similarities_gt, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
-                            )
-                        else:
-                            similarities_gt = similarities
-                        gt_logits =superpixel_ops.expand_superpixel_features(
-                            gt_logits, similarities_gt
-                        )
-                        if final_gt_logits == None:
-                            final_gt_logits = gt_logits
-                        else:
-                            final_gt_logits += gt_logits
-                    # ret['seg'] = pixel_logits                    
-                    # ret['gt'] = final_gt_logits/len(gt_list)
-                    ret['seg'] = final_gt_logits/len(gt_list)
-                    return ret 
-            else:
-                gt_logits = None    
-            ret['seg'] = pixel_logits
-            ret['gt'] = gt_logits
-            # ret['seg'] = gt_logits
-           
-            return ret                
+                ret['seg'] = pixel_logits                    
+                ret['gt'] = final_group_logits
+                
+                return ret 
             
         else:
             raise(NotImplementedError)
@@ -3207,6 +3207,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
     ) -> Union[torch.Tensor, MutableMapping[str, torch.Tensor]]:
         #visualize reweight
+        if self.forward_counter is not None:
+            self.forward_counter +=1
         if self.log_reweight:
             self.forward_counter += 1
             if self.forward_counter % self.log_interval == 0 and dist.get_rank() == 0 and self.training:
@@ -3321,9 +3323,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             similarities = prepare_similarities(
                 patch_embed, similarities, scale_factor, merge_multihead_similarities=True
             )
-            labels = superpixel_ops.compute_hard_association(similarities).cpu()
+            labels = superpixel_ops.compute_hard_association(similarities).cpu().numpy()
+            
             vis = colormap[labels % colormap.size(0)]
             res[key] = vis
+            res[f'group_{key}'] = labels
         return res
     def visualize_spgt(self, img, sp_shape, attn_dict_list, info, soft = True):
         import os.path as osp
@@ -3494,7 +3498,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         from PIL import Image
         import os
         out_file = osp.join(self.output_dir, 'vis_sp', f'sp.jpg')  
- 
+    
         img = img.detach()
         _, _, ih, iw = img.shape
 
@@ -3503,7 +3507,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         img = img* torch.tensor(std).reshape(1, 3, 1, 1).cuda() + torch.tensor(mean).reshape(1, 3, 1, 1).cuda()
         img = img.cpu().numpy()
         im_image = Image.fromarray(img.squeeze().transpose(1, 2, 0).astype(np.uint8))
-        
+        vis = False
         if info:
             res = {}
             patch_embed = self.stages[-1].patch_embed
@@ -3524,27 +3528,62 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 raise ValueError()
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
+            
             for key, val in res.items():
-                
+                if 'group' in key:
+                    # merge_region = True
+                    # if merge_region:
+                    #     import mmcv
+                    #     ground_truth = read_ground_truth('data/PartImageNet/annotations/test', self.forward_counter -1)
+                    #     ground_truth = mmcv.imresize(
+                    #         ground_truth,
+                    #         np.squeeze(val).shape,
+                    #         interpolation = 'nearest'
+                    #         )
+                    #     processed_regions,ground_truth = process_regions(regions = np.squeeze(val), ground_truth = ground_truth,top_k = 2)
+                        
+                    #     area_intersect, area_union, area_pred_label, area_label = intersect_and_union(processed_regions, ground_truth,) 
+                    #     iou = area_intersect / area_union if area_union != 0 else 0
+                    #     print(f"pre IoU: {iou:.3f}_{key}_{self.forward_counter}") 
+                    #     self.total_iou += iou
+                    #     print(f"Total IoU: {self.total_iou/ self.sp_counter:.3f}") 
+                    #     self.sp_counter +=1 
+                    #     if vis:
+                    #         merge_out_file = f"{base_name}_{self.forward_counter}_vis_{key}_merge{file_ext}"
+                                                                                                
+                    #         self.blend_result(
+                    #         img=img.transpose(0, 2, 3, 1),
+                    #         result=processed_regions[np.newaxis,:],
+                    #         palette=GROUP_PALETTE,
+                    #         out_file=merge_out_file,
+                    #         opacity=0.5)
+                    #         gt_out_file = f"{base_name}_{self.forward_counter}_gt_{file_ext}"
+                    #         self.blend_result(
+                    #             img=img.transpose(0, 2, 3, 1),
+                    #             result=ground_truth[np.newaxis,:],
+                    #             palette=GROUP_PALETTE,
+                    #             out_file=gt_out_file,
+                    #             opacity=0.5)
+                    continue
+                elif vis:
+                    im = val.squeeze().numpy().astype(np.uint8)
 
-                im = val.squeeze().numpy().astype(np.uint8)
-
-                resize_output = not resize_similarities or im.shape[0] != ih
-                im = Image.fromarray(im)
-                if resize_output:
-                    print('resize_output')
-                    im = im.resize((iw, ih), Image.Resampling.NEAREST)
-                    
-                alpha = 0.3
-                im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
-                im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
-                while osp.exists(f"{base_name}_{counter}_vis_{key}_{file_ext}"):
-                    counter += 1
-                img_out_file = f"{base_name}_{counter}_vis_{key}_{file_ext}"
-                directory, _ = os.path.split(img_out_file)
-                if not os.path.exists(directory):
-                    os.makedirs(directory)  # 创建目录
-                im_alpha.save(img_out_file)
+                    resize_output = not resize_similarities or im.shape[0] != ih
+                    im = Image.fromarray(im)
+                    if resize_output:
+                        print('resize_output')
+                        im = im.resize((iw, ih), Image.Resampling.NEAREST)
+                        
+                    alpha = 0.3
+                    im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
+                    im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
+                    while osp.exists(f"{base_name}_{counter}_vis_{key}_{file_ext}"):
+                        counter += 1
+                    img_out_file = f"{base_name}_{counter}_vis_{key}_{file_ext}"
+                    directory, _ = os.path.split(img_out_file)
+                    if not os.path.exists(directory):
+                        os.makedirs(directory)  # 创建目录
+                    im_alpha.save(img_out_file)
         else:
             res = {}
             for i, stage in enumerate(self.stages):
@@ -3561,25 +3600,63 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             counter = 0
             base_name, file_ext = osp.splitext(out_file)
             for key, val in res.items():
+                if 'group' in key:
+                    if key == 'stage1_group_similarities_sp_2':
+                        merge_region = True
+                        if merge_region:
+                            import mmcv
+                            ground_truth = read_ground_truth('data/PartImageNet/annotations/test', self.forward_counter -1)
+                            ground_truth = mmcv.imresize(
+                                ground_truth,
+                                np.squeeze(val).shape,
+                                interpolation = 'nearest'
+                                )
+                            processed_regions,ground_truth = process_regions(regions = np.squeeze(val), ground_truth = ground_truth,top_k = 4)
+                            
+                            area_intersect, area_union, area_pred_label, area_label = intersect_and_union(processed_regions, ground_truth,) 
+                            iou = area_intersect / area_union if area_union != 0 else 0
+                            print(f"pre IoU: {iou:.3f}_{key}_{self.forward_counter}") 
+                            self.total_iou += iou
+                            print(f"Total IoU: {self.total_iou/ self.sp_counter:.3f}") 
+                            self.sp_counter +=1 
+                            if vis:
+                                merge_out_file = f"{base_name}_{self.forward_counter}_vis_{i}_{key}_merge{file_ext}"
+                                                    
+                                self.blend_result(
+                                img=img.transpose(0, 2, 3, 1),
+                                result=processed_regions[np.newaxis,:],
+                                palette=GROUP_PALETTE,
+                                out_file=merge_out_file,
+                                opacity=0.5)
+                                gt_out_file = f"{base_name}_{self.forward_counter}_gt_{file_ext}"
+                                self.blend_result(
+                                    img=img.transpose(0, 2, 3, 1),
+                                    result=ground_truth[np.newaxis,:],
+                                    palette=GROUP_PALETTE,
+                                    out_file=gt_out_file,
+                                    opacity=0.5)
+                            
+                    else:
+                        continue
+                elif vis:
+                    im = val.squeeze().numpy().astype(np.uint8)
 
-                im = val.squeeze().numpy().astype(np.uint8)
-
-                resize_output = not resize_similarities or im.shape[0] != ih
-                im = Image.fromarray(im)
-                if resize_output:
-                    print('resize_output')
-                    im = im.resize((iw, ih), Image.Resampling.NEAREST)
-                    
-                alpha = 0.3 
-                im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
-                im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
-                while osp.exists(f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"):
-                    counter += 1
-                img_out_file = f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"
-                directory, _ = os.path.split(img_out_file)
-                if not os.path.exists(directory):
-                    os.makedirs(directory)  # 创建目录
-                im_alpha.save(img_out_file)
+                    resize_output = not resize_similarities or im.shape[0] != ih
+                    im = Image.fromarray(im)
+                    if resize_output:
+                        print('resize_output')
+                        im = im.resize((iw, ih), Image.Resampling.NEAREST)
+                        
+                    alpha = 0.3 
+                    im_alpha = np.array(im_image, dtype=np.float32) * alpha + np.array(im, dtype=np.float32) * (1 - alpha)
+                    im_alpha = Image.fromarray(im_alpha.astype(np.uint8))
+                    while osp.exists(f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"):
+                        counter += 1
+                    img_out_file = f"{base_name}_{counter}_vis_{i}_{key}_{file_ext}"
+                    directory, _ = os.path.split(img_out_file)
+                    if not os.path.exists(directory):
+                        os.makedirs(directory)  # 创建目录
+                    im_alpha.save(img_out_file)
 
     def blend_result(self, img, result, palette=None, out_file=None, opacity=0.5, with_bg=False):
         import mmcv
@@ -3767,66 +3844,68 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             attn_map = F.interpolate(
                 attn_map, size=img.shape[2:], mode='bilinear', align_corners=self.align_corners)
             group_result = attn_map.argmax(dim=1).cpu().numpy()
-            counter = 0
+            counter = self.forward_counter
             base_name, file_ext = osp.splitext(out_file)
             layer_idx = i            
-            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"):
-                counter += 1                        
+            # while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"):
+            #     counter += 1                        
             merge_region = True
             if merge_region:
                 import mmcv
-                ground_truth = read_ground_truth('/root/autodl-tmp/SpformerV1/data/PartImageNet/annotations/test_whole', counter)
+                ground_truth = read_ground_truth('data/PartImageNet/annotations/test', counter)
                 ground_truth = mmcv.imresize(
                     ground_truth,
                     np.squeeze(group_result).shape,
                     interpolation = 'nearest'
                     )
-                processed_regions,ground_truth = process_regions(regions = np.squeeze(group_result), ground_truth = ground_truth)
+                processed_regions,ground_truth = process_regions(regions = np.squeeze(group_result), ground_truth = ground_truth,top_k = 1)
                 
-                area_intersect, area_union, _, _ = intersect_and_union(processed_regions, ground_truth) 
+                area_intersect, area_union, area_pred_label, area_label = intersect_and_union(processed_regions, ground_truth,) 
                 iou = area_intersect / area_union if area_union != 0 else 0
-                print(f"Total IoU: {iou:.3f}")   
-                
+                print(f"pre IoU: {iou:.3f}") 
+
+                self.total_iou += iou
+                print(f"Total IoU: {self.total_iou/ self.forward_counter:.3f}") 
                 # visualize_regions(processed_regions,file_path = self.output_dir)                        
             # group_result = self.merge_regions(group_result.squeeze(),attn_map.shape[1]).unsqueeze(0)
+            vis = True
+            if vis:
+            # if self.forward_counter % 10 ==0:
+                head = i % 6
+                while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
+                    counter += 1
 
- 
-            # head = i % 6
-            # while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"):
-            #     counter += 1
+                layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
+                while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"):
+                    counter += 1
 
-            # layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_head{head}_{file_ext}"
-            while osp.exists(f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"):
-                counter += 1
-
-            layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"
-            
-            GROUP_PALETTE = np.loadtxt('mmseg/superformer/group_palette.txt', dtype=np.uint8)[:, ::-1]
-            uni = np.unique(group_result)
-            self.blend_result(
-                img=img.transpose(0, 2, 3, 1),
-                result=group_result,
-                palette=GROUP_PALETTE,
-                out_file=layer_out_file,
-                opacity=0.5)
-                # opacity=1.0)
-            merge_out_file = f"{base_name}_{counter}_merge{layer_idx}_{file_ext}"
-            self.blend_result(
-                img=img.transpose(0, 2, 3, 1),
-                result=processed_regions[np.newaxis,:],
-                palette=GROUP_PALETTE,
-                out_file=merge_out_file,
-                opacity=0.5)
-                # opacity=1.0)    
-            gt_out_file = f"{base_name}_{counter}_gt{layer_idx}_{file_ext}"
-            self.blend_result(
-                img=img.transpose(0, 2, 3, 1),
-                result=ground_truth[np.newaxis,:],
-                palette=GROUP_PALETTE,
-                out_file=gt_out_file,
-                opacity=0.5)
-                # opacity=1.0)    
-            
+                layer_out_file = f"{base_name}_{counter}_layer{layer_idx}_{file_ext}"
+                
+                uni = np.unique(group_result)
+                self.blend_result(
+                    img=img.transpose(0, 2, 3, 1),
+                    result=group_result,
+                    palette=GROUP_PALETTE,
+                    out_file=layer_out_file,
+                    opacity=0.5)
+                    # opacity=1.0)
+                merge_out_file = f"{base_name}_{counter}_merge{layer_idx}_{file_ext}"
+                self.blend_result(
+                    img=img.transpose(0, 2, 3, 1),
+                    result=processed_regions[np.newaxis,:],
+                    palette=GROUP_PALETTE,
+                    out_file=merge_out_file,
+                    opacity=0.5)
+                    # opacity=1.0)    
+                gt_out_file = f"{base_name}_{counter}_gt{layer_idx}_{file_ext}"
+                self.blend_result(
+                    img=img.transpose(0, 2, 3, 1),
+                    result=ground_truth[np.newaxis,:],
+                    palette=GROUP_PALETTE,
+                    out_file=gt_out_file,
+                    opacity=0.5)
+                    # opacity=1.0)    
+                
                         
 
 @register_model

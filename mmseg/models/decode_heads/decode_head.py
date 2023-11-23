@@ -680,6 +680,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         if isinstance(seg_label,tuple):    
         # compute loss jointly        
             obj_label, part_label = seg_label
+                   
             loss = dict()
             if not isinstance(self.loss_decode, nn.ModuleList):
                 losses_decode = [self.loss_decode]

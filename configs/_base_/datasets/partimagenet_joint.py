@@ -41,7 +41,7 @@ tta_pipeline = [
         ])
 ]
 train_dataloader = dict(
-    batch_size=4,
+    batch_size=8,
     num_workers=16,
     persistent_workers=True,
     sampler=dict(type='InfiniteSampler', shuffle=True),
@@ -80,6 +80,6 @@ test_dataloader =val_dataloader = dict(
             obj_map_path='annotations/test_whole',),
         pipeline=test_pipeline))
 
-val_evaluator = dict(type='IoUMetric', iou_metrics=['mIoU','mIoU'],)
+val_evaluator = dict(type='IoUMetric', iou_metrics=['mIoU'],)
 
 test_evaluator = val_evaluator
