@@ -9,7 +9,7 @@ model = dict(
     group_init_strides = (4,4,4,),
     group_init_kernel_sizes = (4,4,4,),
     group_layers = {0:64,1:64,2:64},   
-    group_token_init_method = ('avgpool','avgpool','avgpool',), 
+    group_token_init_method = ('avgpool','from_feature','from_feature',), 
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=0.7,reduction='mean',),
