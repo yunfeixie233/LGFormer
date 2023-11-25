@@ -5,6 +5,7 @@ _base_ = [
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
+num_classes = 158
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
@@ -19,7 +20,7 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    seg_num_classes = 159,
+    seg_num_classes = num_classes,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 accumulative_counts = 2

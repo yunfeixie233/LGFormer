@@ -1403,7 +1403,7 @@ class SuperformerBottleNeck_ori_mask(MaskFormerHead):
           num_queries = list(group_layers.values())[-1],           
           feat_channels =  group_embed_dims,
           out_channels =  group_embed_dims,
-          num_classes =  seg_num_classes - 1,
+          num_classes =  seg_num_classes,
                   
 **kwargs)
         self.use_global_token = use_global_token

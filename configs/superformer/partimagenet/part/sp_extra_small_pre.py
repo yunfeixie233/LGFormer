@@ -5,6 +5,7 @@ _base_ = [
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
+num_classes = 40 # do not include background
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
@@ -19,7 +20,7 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    seg_num_classes = 41,
+    seg_num_classes = num_classes,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
@@ -78,7 +79,7 @@ param_scheduler = [
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
