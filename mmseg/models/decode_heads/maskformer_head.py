@@ -44,7 +44,7 @@ class MaskFormerHead(MMDET_MaskFormerHead):
         self.align_corners = True
         self.num_classes = num_classes
         self.align_corners = align_corners
-        self.out_channels = num_classes
+        self.out_channels = num_classes + 1
         self.ignore_index = ignore_index
 
         feat_channels = kwargs['feat_channels']
@@ -168,7 +168,8 @@ class MaskFormerHead(MMDET_MaskFormerHead):
             align_corners=False)
 
         # semantic inference
-        cls_score = F.softmax(mask_cls_results, dim=-1)[..., :-1]
+        # cls_score = F.softmax(mask_cls_results, dim=-1)[..., :-1]
+        cls_score = F.softmax(mask_cls_results, dim=-1)
         mask_pred = mask_pred_results.sigmoid()
         seg_logits = torch.einsum('bqc,bqhw->bchw', cls_score, mask_pred)
         return seg_logits
