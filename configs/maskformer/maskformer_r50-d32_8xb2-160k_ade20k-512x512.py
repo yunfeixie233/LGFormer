@@ -113,29 +113,3 @@ model = dict(
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
 )
-# optimizer
-optimizer = dict(
-    type='AdamW', lr=0.0001, betas=(0.9, 0.999), weight_decay=0.0001)
-optim_wrapper = dict(
-    _delete_=True,
-    type='OptimWrapper',
-    optimizer=optimizer,
-    clip_grad=dict(max_norm=0.01, norm_type=2),
-    paramwise_cfg=dict(custom_keys={
-        'backbone': dict(lr_mult=0.1),
-    }))
-# learning policy
-param_scheduler = [
-    dict(
-        type='PolyLR',
-        eta_min=0,
-        power=0.9,
-        begin=0,
-        end=160000,
-        by_epoch=False)
-]
-
-# In MaskFormer implementation we use batch size 2 per GPU as default
-train_dataloader = dict(batch_size=2, num_workers=2)
-val_dataloader = dict(batch_size=1, num_workers=4)
-test_dataloader = val_dataloader
