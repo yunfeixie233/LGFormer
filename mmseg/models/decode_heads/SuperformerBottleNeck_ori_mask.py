@@ -2234,12 +2234,7 @@ class SuperformerBottleNeck_ori_mask(MaskFormerHead):
         mask_embed = self.mask_embed(final_group)
         sp_feature = einops.rearrange(sp_feature,
                     'b (h w) c -> b c h w',
-                    h = sh, w = sw)        
-        all_mask_preds = torch.einsum('bqc,bchw->bqhw', mask_embed,
-                                      sp_feature) 
-
-
-
+                    h = sh, w = sw)      
         info, _, _ = last_sp_layer(pixel_feature,sp_feature)
         
         pixel_logits = None
@@ -2252,7 +2247,7 @@ class SuperformerBottleNeck_ori_mask(MaskFormerHead):
                 # if self.resize_similarity:
                 #     scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
                 # else:
-                scale_factor = 1
+                scale_factor = 2
                 # raise NotImplementedError(
                 #     "TODO(meijier): use pixel similarities & not merge"
                 # )
@@ -2272,11 +2267,17 @@ class SuperformerBottleNeck_ori_mask(MaskFormerHead):
                 if vis_sim:
                     to_h5(self.output_dir,max_file_per_fold=20,max_keys_per_file=1,similarities = similarities)
                 
-                all_mask_preds = superpixel_ops.expand_superpixel_features(
-                    all_mask_preds, similarities
+                sp_feature = superpixel_ops.expand_superpixel_features(
+                    sp_feature, similarities
                 )
             else:
-                raise ValueError()
+                raise ValueError()          
+        all_mask_preds = torch.einsum('bqc,bchw->bqhw', mask_embed,
+                                      sp_feature) 
+
+
+
+
         
         
 
