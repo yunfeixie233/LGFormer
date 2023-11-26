@@ -214,9 +214,6 @@ class EncoderDecoder(BaseSegmentor):
                     pad_shape=inputs.shape[2:],
                     padding_size=[0, 0, 0, 0])
             ] * inputs.shape[0]
-        merge = False
-        if merge:
-            batch_img_metas[0]['gt'] = data_samples[0].gt_sem_seg.data
         seg_logits = self.inference(inputs, batch_img_metas)
 
         return self.postprocess_result(seg_logits, data_samples)
@@ -267,10 +264,7 @@ class EncoderDecoder(BaseSegmentor):
         w_grids = max(w_img - w_crop + w_stride - 1, 0) // w_stride + 1
         preds = inputs.new_zeros((batch_size, out_channels, h_img, w_img))
         count_mat = inputs.new_zeros((batch_size, 1, h_img, w_img))
-        merge = False  
-        #for eval object
-        if merge == True:
-            gt = mmcv.imread( batch_img_metas[0]['seg_map_path'])
+
         for h_idx in range(h_grids):
             for w_idx in range(w_grids):
                 y1 = h_idx * h_stride

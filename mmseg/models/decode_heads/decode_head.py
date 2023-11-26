@@ -432,6 +432,9 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                  *,
                  num_classes,
                  out_channels=None,
+                 out_channels_part = None,
+                 out_channels_obj = None,
+                 both_pred = False,
                  threshold=None,
                  dropout_ratio=0.1,
                  conv_cfg=None,
@@ -460,7 +463,9 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
 
         self.ignore_index = ignore_index
         self.align_corners = align_corners
-        
+        self.out_channels_part = out_channels_part
+        self.out_channels_obj = out_channels_obj
+        self.both_pred = both_pred  
         if out_channels is None:
             if num_classes == 2:
                 warnings.warn('For binary segmentation, we suggest using'
@@ -628,17 +633,13 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             ret = self.forward(inputs,ground_truth = batch_img_metas[0]['gt'].squeeze().cpu().numpy())
         else:
             ret = self.forward(inputs)
-        seg_logits = ret['seg']
-         
-        # if self.use_gt_cls:
-        # #     seg_logits = ret['gt']
-        # # else:
-        #     seg_logits = ret['seg']               
-        #     gt_logits = ret['gt']
-        #     if gt_logits.shape != seg_logits.shape:
-        #         import torch.nn.functional as F                
-        #         gt_logits = F.interpolate(gt_logits,size=seg_logits.shape[2:],mode='bilinear')
-        #     seg_logits = seg_logits + gt_logits
+        if self.both_pred != True:
+            seg_logits = ret['seg']
+        else:
+            seg_logits = dict()
+            seg_logits['part'] = ret['seg']
+            seg_logits['obj'] = ret['gt']
+        
         return self.predict_by_feat(seg_logits, batch_img_metas)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
@@ -766,10 +767,17 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             Tensor: Outputs segmentation logits map.
         """
-
-        seg_logits = resize(
-            input=seg_logits,
+        if isinstance(seg_logits, dict):
+            for key, val in seg_logits.items():
+                seg_logits[key] =  resize(
+            input=val,
             size=batch_img_metas[0]['img_shape'],
             mode='bilinear',
             align_corners=self.align_corners)
+        else:
+            seg_logits = resize(
+                input=seg_logits,
+                size=batch_img_metas[0]['img_shape'],
+                mode='bilinear',
+                align_corners=self.align_corners)
         return seg_logits

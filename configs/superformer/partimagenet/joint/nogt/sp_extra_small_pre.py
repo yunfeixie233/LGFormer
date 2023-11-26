@@ -19,8 +19,8 @@ model = dict(
     sp_heads=(2,2,1,),
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
-    part_seg_num_classes = 41,
-    obj_seg_num_classes = 159,
+    seg_num_classes_part = 41,
+    seg_num_classes_obj = 159,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 accumulative_counts = 2
@@ -78,7 +78,7 @@ param_scheduler = [
     )
 ]
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
@@ -90,3 +90,5 @@ default_hooks = dict(
     visualization=dict(type='SegVisualizationHook'))
 
 find_unused_parameters=True
+val_evaluator = [dict(type='IoUMetricPart', iou_metrics=['mIoU'],prefix = 'part'),dict(type='IoUMetricObj', iou_metrics=['mIoU'],prefix = 'obj')]
+test_evaluator = val_evaluator
