@@ -90,3 +90,51 @@ class SegDataSample(BaseDataElement):
     @seg_logits.deleter
     def seg_logits(self) -> None:
         del self._seg_logits
+        
+    @property
+    def seg_logits_part(self) -> PixelData:
+        return self._seg_logits_part
+
+    @seg_logits.setter
+    def seg_logits_part(self, value: PixelData) -> None:
+        self.set_field(value, '_seg_logits_part', dtype=PixelData)
+
+    @seg_logits.deleter
+    def seg_logits_part(self) -> None:
+        del self._seg_logits_part
+        
+    @property
+    def seg_logits_obj(self) -> PixelData:
+        return self._seg_logits_obj
+
+    @seg_logits.setter
+    def seg_logits_obj(self, value: PixelData) -> None:
+        self.set_field(value, '_seg_logits_obj', dtype=PixelData)
+
+    @seg_logits.deleter
+    def seg_logits_obj(self) -> None:
+        del self._seg_logits_obj      
+
+    @property
+    def pred_sem_seg_part(self) -> PixelData:
+        return self._pred_sem_seg_part
+
+    @pred_sem_seg_part.setter
+    def pred_sem_seg_part(self, value: PixelData) -> None:
+        self.set_field(value, '_pred_sem_seg_part', dtype=PixelData)
+
+    @pred_sem_seg_part.deleter
+    def pred_sem_seg_part(self) -> None:
+        del self._pred_sem_seg_part
+        
+    @property
+    def pred_sem_seg_obj(self) -> PixelData:
+        return self._pred_sem_seg_obj
+
+    @pred_sem_seg_part.setter
+    def pred_sem_seg_obj(self, value: PixelData) -> None:
+        self.set_field(value, '_pred_sem_seg_obj', dtype=PixelData)
+
+    @pred_sem_seg_obj.deleter
+    def pred_sem_seg_obj(self) -> None:
+        del self._pred_sem_seg_obj      

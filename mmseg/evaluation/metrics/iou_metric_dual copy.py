@@ -2,7 +2,7 @@
 import os.path as osp
 from collections import OrderedDict
 from typing import Dict, List, Optional, Sequence
-
+import logging
 import numpy as np
 import torch
 from mmengine.dist import is_main_process
@@ -11,12 +11,13 @@ from mmengine.logging import MMLogger, print_log
 from mmengine.utils import mkdir_or_exist
 from PIL import Image
 from prettytable import PrettyTable
-
+from mmengine.dist import (broadcast_object_list, collect_results,
+                           is_main_process)
 from mmseg.registry import METRICS
 
 
 @METRICS.register_module()
-class IoUMetric(BaseMetric):
+class IoUMetricPart(BaseMetric):
     """IoU evaluation metric.
 
     Args:
@@ -63,6 +64,8 @@ class IoUMetric(BaseMetric):
         if self.output_dir and is_main_process():
             mkdir_or_exist(self.output_dir)
         self.format_only = format_only
+        self.results_part = list()
+        
 
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         """Process one batch of data and data_samples.
@@ -78,15 +81,7 @@ class IoUMetric(BaseMetric):
         for data_sample in data_samples:
             # format_only always for test dataset without ground truth
             if not self.format_only:
-                if 'gt_sem_seg' in data_sample:
-                    pred_label = data_sample['pred_sem_seg']['data'].squeeze()
-                    
-                    label = data_sample['gt_sem_seg']['data'].squeeze().to(
-                        pred_label)
-                    self.results.append(
-                        self.intersect_and_union(pred_label, label, num_classes,
-                                                self.ignore_index))
-                elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
+                if 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
                     pred_label_part = data_sample['pred_sem_seg_part']['data'].squeeze()
                     
                     label_part = data_sample['gt_part_sem_seg']['data'].squeeze().to(

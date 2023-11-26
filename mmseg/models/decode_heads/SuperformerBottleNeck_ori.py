@@ -1309,8 +1309,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         use_middle_pixel_features: bool = False,
         seg_specific_classifier: str = None,
         seg_num_classes: int = 150,
-        part_seg_num_classes: int = 41,
-        obj_seg_num_classes: int = 159,
+        seg_num_classes_part: int = 41,
+        seg_num_classes_obj: int = 159,
         use_stem: bool = True,
         classification_feature: str = 'superpixel',
         pixel_projection = None,
@@ -1393,16 +1393,26 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
     ):
         if classification_feature == 'joint_extralayer':
-            out_channels = part_seg_num_classes
+            out_channels_part = seg_num_classes_part
+            super().__init__(in_channels=3,
+            channels=256,
+            num_classes=out_channels_part,
+            out_channels=seg_num_classes_part,
+            in_index=0,
+            use_gt_cls = use_gt_cls,
+            out_channels_part = seg_num_classes_part,
+            out_channels_obj = seg_num_classes_obj,
+            both_pred = True,
+    **kwargs)            
         else:
             out_channels=seg_num_classes
-        super().__init__(in_channels=3,
-        channels=256,
-        num_classes=out_channels,
-        out_channels=out_channels,
-        in_index=0,
-        use_gt_cls = use_gt_cls,
-**kwargs)
+            super().__init__(in_channels=3,
+            channels=256,
+            num_classes=out_channels,
+            out_channels=out_channels,
+            in_index=0,
+            use_gt_cls = use_gt_cls,
+    **kwargs)
         self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
@@ -1461,8 +1471,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.norm_layer_2d = norm_layer_2d
         
         self.seg_num_classes = seg_num_classes
-        self.part_seg_num_classes = part_seg_num_classes
-        self.obj_seg_num_classes = obj_seg_num_classes
+        self.seg_num_classes_part = seg_num_classes_part
+        self.seg_num_classes_obj = seg_num_classes_obj
         
         self.seg_specific_classifier = seg_specific_classifier
 
@@ -1848,7 +1858,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     raise ValueError()
                 self.seg_norm = norm_layer(self.embed_dim)
             elif self.classification_feature == 'joint_extralayer':
-                self.seg_head = nn.Linear(self.embed_dim, self.part_seg_num_classes)    
+                self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes_part)    
                 self.seg_norm = norm_layer(self.embed_dim)
 
                 
@@ -1897,7 +1907,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if self.use_gt_loss:
             if self.classification_feature == 'joint_extralayer':
                 self.gt_norm = norm_layer(self.embed_dim)
-                self.gt_head = nn.Linear(self.embed_dim, self.obj_seg_num_classes)
+                self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes_obj)
             else:                
                 self.gt_norm = norm_layer(self.embed_dim)
                 self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
