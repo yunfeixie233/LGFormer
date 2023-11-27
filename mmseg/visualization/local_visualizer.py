@@ -190,33 +190,74 @@ class SegLocalVisualizer(Visualizer):
         """
         classes = self.dataset_meta.get('classes', None)
         palette = self.dataset_meta.get('palette', None)
-
+        classes_obj = self.dataset_meta.get('classes_obj', None)
+        classes_part = self.dataset_meta.get('classes_part', None)
+        
         gt_img_data = None
         pred_img_data = None
-
-        if draw_gt and data_sample is not None and 'gt_sem_seg' in data_sample:
-            gt_img_data = image
-            assert classes is not None, 'class information is ' \
-                                        'not provided when ' \
-                                        'visualizing semantic ' \
-                                        'segmentation results.'
-            gt_img_data = self._draw_sem_seg(gt_img_data,
-                                             data_sample.gt_sem_seg, classes,
-                                             palette)
-
-        if (draw_pred and data_sample is not None
-                and 'pred_sem_seg' in data_sample):
-            pred_img_data = image
-            assert classes is not None, 'class information is ' \
-                                        'not provided when ' \
-                                        'visualizing semantic ' \
-                                        'segmentation results.'
-            pred_img_data = self._draw_sem_seg(pred_img_data,
-                                               data_sample.pred_sem_seg,
-                                               classes, palette)
-
-        if gt_img_data is not None and pred_img_data is not None:
+        gt_img_data_obj = None
+        gt_img_data_part = None
+        pred_img_data_obj = None
+        pred_img_data_part = None                
+        if draw_gt and data_sample is not None:
+            if 'gt_sem_seg' in data_sample:
+                gt_img_data = image
+                assert classes is not None, 'class information is ' \
+                                            'not provided when ' \
+                                            'visualizing semantic ' \
+                                            'segmentation results.'
+                gt_img_data = self._draw_sem_seg(gt_img_data,
+                                                data_sample.gt_sem_seg, classes,
+                                                palette)
+            elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
+                gt_img_data_obj = image
+                assert classes is not None, 'class information is ' \
+                                            'not provided when ' \
+                                            'visualizing semantic ' \
+                                            'segmentation results.'
+                gt_img_data_obj = self._draw_sem_seg(gt_img_data_obj,
+                                                data_sample.gt_obj_sem_seg, classes_obj,
+                                                palette)    
+                gt_img_data_part = image
+                         
+                gt_img_data_part = self._draw_sem_seg(gt_img_data_part,
+                                                data_sample.gt_part_sem_seg, classes_part,
+                                                palette)   
+        if (draw_pred and data_sample is not None):
+            if 'pred_sem_seg' in data_sample:
+                pred_img_data = image
+                assert classes is not None, 'class information is ' \
+                                            'not provided when ' \
+                                            'visualizing semantic ' \
+                                            'segmentation results.'
+                pred_img_data = self._draw_sem_seg(pred_img_data,
+                                                data_sample.pred_sem_seg,
+                                                classes, palette)
+            elif 'pred_sem_seg_obj' in data_sample and 'pred_sem_seg_part' in data_sample:
+                pred_img_data_obj = image
+                assert classes is not None, 'class information is ' \
+                                            'not provided when ' \
+                                            'visualizing semantic ' \
+                                            'segmentation results.'
+                pred_img_data_obj = self._draw_sem_seg(pred_img_data_obj,
+                                                data_sample.pred_sem_seg_obj,
+                                                classes_obj, palette)
+                pred_img_data_part = image
+                pred_img_data_part = self._draw_sem_seg(pred_img_data_part,
+                                                data_sample.pred_sem_seg_part,
+                                                classes_part, palette)                                     
+        if all(x is not None for x in [
+            gt_img_data_part, gt_img_data_obj,pred_img_data_part,pred_img_data_obj,]):
+            drawn_img_part =  np.concatenate((gt_img_data_part, pred_img_data_part), axis=1)
+            drawn_img_obj =  np.concatenate((gt_img_data_obj, pred_img_data_obj), axis=1)
+            if out_file is not None:
+                mmcv.imwrite(mmcv.rgb2bgr(drawn_img_part), out_file)   
+                mmcv.imwrite(mmcv.rgb2bgr(drawn_img_obj), out_file) 
+            else:
+                raise(ValueError)  
+        elif gt_img_data is not None and pred_img_data is not None:
             drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
+        
         elif gt_img_data is not None:
             drawn_img = gt_img_data
         else:
