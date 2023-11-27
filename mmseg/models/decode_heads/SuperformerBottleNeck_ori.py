@@ -887,7 +887,7 @@ class SuperformerStage(nn.Module):
                 )
                 if self.use_global_token: 
                     x, ps = einops.pack([x, gt], 'b * d ')             
-                if gt is not None:
+                if gt is not None and gt_list is not None:
                     gt_list.append(gt)
 
               
@@ -2200,8 +2200,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         pixel_features, sp_features, sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
                             pixel_features,
                             sp_features_last,
-                            attn_dict_list,
-                            gt_list,
+                            [],
+                            [],
                             global_token, 
                         )                        
                         pixel_features_group,sp_features_group, sp_features_seg_group,attn_dict_list, gt_list, sp_features_mid,global_token = self.group_stages[self.group_stages_pos.index(i)](
@@ -2211,9 +2211,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             gt_list,
                             global_token, 
                         )
-                        del pixel_features_group
-                        del sp_features_group
-                        del sp_features_seg_group
                     else:
                         pixel_features, sp_features, sp_features_seg,attn_dict_list, gt_list,sp_features_mid,global_token = stage(
                             pixel_features,
