@@ -1385,6 +1385,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         vis_pixel: bool = False,
         vis_sp_stage: bool = False,
         vis_sp_block: bool = False,
+        vis_group: bool = False,
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
@@ -1931,6 +1932,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.log_reweight = log_reweight
         self.vis_sp_stage = vis_sp_stage
         self.vis_sp_block = vis_sp_block
+        self.vis_group = vis_group
         if self.log_reweight:
             self.writer = SummaryWriter()
             self.forward_counter = 0
@@ -2282,15 +2284,23 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
                     gt_new = attn_map.transpose(-1,-2) @ gt_new
                     gt_new = rearrange(gt_new, ' b h n c ->  b n (h c)')
+               
                     if final_gt == None:
                         final_gt = gt_new
                     else:
-                        final_gt += gt_new
-                        final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
+                        if self.vis_group:
+                            to_h5(self.output_dir,1,gt_new = rearrange(gt_new,'b (h w) c -> b c h w',
                                     h = h_g *  self.group_init_strides[-1],
-                                    w = w_g *  self.group_init_strides[-1]) 
-                        final_gt = self.group_fuse_conv(final_gt)
-                        final_gt = rearrange(final_gt,'b c h w ->b (h w) c')
+                                    w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)    
+                            to_h5(self.output_dir,1,final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
+                                    h = h_g *  self.group_init_strides[-1],
+                                    w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)                                                     
+                        final_gt += gt_new
+                        # final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
+                        #             h = h_g *  self.group_init_strides[-1],
+                        #             w = w_g *  self.group_init_strides[-1])                               
+                        # final_gt = self.group_fuse_conv(final_gt)
+                        # final_gt = rearrange(final_gt,'b c h w ->b (h w) c')
                         
 
                 else:
@@ -3053,6 +3063,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                     h = h_g, 
                                     w = w_g)   
                 info, _, _ = last_sp_layer(pixel_feature, gt_2d)
+
+               
                 if self.vis_sp_id:
                     self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
                     
