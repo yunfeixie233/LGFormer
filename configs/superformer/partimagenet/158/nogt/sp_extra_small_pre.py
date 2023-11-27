@@ -88,6 +88,6 @@ default_hooks = dict(
     checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=1000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     # visualization=dict(type='SegVisualizationHook'))
-    visualization=dict(type='SegVisualizationHook'),draw = True, interval = 1)
+    visualization=dict(type='SegVisualizationHook',draw = True, interval = 1))
 
 find_unused_parameters=True

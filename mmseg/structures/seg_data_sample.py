@@ -131,7 +131,7 @@ class SegDataSample(BaseDataElement):
     def pred_sem_seg_obj(self) -> PixelData:
         return self._pred_sem_seg_obj
 
-    @pred_sem_seg_part.setter
+    @pred_sem_seg_obj.setter
     def pred_sem_seg_obj(self, value: PixelData) -> None:
         self.set_field(value, '_pred_sem_seg_obj', dtype=PixelData)
 
