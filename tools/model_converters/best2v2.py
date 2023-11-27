@@ -37,7 +37,11 @@ def convert_v2(args):
                 value,
                 ' b c h w -> b (h w) c',
             )
-
+        if 'stages.1' in key:
+            branch_key = key.split('.',2)[-1]
+            branch_key = 'group_stages.0.' + branch_key
+            branch_key = 'decode_head.' + branch_key
+            new_model_data[branch_key] = value
         new_key = 'decode_head.' + key
         # new_key = 'decode_head.' + key
 
