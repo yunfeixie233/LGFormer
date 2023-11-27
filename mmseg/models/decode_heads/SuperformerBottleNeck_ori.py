@@ -2190,13 +2190,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             else:
                 attn_dict_list = None 
                 gt_list = None        
-            for i, stage in enumerate(self.stages):# skip final stage if use extra stage
+            if 0 in self.group_stages_pos:
 
+            for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
                     if i in self.group_stages_pos:
                         #do not use the return group from superpixel branch
-                        pixel_features_group = pixel_features.clone()
-                        sp_features_group = sp_features_last.clone()
+                        if i == self.group_stages_pos[0]:
+                            pixel_features_group = pixel_features.clone()
+                            sp_features_group = sp_features_last.clone()
+                
                         pixel_features, sp_features, sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
                             pixel_features,
                             sp_features_last,

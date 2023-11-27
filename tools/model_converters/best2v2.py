@@ -5,7 +5,7 @@ import einops
 rearrange = einops.rearrange
 import torch.nn.functional as F
 
-
+from typing import Sequence
 new_model_data = {}
 
 h = w = 14
@@ -37,11 +37,21 @@ def convert_v2(args):
                 value,
                 ' b c h w -> b (h w) c',
             )
-        if 'stages.1' in key:
-            branch_key = key.split('.',2)[-1]
-            branch_key = 'group_stages.0.' + branch_key
-            branch_key = 'decode_head.' + branch_key
-            new_model_data[branch_key] = value
+        if args.group is not None:
+            if args.group == [0]:
+                if 'stages.0' in key:
+                    branch_key = key.split('.',2)[-1]
+                    branch_key = 'group_stages.0.' + branch_key
+                    branch_key = 'decode_head.' + branch_key
+                    new_model_data[branch_key] = value
+            elif args.group == [0,1]:
+                if 'stages.' in key:
+                    branch_key = key.split('.',1)[-1]
+                    branch_key = 'group_stages.' + branch_key
+                    branch_key = 'decode_head.' + branch_key
+                    new_model_data[branch_key] = value
+            else:
+                raise(ValueError(f"{args.group}not supported"))       
         new_key = 'decode_head.' + key
         # new_key = 'decode_head.' + key
 
@@ -64,6 +74,12 @@ def main():
         nargs='+',
         default=[32,32],
         help='targeted interpolated size')
+    parser.add_argument(
+        '--group',
+        type=int,
+        nargs='+',
+        default=None,
+        help='group stage')    
     args = parser.parse_args()
     convert_v2(args)
 
