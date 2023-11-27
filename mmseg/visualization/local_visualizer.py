@@ -75,7 +75,6 @@ class SegLocalVisualizer(Visualizer):
         super().__init__(name, image, vis_backends, save_dir, **kwargs)
         self.alpha: float = alpha
         self.set_dataset_meta(palette, classes, dataset_name)
-
     def _draw_sem_seg(self, image: np.ndarray, sem_seg: PixelData,
                       classes: Optional[List],
                       palette: Optional[List]) -> np.ndarray:
@@ -145,6 +144,8 @@ class SegLocalVisualizer(Visualizer):
             dataset_name = 'cityscapes'
         classes = classes if classes else get_classes(dataset_name)
         palette = palette if palette else get_palette(dataset_name)
+        # if 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
+        
         assert len(classes) == len(
             palette), 'The length of classes should be equal to palette'
         self.dataset_meta: dict = {'classes': classes, 'palette': palette}
@@ -192,7 +193,8 @@ class SegLocalVisualizer(Visualizer):
         palette = self.dataset_meta.get('palette', None)
         classes_obj = self.dataset_meta.get('classes_obj', None)
         classes_part = self.dataset_meta.get('classes_part', None)
-        
+        palette_obj = self.dataset_meta.get('palette_obj', None)
+        palette_part = self.dataset_meta.get('palette_part', None)
         gt_img_data = None
         pred_img_data = None
         gt_img_data_obj = None
@@ -211,41 +213,31 @@ class SegLocalVisualizer(Visualizer):
                                                 palette)
             elif 'gt_obj_sem_seg' in data_sample and 'gt_part_sem_seg' in data_sample:
                 gt_img_data_obj = image
-                assert classes is not None, 'class information is ' \
-                                            'not provided when ' \
-                                            'visualizing semantic ' \
-                                            'segmentation results.'
+
                 gt_img_data_obj = self._draw_sem_seg(gt_img_data_obj,
                                                 data_sample.gt_obj_sem_seg, classes_obj,
-                                                palette)    
+                                                palette_obj)    
                 gt_img_data_part = image
                          
                 gt_img_data_part = self._draw_sem_seg(gt_img_data_part,
                                                 data_sample.gt_part_sem_seg, classes_part,
-                                                palette)   
+                                                palette_part)   
         if (draw_pred and data_sample is not None):
             if 'pred_sem_seg' in data_sample:
                 pred_img_data = image
-                assert classes is not None, 'class information is ' \
-                                            'not provided when ' \
-                                            'visualizing semantic ' \
-                                            'segmentation results.'
+
                 pred_img_data = self._draw_sem_seg(pred_img_data,
                                                 data_sample.pred_sem_seg,
                                                 classes, palette)
             elif 'pred_sem_seg_obj' in data_sample and 'pred_sem_seg_part' in data_sample:
                 pred_img_data_obj = image
-                assert classes is not None, 'class information is ' \
-                                            'not provided when ' \
-                                            'visualizing semantic ' \
-                                            'segmentation results.'
                 pred_img_data_obj = self._draw_sem_seg(pred_img_data_obj,
                                                 data_sample.pred_sem_seg_obj,
-                                                classes_obj, palette)
+                                                classes_obj, palette_obj)
                 pred_img_data_part = image
                 pred_img_data_part = self._draw_sem_seg(pred_img_data_part,
                                                 data_sample.pred_sem_seg_part,
-                                                classes_part, palette)                                     
+                                                classes_part, palette_part)                                     
         if all(x is not None for x in [
             gt_img_data_part, gt_img_data_obj,pred_img_data_part,pred_img_data_obj,]):
             drawn_img_part =  np.concatenate((gt_img_data_part, pred_img_data_part), axis=1)
@@ -254,19 +246,24 @@ class SegLocalVisualizer(Visualizer):
                 mmcv.imwrite(mmcv.rgb2bgr(drawn_img_part), out_file)   
                 mmcv.imwrite(mmcv.rgb2bgr(drawn_img_obj), out_file) 
             else:
-                raise(ValueError)  
-        elif gt_img_data is not None and pred_img_data is not None:
-            drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
-        
-        elif gt_img_data is not None:
-            drawn_img = gt_img_data
-        else:
-            drawn_img = pred_img_data
+                basename, prefix = name.split(".")
+                name_part = basename + '_part' + "." + prefix
+                name_obj = basename + '_obj' + "." + prefix
+                self.add_image(name_obj, drawn_img_obj, step)  
+                self.add_image(name_part, drawn_img_part, step)
+        else:  
+            if gt_img_data is not None and pred_img_data is not None:
+                drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
+            
+            elif gt_img_data is not None:
+                drawn_img = gt_img_data
+            else:
+                drawn_img = pred_img_data
 
-        if show:
-            self.show(drawn_img, win_name=name, wait_time=wait_time)
+            if show:
+                self.show(drawn_img, win_name=name, wait_time=wait_time)
 
-        if out_file is not None:
-            mmcv.imwrite(mmcv.rgb2bgr(drawn_img), out_file)
-        else:
-            self.add_image(name, drawn_img, step)
+            if out_file is not None:
+                mmcv.imwrite(mmcv.rgb2bgr(drawn_img), out_file)
+            else:
+                self.add_image(name, drawn_img, step)
