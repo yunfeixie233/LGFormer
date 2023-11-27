@@ -8,7 +8,8 @@ model = dict(
     use_final_group_cls = True,
     ungroup_enable = (False,False,False,),
     use_gt_fuse = True,     
-    output_dir = "/data1/yunfei/vis_gt",                    
+    output_dir = "/data1/yunfei/vis_gt",
+    vis_group=  True,                    
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=1.0,reduction='mean',),

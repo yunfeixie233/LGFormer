@@ -2292,9 +2292,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             to_h5(self.output_dir,1,gt_new = rearrange(gt_new,'b (h w) c -> b c h w',
                                     h = h_g *  self.group_init_strides[-1],
                                     w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)    
-                            to_h5(self.output_dir,1,final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
-                                    h = h_g *  self.group_init_strides[-1],
-                                    w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)                                                     
+                                
                         final_gt += gt_new
                         # final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
                         #             h = h_g *  self.group_init_strides[-1],
@@ -2305,11 +2303,17 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
                 else:
                     raise(NotImplementedError)
-
-                gt_logits = self.gt_head(self.gt_norm(final_gt))
-                gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                    h = h_g *  self.group_init_strides[-1],
-                                    w = w_g *  self.group_init_strides[-1])       
+     
+            gt_logits = self.gt_head(self.gt_norm(final_gt))
+            gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
+                                h = h_g *  self.group_init_strides[-1],
+                                w = w_g *  self.group_init_strides[-1]) 
+            if self.vis_group:                       
+                to_h5(self.output_dir,1,final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
+                        h = h_g *  self.group_init_strides[-1],
+                        w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)              
+                to_h5(self.output_dir,1,gt_logits = gt_logits, max_file_per_fold=10)                
+                  
                 # set gt variance for the last group when supervised all group
             h_g = h_g *  self.group_init_strides[-1]
             w_g = w_g *  self.group_init_strides[-1]     
@@ -3091,6 +3095,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 final_group_logits =superpixel_ops.expand_superpixel_features(
                     gt_logits, similarities
                 )
+                if self.vis_group:       
+                    to_h5(self.output_dir,1,final_group_logits = final_group_logits, max_file_per_fold=10)                 
             else:
                 raise(NotImplementedError)  
         #then use superpixel to get part segment
@@ -3151,7 +3157,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-                ret['seg'] = pixel_logits                    
+                ret['sp'] = pixel_logits                    
                 ret['gt'] = final_group_logits
                 
                 return ret 

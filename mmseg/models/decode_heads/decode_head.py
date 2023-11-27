@@ -662,7 +662,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         else:
             raise(NotImplementedError)
 
-    def loss_by_feat(self, logits: list,
+    def loss_by_feat(self, ret: dict,
                      batch_data_samples: SampleList) -> dict:
         """Compute segmentation loss.
 
@@ -687,15 +687,17 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                 losses_decode = [self.loss_decode]
             else:
                 losses_decode = self.loss_decode            
-            for i, (logit, loss_decode) in enumerate(zip(logits.values(),losses_decode)):
+            assert len(ret.keys()) == len(losses_decode)
+            #we force the number of loss decode is equal to the number of output logits
+            for loss_decode in losses_decode:
                 if 'sp' in loss_decode.loss_name:
                     label = part_label
+                    logit = ret['sp']
                 elif 'gt' in  loss_decode.loss_name:
                     label = obj_label
+                    logit = ret['gt']
                 else:
                     raise(ValueError)
-                if logit is None:
-                    continue
                 logit = resize(
                     input=logit,
                     size=label.shape[2:],
@@ -714,10 +716,19 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                 else:
                     loss[loss_decode.loss_name] += loss_decode(
                         logit,
-                        label.squeeze(1) ,
+                        label.squeeze(1),
                         weight=seg_weight,
-                        ignore_index=self.ignore_index)            
-
+                        ignore_index=self.ignore_index)       
+                if 'sp' in loss_decode.loss_name: 
+                    # print(f'{logit.shape}_logit.shape') 
+                    # print(f'{part_label.shape}_logit.shape') 
+                                           
+                    loss['acc_part'] = accuracy(
+                        logit, label.squeeze(1), ignore_index=self.ignore_index)
+                elif 'gt' in  loss_decode.loss_name:  
+                               
+                    loss['acc_obj'] = accuracy(
+                        logit, label.squeeze(1), ignore_index=self.ignore_index)                     
         else:
             loss = dict()
             if not isinstance(self.loss_decode, nn.ModuleList):
@@ -725,7 +736,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             else:
                 losses_decode = self.loss_decode
             
-            for i, (logit, loss_decode) in enumerate(zip(logits.values(),losses_decode)):
+            for i, (logit, loss_decode) in enumerate(zip(ret.values(),losses_decode)):
                 if logit is None:
                     continue
                 logit = resize(
