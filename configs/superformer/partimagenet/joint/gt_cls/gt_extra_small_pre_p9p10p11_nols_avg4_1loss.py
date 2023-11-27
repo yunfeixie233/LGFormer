@@ -3,7 +3,7 @@ _base_ = [
 ]
 num_classes = 57
 model = dict(
-    type='EncoderDecoder',
+    
     decode_head=dict(
     use_final_group_cls = True,                    
     loss_decode=[
