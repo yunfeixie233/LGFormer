@@ -1393,7 +1393,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         **kwargs
 
     ):
-        if classification_feature == 'joint_extralayer':
+        if "joint" in classification_feature:
             out_channels_part = seg_num_classes_part
             super().__init__(in_channels=3,
             channels=256,
@@ -1858,7 +1858,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     print(self.seg_specific_classifier)
                     raise ValueError()
                 self.seg_norm = norm_layer(self.embed_dim)
-            elif self.classification_feature == 'joint_extralayer':
+            elif 'joint' in self.classification_feature:
                 self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes_part)    
                 self.seg_norm = norm_layer(self.embed_dim)
 
@@ -1906,7 +1906,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 timm_layers.LayerNorm2d(group_embed_dims),
                 nn.GELU())
         if self.use_gt_loss:
-            if self.classification_feature == 'joint_extralayer':
+            if 'joint' in self.classification_feature:
                 self.gt_norm = norm_layer(self.embed_dim)
                 self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes_obj)
             else:                
@@ -3056,7 +3056,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         final_group_logits += gt_logits
             ret['seg'] = final_group_logits
             return ret
-        elif self.classification_feature == 'joint_extralayer':
+        elif 'joint' in self.classification_feature:
         #firstly use group token to get object segment
         #implementation is same with "group_extralayer"
             # final output
@@ -3065,9 +3065,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             if self.use_final_group_cls:
                 gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
                                     h = h_g, 
-                                    w = w_g)   
-                info, _, _ = last_sp_layer(pixel_feature, gt_2d)
-
+                                    w = w_g) 
+                if 'extralayer' in self.classification_feature:                  
+                    info, _, _ = last_sp_layer(pixel_feature, gt_2d)
+                else:
+                    info = last_stage.tokenization_info
                
                 if self.vis_sp_id:
                     self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
@@ -3106,9 +3108,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         'b (h w) c -> b c h w',
                         h = sh, w = sw)
 
- 
-            info, _, _ = last_sp_layer(pixel_feature,x_2d)
-            
+            if 'extralayer' in self.classification_feature:
+                info, _, _ = last_sp_layer(pixel_feature,x_2d)
+            else:
+                info = last_stage.tokenization_info
             if self.vis_sp_id:
                 self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
                  
