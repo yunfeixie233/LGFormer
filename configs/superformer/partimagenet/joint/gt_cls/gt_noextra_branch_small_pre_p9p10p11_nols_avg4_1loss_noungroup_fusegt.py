@@ -1,30 +1,15 @@
 _base_ = [
-    '../../../../_base_/default_runtime.py', 
-    '../../../../_base_/datasets/partimagenet_joint.py',
-    '../../../superformer_baseline.py'
+    './gt_noextra_small_pre_p9p10p11_nols_avg4_1loss_noungroup_fusegt.py',
 ]
-crop_size = (512, 512)
-data_preprocessor = dict(size=crop_size)
+num_classes = 57
 model = dict(
-    data_preprocessor=data_preprocessor,
-    type='EncoderDecoderJoint',    
+    type='EncoderDecoderJoint',
     decode_head=dict(
-    img_size=(512,512),
-    classification_feature = 'superpixel_extralayer',
-    resize_similarity =  True,          
-    depths=(2,10,0,),
-    dims=(384,384,384,),
-    heads=(6,6,-1,),
-    strides=(1,1,1,),
-    sp_sizes=(4,4,4,),
-    sp_heads=(2,2,1,),
-    sp_features_init_methods=("from_feature","from_feature","from_feature",),
-    ls_init_value = 1e-5,
-    seg_num_classes_part = 41,
-    seg_num_classes_obj = 159,
-),
-    test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
-accumulative_counts = 2
+    group_stages_pos = (1,),
+))
+
+
+accumulative_counts = 4
 total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
@@ -81,16 +66,5 @@ param_scheduler = [
 ]
 train_cfg = dict(
     type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
-val_cfg = dict(type='ValLoop')
-test_cfg = dict(type='TestLoop')
-default_hooks = dict(
-    timer=dict(type='IterTimerHook'),
-    logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
-    param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
-    sampler_seed=dict(type='DistSamplerSeedHook'),
-    visualization=dict(type='SegVisualizationHook'))
-
-find_unused_parameters=True
-val_evaluator = [dict(type='IoUMetricPart', iou_metrics=['mIoU'],prefix = 'part'),dict(type='IoUMetricObj', iou_metrics=['mIoU'],prefix = 'obj')]
-test_evaluator = val_evaluator
+train_dataloader = dict(
+    batch_size=4)

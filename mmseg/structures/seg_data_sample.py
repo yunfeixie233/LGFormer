@@ -137,4 +137,7 @@ class SegDataSample(BaseDataElement):
 
     @pred_sem_seg_obj.deleter
     def pred_sem_seg_obj(self) -> None:
-        del self._pred_sem_seg_obj      
+        del self._pred_sem_seg_obj   
+           
+
+    
