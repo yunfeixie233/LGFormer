@@ -3157,8 +3157,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     )
                 else:
                     raise ValueError()
-                ret['sp'] = pixel_logits                    
-                ret['gt'] = final_group_logits
+                ret['part'] = pixel_logits                    
+                ret['obj'] = final_group_logits
                 
                 return ret 
             

@@ -634,13 +634,10 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         else:
             ret = self.forward(inputs)
         if self.both_pred != True:
-            seg_logits = ret['seg']
-        else:
-            seg_logits = dict()
-            seg_logits['part'] = ret['seg']
-            seg_logits['obj'] = ret['gt']
+            ret = ret['seg']
+
         
-        return self.predict_by_feat(seg_logits, batch_img_metas)
+        return self.predict_by_feat(ret, batch_img_metas)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         if 'gt_sem_seg' in batch_data_samples[-1]:
@@ -692,10 +689,10 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             for loss_decode in losses_decode:
                 if 'sp' in loss_decode.loss_name:
                     label = part_label
-                    logit = ret['sp']
+                    logit = ret['part']
                 elif 'gt' in  loss_decode.loss_name:
                     label = obj_label
-                    logit = ret['gt']
+                    logit = ret['obj']
                 else:
                     raise(ValueError)
                 logit = resize(
@@ -766,7 +763,7 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                         ignore_index=self.ignore_index)            
         return loss
 
-    def predict_by_feat(self, seg_logits: Tensor,
+    def predict_by_feat(self, ret: Tensor,
                         batch_img_metas: List[dict]) -> Tensor:
         """Transform a batch of output seg_logits to the input shape.
 
@@ -778,17 +775,17 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             Tensor: Outputs segmentation logits map.
         """
-        if isinstance(seg_logits, dict):
-            for key, val in seg_logits.items():
-                seg_logits[key] =  resize(
+        if isinstance(ret, dict):
+            for key, val in ret.items():
+                ret[key] =  resize(
             input=val,
             size=batch_img_metas[0]['img_shape'],
             mode='bilinear',
             align_corners=self.align_corners)
         else:
-            seg_logits = resize(
-                input=seg_logits,
+            ret = resize(
+                input=ret,
                 size=batch_img_metas[0]['img_shape'],
                 mode='bilinear',
                 align_corners=self.align_corners)
-        return seg_logits
+        return ret
