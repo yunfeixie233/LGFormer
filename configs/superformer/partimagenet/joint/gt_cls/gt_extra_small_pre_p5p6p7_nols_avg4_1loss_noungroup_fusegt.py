@@ -8,9 +8,7 @@ model = dict(
     use_final_group_cls = True,
     group_pos = ((),(3,4,5,),()),
     ungroup_enable = (False,False,False,),
-    use_gt_fuse = True,
-    vis_sp_id = True,
-    vis_group = True,                         
+    use_gt_fuse = True,                        
     loss_decode=[
             dict(
             type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=1.0,reduction='mean',),

@@ -64,9 +64,9 @@ val_dataloader = dict(
         data_prefix=dict(
             img_path='images/val',
             part_map_path='annotations/val',
-            obj_map_path='annotations/test_whole'),
+            obj_map_path='annotations/val_whole'),
         pipeline=test_pipeline))
-test_dataloader =val_dataloader = dict(
+test_dataloader =dict(
     batch_size=1,
     num_workers=4,
     persistent_workers=True,
