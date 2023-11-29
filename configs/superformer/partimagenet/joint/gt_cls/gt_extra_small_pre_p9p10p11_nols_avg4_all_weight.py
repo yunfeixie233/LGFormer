@@ -12,12 +12,12 @@ model = dict(
     group_token_init_method = ('avgpool','avgpool','avgpool',), 
     loss_decode=[
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=0.7,reduction='mean',class_weight=[0.1] + [1.0] * num_classes),
+            type='CrossEntropyLoss',loss_name = 'loss_part',use_sigmoid=False, loss_weight=0.7,reduction='mean',class_weight=[0.1] + [1.0] * num_classes),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_1', use_sigmoid=False, loss_weight=0.1,reduction='mean',class_weight=[0.1] + [1.0] *num_classes),
+            type='CrossEntropyLoss',loss_name = 'loss_obj_1', use_sigmoid=False, loss_weight=0.1,reduction='mean',class_weight=[0.1] + [1.0] *num_classes),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_2', use_sigmoid=False, loss_weight=0.1,reduction='mean',class_weight=[0.1] + [1.0] * num_classes),
+            type='CrossEntropyLoss',loss_name = 'loss_obj_2', use_sigmoid=False, loss_weight=0.1,reduction='mean',class_weight=[0.1] + [1.0] * num_classes),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_3', use_sigmoid=False, loss_weight=0.1,reduction='mean',class_weight=[0.1] + [1.0] * num_classes),            
+            type='CrossEntropyLoss',loss_name = 'loss_obj_3', use_sigmoid=False, loss_weight=0.1,reduction='mean',class_weight=[0.1] + [1.0] * num_classes),            
             ],         
 ))

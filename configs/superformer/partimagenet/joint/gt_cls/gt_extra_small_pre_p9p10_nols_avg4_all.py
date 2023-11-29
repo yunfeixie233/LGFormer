@@ -11,10 +11,10 @@ model = dict(
     group_token_init_method = ('avgpool','avgpool',), 
     loss_decode=[
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=0.8),
+            type='CrossEntropyLoss',loss_name = 'loss_part',use_sigmoid=False, loss_weight=0.8),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_1', use_sigmoid=False, loss_weight=0.1),
+            type='CrossEntropyLoss',loss_name = 'loss_obj_1', use_sigmoid=False, loss_weight=0.1),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_2', use_sigmoid=False, loss_weight=0.1),
+            type='CrossEntropyLoss',loss_name = 'loss_obj_2', use_sigmoid=False, loss_weight=0.1),
             ],     
 ))

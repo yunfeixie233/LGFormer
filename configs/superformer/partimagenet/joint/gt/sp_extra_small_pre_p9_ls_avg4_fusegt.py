@@ -19,8 +19,8 @@ model = dict(
     use_group_attn = True,      
     loss_decode=[
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt',use_sigmoid=False, loss_weight=0.5),
+            type='CrossEntropyLoss',loss_name = 'loss_obj',use_sigmoid=False, loss_weight=0.5),
             dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp', use_sigmoid=False, loss_weight=0.5)]
+            type='CrossEntropyLoss',loss_name = 'loss_part', use_sigmoid=False, loss_weight=0.5)]
          
 ))
