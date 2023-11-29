@@ -3142,7 +3142,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                     h = h_g, 
                                     w = w_g) 
                 if 'extralayer' in self.classification_feature:                  
-                    info, _, _ = last_sp_layer(pixel_feature, gt_2d)
+                    info, _, _ = self.group_stages[-1].patch_embed(pixel_feature, gt_2d)
                 else:
                     info = self.group_stages[-1].tokenization_info
                
