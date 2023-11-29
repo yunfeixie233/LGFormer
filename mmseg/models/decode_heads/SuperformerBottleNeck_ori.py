@@ -1955,7 +1955,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         if 'joint' in self.classification_feature:
             if self.use_gt_loss:
                 self.gt_norm = norm_layer(self.embed_dim)
-                self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes)
+                self.gt_head = nn.Linear(self.embed_dim, self.seg_num_classes_obj)
             else:
                 self.obj_norm = norm_layer(self.embed_dim)
                 self.obj_head = nn.Linear(self.embed_dim, self.seg_num_classes_obj)    
