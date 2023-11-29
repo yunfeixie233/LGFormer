@@ -38,6 +38,11 @@ def convert_v2(args):
                 ' b c h w -> b (h w) c',
             )
         if args.group is not None:
+            if 'sp_init' in key:
+                branch_key = key.split('.',1)[-1]
+                branch_key = 'group_init.' +  branch_key
+                branch_key = 'decode_head.' + branch_key
+                print(branch_key)
             if args.group == [0]:
                 if 'stages.0' in key:
                     branch_key = key.split('.',2)[-1]
