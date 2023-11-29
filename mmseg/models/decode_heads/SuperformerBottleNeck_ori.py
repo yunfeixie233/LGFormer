@@ -2184,7 +2184,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             sp_features_last = self.init_superpixel_features(pixel_features)
             assert len(self.stages) > 0
             global_token = None  
-            pixel_features_obj = None             
+            pixel_features_obj = None 
+            sp_features_seg_obj = None            
             if self.use_group_token == 'mix':
                 attn_dict_list = []
                 gt_list = []
