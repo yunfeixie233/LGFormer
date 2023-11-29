@@ -687,10 +687,10 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
             assert len(ret.keys()) == len(losses_decode)
             #we force the number of loss decode is equal to the number of output logits
             for loss_decode in losses_decode:
-                if 'sp' in loss_decode.loss_name:
+                if 'part' in loss_decode.loss_name:
                     label = part_label
                     logit = ret['part']
-                elif 'gt' in  loss_decode.loss_name:
+                elif 'obj' in  loss_decode.loss_name:
                     label = obj_label
                     logit = ret['obj']
                 else:
@@ -716,13 +716,13 @@ class MultiLossBaseDecodeHead(BaseModule, metaclass=ABCMeta):
                         label.squeeze(1),
                         weight=seg_weight,
                         ignore_index=self.ignore_index)       
-                if 'sp' in loss_decode.loss_name: 
+                if 'part' in loss_decode.loss_name: 
                     # print(f'{logit.shape}_logit.shape') 
                     # print(f'{part_label.shape}_logit.shape') 
                                            
                     loss['acc_part'] = accuracy(
                         logit, label.squeeze(1), ignore_index=self.ignore_index)
-                elif 'gt' in  loss_decode.loss_name:  
+                elif 'obj' in  loss_decode.loss_name:  
                                
                     loss['acc_obj'] = accuracy(
                         logit, label.squeeze(1), ignore_index=self.ignore_index)                     
