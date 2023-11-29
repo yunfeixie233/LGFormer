@@ -5,7 +5,7 @@ num_classes = 57
 model = dict(
     type='EncoderDecoderJoint',
     decode_head=dict(
-    group_stages_pos = (1,),
+    obj_stages_pos = (1,),
 ))
 
 

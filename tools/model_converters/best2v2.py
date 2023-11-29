@@ -37,26 +37,33 @@ def convert_v2(args):
                 value,
                 ' b c h w -> b (h w) c',
             )
-        if args.group is not None:
+        if args.obj is not None:
             if 'sp_init' in key:
                 branch_key = key.split('.',1)[-1]
-                branch_key = 'group_init.' +  branch_key
+                branch_key = 'obj_init.' +  branch_key
                 branch_key = 'decode_head.' + branch_key
-                print(branch_key)
-            if args.group == [0]:
+                new_model_data[branch_key] = value
+                
+            if 'stem' in key:
+                branch_key = key.split('.',1)[-1]
+                branch_key = 'obj_stem.' +  branch_key
+                branch_key = 'decode_head.' + branch_key   
+                new_model_data[branch_key] = value
+                             
+            if args.obj == [0]:
                 if 'stages.0' in key:
                     branch_key = key.split('.',2)[-1]
-                    branch_key = 'group_stages.0.' + branch_key
+                    branch_key = 'obj_stages.0.' + branch_key
                     branch_key = 'decode_head.' + branch_key
                     new_model_data[branch_key] = value
-            elif args.group == [0,1]:
+            elif args.obj == [0,1]:
                 if 'stages.' in key:
                     branch_key = key.split('.',1)[-1]
-                    branch_key = 'group_stages.' + branch_key
+                    branch_key = 'obj_stages.' + branch_key
                     branch_key = 'decode_head.' + branch_key
                     new_model_data[branch_key] = value
             else:
-                raise(ValueError(f"{args.group}not supported"))       
+                raise(ValueError(f"{args.obj}not supported"))       
         new_key = 'decode_head.' + key
         # new_key = 'decode_head.' + key
 
@@ -80,11 +87,11 @@ def main():
         default=[32,32],
         help='targeted interpolated size')
     parser.add_argument(
-        '--group',
+        '--obj',
         type=int,
         nargs='+',
         default=None,
-        help='group stage')    
+        help='obj stage')    
     args = parser.parse_args()
     convert_v2(args)
 

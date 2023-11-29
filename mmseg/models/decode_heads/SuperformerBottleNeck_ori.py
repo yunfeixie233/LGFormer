@@ -1367,7 +1367,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         group_drop_path_rate: float = 0.,
         use_gumbel: bool = False,
         use_group_attn: bool = True,
-        group_stages_pos: Sequence[int] = None,
+        obj_stages_pos: Sequence[int] = None,
         #reweight setting
         reweight_pixel_update:bool = False,
         reweight_pixel_update_last:bool = False,
@@ -1566,7 +1566,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             assert self.sp_global_init_method == "none"
-        self.group_init = deepcopy(self.sp_init)
+        self.obj_init = deepcopy(self.sp_init)
+        self.obj_stem = deepcopy(self.stem)
         assert (
             len(depths)
             == len(dims)
@@ -1650,7 +1651,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         num_stages = len(depths)
         stages = []
-        group_stages = []   
+        obj_stages = []   
         stage_in_dim = stem_channels_list[-1]
         self.use_gt_extralayer = use_gt_extralayer 
         for i, (depth, dim, head, sp_size, sp_head, stride) in enumerate(
@@ -1778,8 +1779,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         vis_sp_block = vis_sp_block,
                         output_dir = output_dir          
                     )
-            elif group_stages_pos is not None and i in group_stages_pos:
-                group_stages.append( \
+            elif obj_stages_pos is not None and i in obj_stages_pos:
+                obj_stages.append( \
                     SuperformerStage(
                         stage_in_dim,
                         sp_dim,
@@ -1827,7 +1828,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         assert cur_depth == sum(depths)
         self.stages = nn.ModuleList(stages)
-        self.group_stages = nn.ModuleList(group_stages)
+        self.obj_stages = nn.ModuleList(obj_stages)
         # Classifier Head
         self.embed_dim = dims[-1]
 
@@ -1985,7 +1986,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             self.log_interval = log_interval
         self.return_mid_sp = return_mid_sp
         self.return_mid_pixel = return_mid_pixel
-        self.group_stages_pos = group_stages_pos      
+        self.obj_stages_pos = obj_stages_pos      
         if self.vis_gt:
             self.total_iou = 0. 
             self.forward_counter = 0
@@ -2193,14 +2194,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 gt_list = None        
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
-                    if self.group_stages_pos is not None and i in self.group_stages_pos:
+                    if self.obj_stages_pos is not None and i in self.obj_stages_pos:
                         #init sp feature for group branch
-                        if i == self.group_stages_pos[0]:
-                            pixel_features_obj = pixel_features.clone()
-                            if i ==0:
-                                sp_features_obj = self.group_init(pixel_features_obj)
+                        if i == self.obj_stages_pos[0]:
+                            _, pixel_features_obj = self.obj_stem(x)
+                            if i == 0:
+                                sp_features_obj = self.obj_init(pixel_features_obj)
                             else:
-                                sp_features_obj = sp_features_last.clone()
+                                sp_features_obj = sp_features_last.detach().clone()
                 
                         pixel_features, sp_features, sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
                             pixel_features,
@@ -2209,7 +2210,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             [],
                             global_token, 
                         )                        
-                        pixel_features_obj,sp_features_obj, sp_features_seg_obj,attn_dict_list, gt_list, sp_features_mid,global_token = self.group_stages[self.group_stages_pos.index(i)](
+                        pixel_features_obj,sp_features_obj, sp_features_seg_obj,attn_dict_list, gt_list, sp_features_mid,global_token = self.obj_stages[self.obj_stages_pos.index(i)](
                             pixel_features_obj,
                             sp_features_obj,
                             attn_dict_list,
@@ -3108,7 +3109,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #firstly use group token to get object segment
         #implementation is same with "group_extralayer"
             # final output
-            last_obj_layer = self.group_stages[-1].patch_embed
+            last_obj_layer = self.obj_stages[-1].patch_embed
             final_group_logits = None
             # if True, only use final group for classification
             # if False, use sp feature from obj branch for classification
@@ -3117,9 +3118,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                     h = h_g, 
                                     w = w_g) 
                 if 'extralayer' in self.classification_feature:                  
-                    info, _, _ = self.group_stages[-1].patch_embed(pixel_features, gt_2d)
+                    info, _, _ = self.obj_stages[-1].patch_embed(pixel_features, gt_2d)
                 else:
-                    info = self.group_stages[-1].tokenization_info
+                    info = self.obj_stages[-1].tokenization_info
                
                 if self.vis_sp_id:
                     self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
@@ -3156,9 +3157,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             h = sh, w = sw)
 
                 if 'extralayer' in self.classification_feature:
-                    info_obj, _, _ =  self.group_stages[-1].patch_embed(pixel_features,sp_obj_2d)
+                    info_obj, _, _ =  self.obj_stages[-1].patch_embed(pixel_features,sp_obj_2d)
                 else:
-                    info_obj =  self.group_stages[-1].tokenization_info
+                    info_obj =  self.obj_stages[-1].tokenization_info
                 if self.vis_sp_id:
                     self.visualize_superpixel(img = img, info = info_obj, resize_similarities= True)    
                     

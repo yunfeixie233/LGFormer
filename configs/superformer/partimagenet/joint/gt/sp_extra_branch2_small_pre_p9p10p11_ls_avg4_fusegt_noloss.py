@@ -13,7 +13,7 @@ model = dict(
     use_gt_loss = False,
     use_gt_fuse = False,
     use_final_group_cls = False,
-    group_stages_pos = (0,1,2,),
+    obj_stages_pos = (0,1,2,),
     classification_feature = 'joint_extralayer',
     loss_decode=[
             dict(

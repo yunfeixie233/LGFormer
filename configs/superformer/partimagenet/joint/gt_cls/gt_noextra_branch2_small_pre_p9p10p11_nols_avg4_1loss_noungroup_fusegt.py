@@ -3,5 +3,5 @@ _base_ = [
 ]
 model = dict(
     decode_head=dict(
-    group_stages_pos = (0,1,),
+    obj_stages_pos = (0,1,),
 ))

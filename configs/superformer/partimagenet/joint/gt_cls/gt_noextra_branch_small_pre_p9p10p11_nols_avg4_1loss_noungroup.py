@@ -7,7 +7,7 @@ model = dict(
     decode_head=dict(
     use_gt_fuse = False,                         
         
-    group_stages_pos = (1,),
+    obj_stages_pos = (1,),
 ))
 
 
