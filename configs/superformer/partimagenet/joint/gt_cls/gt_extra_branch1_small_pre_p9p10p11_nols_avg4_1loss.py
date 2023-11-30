@@ -1,21 +1,11 @@
 _base_ = [
-    './gt_extra_small_pre_p9p10p11_nols_avg4_all.py',
+    './gt_extra_small_pre_p9p10p11_nols_avg4_1loss.py',
 ]
 model = dict(
-    type='EncoderDecoderJoint',    
     decode_head=dict(
-    obj_stages_pos = (0,1,2,),
-    classification_feature = 'joint_extralayer',
-    use_gt_fuse = False,
-    use_final_group_cls = True, 
-    ungroup_enable = (False,False,False,),   
-    loss_decode=[
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_part',use_sigmoid=False, loss_weight=1.0,reduction='mean',),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_obj',use_sigmoid=False, loss_weight=1.0,reduction='mean',)],    
-))
-
+    obj_stages_pos = (1,2,),
+    )
+)
 accumulative_counts = 4
 total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
@@ -36,9 +26,9 @@ optim_wrapper = dict(
             'ln':dict(decay_mult=0.),
             'bn':dict(decay_mult=0.),
             'stem.conv_layers.0.1':dict(decay_mult=0.),
-            'sp_project.1':dict(decay_mult=0.),
             'sp_init.1':dict(decay_mult=0.),
             'seg_norm': dict(decay_mult=0.),
+            'norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
             'stem':dict(lr_mult=0.1),
@@ -50,6 +40,7 @@ optim_wrapper = dict(
             'stages.0.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
             'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),
             'stages.0.sp_project':dict(lr_mult=0.1),
+            'sp_project.1':dict(decay_mult=0.),
             'stages.0.blocks':dict(lr_mult=0.1),
             'stages.1.patch_embed.blocks.0':dict(lr_mult=0.1),
             'stages.1.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
