@@ -1566,8 +1566,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             assert self.sp_global_init_method == "none"
-        self.obj_init = deepcopy(self.sp_init)
-        self.obj_stem = deepcopy(self.stem)
+        if self.obj_stages_pos is not None and self.obj_stages_pos[0] == 0:
+            self.obj_init = deepcopy(self.sp_init)
+            self.obj_stem = deepcopy(self.stem)
         assert (
             len(depths)
             == len(dims)
@@ -2196,14 +2197,16 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
                     if self.obj_stages_pos is not None and i in self.obj_stages_pos:
-                        #init sp feature for group branch
+                        #init pixel feature & sp feature for beginning of obj branch
                         if i == self.obj_stages_pos[0]:
-                            _, pixel_features_obj = self.obj_stem(x)
+                            #init pixel and superpixel using individual module if obj branch starts at first stage
                             if i == 0:
+                                _, pixel_features_obj = self.obj_stem(x)                                
                                 sp_features_obj = self.obj_init(pixel_features_obj)
+                            #clone pixel and superpixel from previous shared stage if obj branch starts at other stage
                             else:
                                 sp_features_obj = sp_features_last.detach().clone()
-                
+                                pixel_features_obj = pixel_features.detach().clone()
                         pixel_features, sp_features, sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
                             pixel_features,
                             sp_features_last,
