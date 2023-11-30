@@ -17,6 +17,8 @@ from scipy.ndimage import gaussian_filter
 from mmseg.datasets.dataset_wrappers import MultiImageMixDataset
 from mmseg.registry import TRANSFORMS
 from mmcv.image.geometric import _scale_size
+from mmcv.transforms.processing import RandomFlip
+
 try:
     import albumentations
     from albumentations import Compose
@@ -2731,3 +2733,42 @@ class RandomResize(BaseTransform):
         repr_str += f'ratio_range={self.ratio_range}, '
         repr_str += f'resize_cfg={self.resize_cfg})'
         return repr_str
+
+
+@TRANSFORMS.register_module()
+class RandomFlip(RandomFlip):
+
+    def _flip(self, results: dict) -> None:
+        """Flip images, bounding boxes, semantic segmentation map and
+        keypoints."""
+        # flip image
+        results['img'] = mmcv.imflip(
+            results['img'], direction=results['flip_direction'])
+
+        img_shape = results['img'].shape[:2]
+
+        # flip bboxes
+        if results.get('gt_bboxes', None) is not None:
+            results['gt_bboxes'] = self._flip_bbox(results['gt_bboxes'],
+                                                   img_shape,
+                                                   results['flip_direction'])
+
+        # flip keypoints
+        if results.get('gt_keypoints', None) is not None:
+            results['gt_keypoints'] = self._flip_keypoints(
+                results['gt_keypoints'], img_shape, results['flip_direction'])
+
+        # flip seg map
+        if results.get('gt_seg_map', None) is not None:
+            results['gt_seg_map'] = self._flip_seg_map(
+                results['gt_seg_map'], direction=results['flip_direction'])
+            results['swap_seg_labels'] = self.swap_seg_labels
+        elif results.get('gt_obj_seg_map', None) is not None and results.get('gt_part_seg_map', None) is not None:
+            results['gt_obj_seg_map'] = self._flip_seg_map(
+                results['gt_obj_seg_map'], direction=results['flip_direction'])
+            results['gt_part_seg_map'] = self._flip_seg_map(
+                results['gt_part_seg_map'], direction=results['flip_direction'])            
+            results['swap_seg_labels'] = self.swap_seg_labels
+        else:
+            raise(ValueError)
+
