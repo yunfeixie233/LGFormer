@@ -3110,7 +3110,6 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #firstly use group token to get object segment
         #implementation is same with "group_extralayer"
             # final output
-            last_obj_layer = self.obj_stages[-1].patch_embed
             final_group_logits = None
             # if True, only use final group for classification
             # if False, use sp feature from obj branch for classification
@@ -3118,11 +3117,17 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
                                     h = h_g, 
                                     w = w_g) 
-                if 'extralayer' in self.classification_feature:                  
-                    info, _, _ = self.obj_stages[-1].patch_embed(pixel_features, gt_2d)
+                if 'extralayer' in self.classification_feature:
+                    if self.obj_stages_pos is not None:                  
+                        info, _, _ = self.obj_stages[-1].patch_embed(pixel_features, gt_2d)
+                    else:
+                        info, _, _ = last_sp_layer(pixel_features, gt_2d)
+                        
                 else:
-                    info = self.obj_stages[-1].tokenization_info
-               
+                    if self.obj_stages_pos is not None:                  
+                        info = self.obj_stages[-1].tokenization_info
+                    else:
+                        info = last_stage.tokenization_info
                 if self.vis_sp_id:
                     self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
                     
@@ -3153,6 +3158,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 if self.vis_group:       
                     to_h5(self.output_dir,1,final_group_logits = final_group_logits, max_file_per_fold=10)                 
             else:
+                last_obj_layer = self.obj_stages[-1].patch_embed
+                
                 sp_obj_2d = einops.rearrange(sp_features_obj,
                             'b (h w) c -> b c h w',
                             h = sh, w = sw)
