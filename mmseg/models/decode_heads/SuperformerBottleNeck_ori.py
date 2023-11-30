@@ -2205,8 +2205,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                                 sp_features_obj = self.obj_init(pixel_features_obj)
                             #clone pixel and superpixel from previous shared stage if obj branch starts at other stage
                             else:
-                                sp_features_obj = sp_features_last.detach().clone()
-                                pixel_features_obj = pixel_features.detach().clone()
+                                sp_features_obj = sp_features_last.clone()
+                                pixel_features_obj = pixel_features.clone()
                         pixel_features, sp_features, sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
                             pixel_features,
                             sp_features_last,

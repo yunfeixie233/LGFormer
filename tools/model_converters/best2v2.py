@@ -38,25 +38,26 @@ def convert_v2(args):
                 ' b c h w -> b (h w) c',
             )
         if args.obj is not None:
-            if 'sp_init' in key:
-                branch_key = key.split('.',1)[-1]
-                branch_key = 'obj_init.' +  branch_key
-                branch_key = 'decode_head.' + branch_key
-                new_model_data[branch_key] = value
-                
-            if 'stem' in key:
-                branch_key = key.split('.',1)[-1]
-                branch_key = 'obj_stem.' +  branch_key
-                branch_key = 'decode_head.' + branch_key   
-                new_model_data[branch_key] = value
+
                              
             if args.obj == [0]:
-                if 'stages.0' in key:
+                if 'stages.1' in key:
                     branch_key = key.split('.',2)[-1]
                     branch_key = 'obj_stages.0.' + branch_key
                     branch_key = 'decode_head.' + branch_key
                     new_model_data[branch_key] = value
             elif args.obj == [0,1]:
+                if 'sp_init' in key:
+                    branch_key = key.split('.',1)[-1]
+                    branch_key = 'obj_init.' +  branch_key
+                    branch_key = 'decode_head.' + branch_key
+                    new_model_data[branch_key] = value
+                    
+                if 'stem' in key:
+                    branch_key = key.split('.',1)[-1]
+                    branch_key = 'obj_stem.' +  branch_key
+                    branch_key = 'decode_head.' + branch_key   
+                    new_model_data[branch_key] = value                
                 if 'stages.' in key:
                     branch_key = key.split('.',1)[-1]
                     branch_key = 'obj_stages.' + branch_key
