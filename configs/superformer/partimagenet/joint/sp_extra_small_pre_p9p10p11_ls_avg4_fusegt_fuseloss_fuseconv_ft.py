@@ -4,7 +4,7 @@ _base_ = [
 accumulative_counts = 4
 total_iter=10000 * accumulative_counts
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderJoint',
     decode_head=dict(
     use_gt_loss = True,          
 ))

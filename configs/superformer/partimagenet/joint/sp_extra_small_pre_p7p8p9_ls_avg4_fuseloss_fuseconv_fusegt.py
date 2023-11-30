@@ -3,7 +3,7 @@ _base_ = [
 ]
 num_classes = 57
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderJoint',
     decode_head=dict(
     use_gt_fuse = True,
 ))

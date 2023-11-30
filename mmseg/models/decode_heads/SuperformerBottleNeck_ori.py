@@ -1566,7 +1566,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
         else:
             assert self.sp_global_init_method == "none"
-        if self.obj_stages_pos is not None and self.obj_stages_pos[0] == 0:
+        if obj_stages_pos is not None and obj_stages_pos[0] == 0:
             self.obj_init = deepcopy(self.sp_init)
             self.obj_stem = deepcopy(self.stem)
         assert (

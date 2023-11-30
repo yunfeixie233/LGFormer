@@ -3,7 +3,7 @@ _base_ = [
 ]
 num_classes = 57
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderJoint',
     decode_head=dict(
     group_pos = ((),(7,8,9,),()), 
     group_init_strides = (4,4,4,),

@@ -2,7 +2,7 @@ _base_ = [
     './sp_extra_small_pre.py',
 ]
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderJoint',
     decode_head=dict(
     use_gt_extralayer = True,        
     use_gt_loss = True,

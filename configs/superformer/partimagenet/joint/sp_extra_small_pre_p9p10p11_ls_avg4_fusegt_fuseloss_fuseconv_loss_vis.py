@@ -3,7 +3,7 @@ _base_ = [
 ]
 num_classes = 57
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderJoint',
     decode_head=dict(
     output_dir = "/data2/yunfei/sp_extra_small_pre_p9p10p11_ls_avg4_fusegt_fuseloss_fuseconv_loss",
     vis_gt = True,

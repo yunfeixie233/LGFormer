@@ -3,7 +3,7 @@ _base_ = [
 ]
 num_classes = 57
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderJoint',
     decode_head=dict(
     classification_feature = 'joint_extralayer',       
     group_pos = ((),(7,8,9,),()), 
