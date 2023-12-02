@@ -429,7 +429,7 @@ class GPBlock(nn.Module):
                 layers = []
                 for k_size, stride in zip(init_kernel_size, init_stride):
                     layers.extend([
-                        nn.AvgPool2d(kernel_size=init_stride,stride=init_stride),
+                        nn.AvgPool2d(kernel_size=k_size,stride=stride),
                         timm_layers.LayerNorm2d(group_embed_dims),
                         nn.GELU(),
 

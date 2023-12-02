@@ -2323,15 +2323,24 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
         #firstly we will cls group token, gt logits will be upsample to sp shape
-
+        if isinstance(self.group_init_strides[-1], int):
+            group_stride = self.group_init_strides[-1]
+        elif isinstance(self.group_init_strides[-1], tuple):
+            group_stride = 1
+            for stride in self.group_init_strides[-1]:
+                group_stride *= stride
+        else:
+            raise(TypeError)
         if self.use_gt_loss:
-            h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
-            w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
+
+            h_g = last_sp_layer.superpixel_shape[0] // group_stride
+            w_g = last_sp_layer.superpixel_shape[1] // group_stride
             
             num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt_list[-1].shape 
             gt_logits_list = []               
             final_gt = None
+            
             for i, (gt, attn_map) in enumerate(zip(gt_list,attn_dict_list)):
                 if self.gt_cls_method == "upsample_first":                       
                     gt_new = rearrange(gt, 'b n (h c) ->  b h n c', h=num_heads, c = hc // num_heads )                          
@@ -2343,8 +2352,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     else:
                         if self.vis_group:
                             to_h5(self.output_dir,1,gt_new = rearrange(gt_new,'b (h w) c -> b c h w',
-                                    h = h_g *  self.group_init_strides[-1],
-                                    w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)    
+                                    h = h_g *  group_stride,
+                                    w = w_g *  group_stride), max_file_per_fold=10)    
                                 
                         final_gt += gt_new
                         # final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
@@ -2359,20 +2368,20 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
      
             gt_logits = self.gt_head(self.gt_norm(final_gt))
             gt_logits = rearrange(gt_logits,'b (h w) c -> b c h w',
-                                h = h_g *  self.group_init_strides[-1],
-                                w = w_g *  self.group_init_strides[-1]) 
+                                h = h_g *  group_stride,
+                                w = w_g *  group_stride) 
             if self.vis_group:                       
                 to_h5(self.output_dir,1,final_gt = rearrange(final_gt,'b (h w) c -> b c h w',
-                        h = h_g *  self.group_init_strides[-1],
-                        w = w_g *  self.group_init_strides[-1]), max_file_per_fold=10)              
+                        h = h_g *  group_stride,
+                        w = w_g *  group_stride), max_file_per_fold=10)              
                 to_h5(self.output_dir,1,gt_logits = gt_logits, max_file_per_fold=10)                
                   
                 # set gt variance for the last group when supervised all group
-            h_g = h_g *  self.group_init_strides[-1]
-            w_g = w_g *  self.group_init_strides[-1]     
+            h_g = h_g *  group_stride
+            w_g = w_g *  group_stride     
         elif self.use_gt_fuse:
-            h_g = last_sp_layer.superpixel_shape[0] // self.group_init_strides[-1]
-            w_g = last_sp_layer.superpixel_shape[1] // self.group_init_strides[-1]
+            h_g = last_sp_layer.superpixel_shape[0] // group_stride
+            w_g = last_sp_layer.superpixel_shape[1] // group_stride
             
             num_heads = self.group_cfg['num_ungroup_heads']
             _, n, hc = gt_list[-1].shape 
