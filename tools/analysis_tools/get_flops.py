@@ -88,8 +88,8 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
         model,
         input_shape,
         inputs=data['inputs'],
-        show_table=False,
-        show_arch=False)
+        show_table=True,
+        show_arch=True)
     result['flops'] = _format_size(outputs['flops'])
     result['params'] = _format_size(outputs['params'])
     result['compute_type'] = 'direct: randomly generate a picture'

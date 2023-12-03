@@ -6,6 +6,7 @@ model = dict(
     depths_obj = (None,1,-1,),
     group_init_strides = (2,2,2,),
     group_init_kernel_sizes = (2,2,2,),
-    group_layers = {0:256,1:256,2:256},      
+    group_layers = {0:256,1:256,2:256}, 
+    group_pos = [[],[7,8,9,],[]]     
     )
 )

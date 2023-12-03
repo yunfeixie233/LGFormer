@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from functools import partial, lru_cache
 import copy
+from tabulate import tabulate
 
 import timm
 from timm.models.vision_transformer import Block, _cfg
@@ -134,6 +135,35 @@ def intersect_and_union(pred_regions, gt_regions, ignore_index=bg_class):
 #         max=num_classes - 1).cpu()
 #     area_union = area_pred_label + area_label - area_intersect
 #     return area_intersect, area_union, area_pred_label, area_label
+
+from prettytable import PrettyTable
+
+def dict_to_prettytable(d):
+    # 创建 PrettyTable 实例
+    table = PrettyTable()
+
+    # 添加列头
+    table.field_names = list(d.keys())
+
+    # 寻找最长的列
+    max_length = max(len(v) if isinstance(v, list) else 1 for v in d.values())
+
+    # 添加行数据
+    for i in range(max_length):
+        row = []
+        for key in d.keys():
+            value = d[key]
+            if isinstance(value, list):
+                try:
+                    row.append(value[i])
+                except IndexError:
+                    row.append(None)  # 当列表长度不足时填充 None
+            else:
+                row.append(value if i == 0 else None)  # 非列表值只在第一行显示
+        table.add_row(row)
+
+    # 打印表格
+    print(table)
 
 
 def process_regions(regions, ground_truth, top_k=10):
@@ -1690,7 +1720,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             use_gumbel = use_gumbel,
             use_group_attn = use_group_attn,
             )
-            print(group_cfg)           
+            for key, value in group_cfg.items():
+                 print(f"{key}:{value}")
         if self.use_group_token == 'post':
                 self.group_cfg = group_cfg                            
                 self.merge_layer = self._make_group_layer()
@@ -1728,13 +1759,27 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 group_pos = None                          
                 merge_layer = None
             #use obj branch
-            if depths_obj is not None:
+            if depths_obj[i] is not None and depths_obj[i] != -1:
                 depth_obj = depths_obj[i]
+                group_cfg_obj = deepcopy(group_cfg)
+                trim_num = min(group_cfg_obj['layer_num'],depth_obj)
+                group_cfg_obj['layer_num'] = trim_num
+                group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
+                group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][:trim_num]                
+                group_cfg_obj['group_init_strides'] = group_cfg['group_init_strides'][:trim_num]
+                group_cfg_obj['group_init_kernel_sizes'] = group_cfg['group_init_kernel_sizes'][:trim_num]
+                group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
                 merge_layer_obj = self._make_group_layer(
-                    stage = i,
-                )                
+                    stage = i, cfg = group_cfg_obj
+                )       
+                print("#######group_cfg_obj########")
+                for key, value in group_cfg_obj.items():
+                    print(f"{key}:{value}")     
+                print("#######group_cfg_obj########")
+                       
             else:
-                depth_obj = None                
+                depth_obj = None
+                merge_layer_obj = None                
             # first feature already has norm & act
             pre_norm_pixel_stage = pre_norm_pixel and i != 0
             if pre_norm_pixel_stage:
@@ -1840,7 +1885,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         vis_sp_block = vis_sp_block,
                         output_dir = output_dir          
                     )
-            elif i == num_stages - 1 and self.depths_obj[-1] == -1:
+            elif i == num_stages - 1 and self.depths_obj is not None and self.depths_obj[-1] == -1:
                 self.obj_extralayer= \
                     SuperformerStage(
                         stage_in_dim,
@@ -2206,45 +2251,49 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
     def _make_group_layer(
         self,
         stage: int = None,        
-        
+        cfg: dict = None,
     ):
-        group_cfg = copy.copy(self.group_cfg)
+        if cfg is not None:
+            ori_cfg = cfg
+        else:
+            ori_cfg = self.group_cfg
+        group_cfg = copy.copy(ori_cfg)
         if self.use_group_token == 'post':
             depth = len(self.group_cfg['group_layers'].keys())
         elif self.use_group_token == 'mix':
-            depth = len(self.group_cfg['group_pos'][stage])
+            depth = len(ori_cfg['group_pos'][stage])
         merge_layer = nn.ModuleList()
         dpr = np.linspace(0, group_cfg['group_drop_path_rate'], len(group_cfg['group_layers'].keys()))
 
         for i in range(depth):
             if i >0 :
-                if self.group_cfg["group_projector_method"] == 'linear':
+                if ori_cfg["group_projector_method"] == 'linear':
                     group_projector =nn.Sequential(
-                        nn.LayerNorm(self.group_cfg['group_embed_dims']),
-                        MixerMlp(self.group_cfg['group_layers'][i-1], self.group_cfg['group_embed_dims'] // 2, self.group_cfg['group_layers'][i])
+                        nn.LayerNorm(ori_cfg['group_embed_dims']),
+                        MixerMlp(ori_cfg['group_layers'][i-1], ori_cfg['group_embed_dims'] // 2, ori_cfg['group_layers'][i])
                         )
-                elif self.group_cfg["group_projector_method"] == 'cross':
+                elif ori_cfg["group_projector_method"] == 'cross':
                     group_projector = FullAttnCatBlock(
-                        embed_dims=self.group_cfg['embed_dims'],
-                        num_heads = self.group_cfg['num_group_heads'],
+                        embed_dims=ori_cfg['embed_dims'],
+                        num_heads = ori_cfg['num_group_heads'],
                         key_is_query=False,
                         value_is_key=False,
                     )
-                elif self.group_cfg["group_projector_method"]== None:
+                elif ori_cfg["group_projector_method"]== None:
                     group_projector=None
                 else :
                     raise(NotImplementedError)
             else:
                 group_projector=None
                 
-            group_cfg.update({'init_stride': self.group_cfg['group_init_strides'][i],
-                              'init_kernel_size': self.group_cfg['group_init_kernel_sizes'][i],
-                              'group_token_init_method': self.group_cfg["group_token_init_method"][i],
-                               'num_group_token':self.group_cfg['group_layers'][i],
+            group_cfg.update({'init_stride': ori_cfg['group_init_strides'][i],
+                              'init_kernel_size': ori_cfg['group_init_kernel_sizes'][i],
+                              'group_token_init_method': ori_cfg["group_token_init_method"][i],
+                               'num_group_token':ori_cfg['group_layers'][i],
                                'group_projector':group_projector,
-                               'group_identity':self.group_cfg["group_identity"][i] if isinstance(self.group_cfg["group_identity"], tuple) else self.group_cfg["group_identity"],
-                               'ungroup_identity':self.group_cfg["ungroup_identity"][i] if isinstance(self.group_cfg["ungroup_identity"], tuple) else self.group_cfg["ungroup_identity"],
-                               'ungroup_enable':self.group_cfg["ungroup_enable"][i] if isinstance(self.group_cfg["ungroup_enable"], tuple) else self.group_cfg["ungroup_enable"],
+                               'group_identity':ori_cfg["group_identity"][i] if isinstance(ori_cfg["group_identity"], tuple) else ori_cfg["group_identity"],
+                               'ungroup_identity':ori_cfg["ungroup_identity"][i] if isinstance(ori_cfg["ungroup_identity"], tuple) else ori_cfg["ungroup_identity"],
+                               'ungroup_enable':ori_cfg["ungroup_enable"][i] if isinstance(ori_cfg["ungroup_enable"], tuple) else ori_cfg["ungroup_enable"],
                                
                                'drop_path':dpr[i],                                           
                                                 })
@@ -3243,7 +3292,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 if 'extralayer' in self.classification_feature:
                     if self.obj_stages_pos is not None:                  
                         info, _, _ = self.obj_stages[-1].patch_embed(pixel_features, gt_2d)
-                    elif self.depths_obj[-1] == -1:
+                    elif self.depths_obj is not None and self.depths_obj[-1] == -1:
                         info, _, _ = self.obj_extralayer.patch_embed(pixel_features, gt_2d)
                     else:
                         info, _, _ = last_sp_layer(pixel_features, gt_2d)
