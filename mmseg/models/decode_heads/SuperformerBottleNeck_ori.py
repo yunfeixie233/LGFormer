@@ -954,7 +954,7 @@ class SuperformerStage(nn.Module):
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt, global_token = None
                 )
                     #if True, apply group layer for obj branch
-                    if self.depth_obj is not None and i-self.obj_idx >=0:
+                    if self.depth_obj is not None and i-self.obj_idx >=0 and i-self.obj_idx < len(self.merge_layer_obj):
                         x_obj, attn_dict_list_obj , gt_obj = self.merge_layer_obj[i-self.obj_idx](
                         x_obj, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list_obj, prev_token=gt_obj, global_token = None
                     )                    
@@ -962,7 +962,8 @@ class SuperformerStage(nn.Module):
                     x, ps = einops.pack([x, gt], 'b * d ')             
                 if gt is not None and gt_list is not None:
                     gt_list.append(gt)
-
+                if gt_obj is not None and gt_list_obj is not None:
+                    gt_list_obj.append(gt_obj)
               
         if self.use_global_token:
             x, global_token = einops.unpack(x, ps, 'b * d')
