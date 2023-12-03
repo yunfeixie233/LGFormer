@@ -35,7 +35,6 @@ optim_wrapper = dict(
     weight_decay=0.05),
     accumulative_counts=accumulative_counts,    
     paramwise_cfg=dict(
-        bypass_duplicate=True,        
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
             'norm1': dict(decay_mult=0.),

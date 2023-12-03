@@ -4,6 +4,7 @@ from tkinter import N
 from typing import Any, Callable, Dict, MutableMapping, Optional, Sequence, Tuple, Union
 import warnings
 import math
+from click import group
 import einops
 from matplotlib.pyplot import xcorr
 import numpy as np
@@ -540,6 +541,7 @@ class SuperformerStage(nn.Module):
         sp_stride: int,
         num_heads: int,
         depth: int,
+        depth_obj: int = None,
         drop_rate=0.0,
         attn_drop_rate=0.0,
         drop_path_rate: Union[float, Sequence[float]] = 0.0,
@@ -565,6 +567,7 @@ class SuperformerStage(nn.Module):
         use_pixel_similarities: bool = False,
         use_middle_pixel_features: bool = False,
         merge_layer = None,
+        merge_layer_obj = None,
         group_pos = None,
         group_vit_pos = None,
         reweight: bool = False,
@@ -595,6 +598,8 @@ class SuperformerStage(nn.Module):
         self.use_pixel_similarities = use_pixel_similarities
         self.use_middle_pixel_features = use_middle_pixel_features
         self.merge_layer = merge_layer
+        self.merge_layer_obj = merge_layer_obj
+        
         self.group_pos = group_pos
         self.group_vit_pos = group_vit_pos
         
@@ -752,6 +757,34 @@ class SuperformerStage(nn.Module):
                 for i in range(depth)
             ]
         )
+        self.depth_obj = depth_obj
+        if depth_obj is not None:
+            assert depth_obj >= -1
+            self.obj_idx = depth - depth_obj
+            self.blocks_obj =  nn.Sequential(
+                *[
+                    block_fn(
+                        dim=out_channels,
+                        num_heads=num_heads,
+                        mlp_ratio=4,
+                        qkv_bias=True,
+                        # drop=drop_rate,
+                        proj_drop=drop_rate,
+                        attn_drop=attn_drop_rate,
+                        drop_path=(
+                            drop_path_rate[i + self.obj_idx]
+                            if isinstance(drop_path_rate, Sequence)
+                            else drop_path_rate
+                        ),
+                        norm_layer=norm_layer,
+                        act_layer=act_layer,
+                        init_values=ls_init_value
+                    )
+                    for i in range(depth_obj)
+                ]
+            )
+        
+
         if reweight:
             self.reweight = Reweight()
         else:
@@ -843,7 +876,8 @@ class SuperformerStage(nn.Module):
         return res
 
     def forward_blocks_range(
-        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt_list: list = None,global_token: torch.Tensor = None
+        self, x: torch.Tensor, start: int, end: int,attn_dict_list:list = None, gt_list: list = None,global_token: torch.Tensor = None,x_obj: torch.Tensor = None,
+        attn_dict_list_obj:list = None, gt_list_obj: list = None,
 
     ) -> torch.Tensor:
         #global token concat and forward with image token, default to False
@@ -867,24 +901,33 @@ class SuperformerStage(nn.Module):
                 if self.vis_sp_block:
                     to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
                 x = self.blocks[i](x)
+                #obj branch part
+                if self.depth_obj is not None:
+                    if i == self.obj_idx:
+                        x_obj  = x.clone()
+                    if i >= self.obj_idx:
+                        x_obj = self.blocks_obj[i-self.obj_idx](x_obj)
+                    
             #return sp of middle layer to generate similarity if needed
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
   
             if self.merge_layer and i in self.group_pos:
                 #unpack when cross attention
-                gt = gt_list[-1] if gt_list else None         
+                gt = gt_list[-1] if gt_list else None
+                gt_obj = gt_list_obj[-1] if gt_list_obj else None         
                 if self.use_global_token: 
                     x, global_token = einops.unpack(x, ps, 'b * d') 
-                if self.use_global_fuse: 
-                                 
-                    x,attn_dict_list , gt = self.merge_layer[self.group_pos.index(i)](
-                    x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt, global_token = global_token
-                )
+
                 else:
                     x,attn_dict_list , gt = self.merge_layer[self.group_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt, global_token = None
                 )
+                    #if True, apply group layer for obj branch
+                    if self.depth_obj is not None and i-self.obj_idx >=0:
+                        x_obj, attn_dict_list_obj , gt_obj = self.merge_layer_obj[i-self.obj_idx](
+                        x_obj, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list_obj, prev_token=gt_obj, global_token = None
+                    )                    
                 if self.use_global_token: 
                     x, ps = einops.pack([x, gt], 'b * d ')             
                 if gt is not None and gt_list is not None:
@@ -896,7 +939,7 @@ class SuperformerStage(nn.Module):
         if self.vis_sp_block:
             to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
            
-        return x,attn_dict_list, gt_list, sp_featuers_mid, global_token
+        return x,attn_dict_list, gt_list, sp_featuers_mid, global_token, x_obj, attn_dict_list_obj, gt_list_obj
 
     def add_pos_embed(self, x):
         if self.no_embed_class:
@@ -1090,6 +1133,10 @@ class SuperformerStage(nn.Module):
         attn_dict_list:list = None,
         gt_list: torch.Tensor = None,
         global_token: torch.Tensor = None,
+        sp_features_seg_obj: torch.Tensor = None,
+        attn_dict_list_obj:list = None,
+        gt_list_obj: torch.Tensor = None,
+        
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         
         
@@ -1156,12 +1203,13 @@ class SuperformerStage(nn.Module):
         if vis_sp_block:
             sp_before = sp_features.detach()
         # [0, seg_block_idx) are the blocks for segmentation
-
-        sp_features_seg, attn_dict_list, gt_list, sp_featuers_mid,global_token = self.forward_blocks_range(
-            sp_features, 0, self.seg_block_idx, attn_dict_list, gt_list, global_token
+        
+        sp_features_seg, attn_dict_list, gt_list, sp_featuers_mid,global_token, sp_features_seg_obj, attn_dict_list_obj, gt_list_obj = self.forward_blocks_range(
+            sp_features, 0, self.seg_block_idx, attn_dict_list, gt_list, global_token, sp_features_seg_obj, attn_dict_list_obj, gt_list_obj
         )
 
         sp_features = sp_features_seg
+        sp_features_obj = sp_features_seg_obj
         if vis_sp_block:
             import h5py
             sp_vis = sp_before
@@ -1218,19 +1266,17 @@ class SuperformerStage(nn.Module):
             else:
                 sp_features_unflatten = sp_features_unflatten_projected
 
-        if self.unflatten_sp_features:
-            if sp_features_unflatten is None:
-                sp_features_unflatten = self.forward_unflatten_sp_features(sp_features)
-            sp_features = sp_features_unflatten
 
         return (
             updated_pixel_features,
-            sp_features,
             sp_features_seg,
             attn_dict_list,
             gt_list,
             sp_featuers_mid,
             global_token,
+            sp_features_seg_obj,
+            attn_dict_list_obj,
+            gt_list_obj,
         )
 class Mlp(nn.Module):
 
@@ -1272,6 +1318,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         stem_strides: Sequence[int] = (4,),
         stem_conv_types: Sequence[str] = ("patch",),
         depths: Sequence[int] = (2, 10),
+        depths_obj: Sequence[int] = None,
         dims: Sequence[int] = (384, 384),
         heads: Sequence[int] = (6, 6),
         strides: Sequence[int] = (1, 1),
@@ -1643,8 +1690,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             use_gumbel = use_gumbel,
             use_group_attn = use_group_attn,
             )
-
-            print(group_cfg)
+            print(group_cfg)           
         if self.use_group_token == 'post':
                 self.group_cfg = group_cfg                            
                 self.merge_layer = self._make_group_layer()
@@ -1655,9 +1701,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         obj_stages = []   
         stage_in_dim = stem_channels_list[-1]
         self.use_gt_extralayer = use_gt_extralayer 
+        self.depths_obj = depths_obj
         for i, (depth, dim, head, sp_size, sp_head, stride) in enumerate(
-            zip(depths, dims, heads, sp_sizes, sp_heads, strides)
+            zip(depths, dims, heads, sp_sizes, sp_heads, strides, )
         ):
+
             cur_stride *= stride
             sp_stride = sp_size * stride // sp_sizes[i - 1] if i > 0 else 1
             sp_layer, sp_shape = self._make_superpixel_layer(
@@ -1665,18 +1713,28 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             )
             if self.use_group_token == 'mix':
                 group_cfg.update({'superpixel_shape': sp_shape})
-                
                 group_pos = group_cfg['group_pos'][i]
                 if group_vit_pos:
                     assert self.classification_feature == "group_extralayer"
                     group_vit_pos = group_cfg['group_vit_pos'][i]
-                self.group_cfg = group_cfg                
+                self.group_cfg = group_cfg          
                 merge_layer = self._make_group_layer(
                     stage = i,
-                )                
+                )
+
+
+                                
             else:
                 group_pos = None                          
                 merge_layer = None
+            #use obj branch
+            if depths_obj is not None:
+                depth_obj = depths_obj[i]
+                merge_layer_obj = self._make_group_layer(
+                    stage = i,
+                )                
+            else:
+                depth_obj = None                
             # first feature already has norm & act
             pre_norm_pixel_stage = pre_norm_pixel and i != 0
             if pre_norm_pixel_stage:
@@ -1700,6 +1758,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     sp_stride,
                     head,
                     depth,
+                    depth_obj,
                     norm_layer=norm_layer,
                     norm_layer_2d=norm_layer_2d,
                     act_layer=act_layer,
@@ -1723,6 +1782,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_pixel_similarities=use_pixel_similarities,
                     use_middle_pixel_features=use_middle_pixel_features,
                     merge_layer = merge_layer,
+                    merge_layer_obj = merge_layer_obj,
                     group_pos = group_pos,
                     group_vit_pos = group_vit_pos,
                     reweight = reweight_pixel_update,
@@ -1771,6 +1831,50 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         use_pixel_similarities=use_pixel_similarities,
                         use_middle_pixel_features=use_middle_pixel_features,
                         merge_layer = merge_layer,
+                        group_pos = group_pos,
+                        group_vit_pos = group_vit_pos,
+                        reweight = reweight_pixel_update,
+                        use_global_token = use_global_token,
+                        return_mid_sp = return_mid_sp,
+                        use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
+                        vis_sp_block = vis_sp_block,
+                        output_dir = output_dir          
+                    )
+            elif i == num_stages - 1 and self.depths_obj[-1] == -1:
+                self.obj_extralayer= \
+                    SuperformerStage(
+                        stage_in_dim,
+                        sp_dim,
+                        dim,
+                        stride,
+                        sp_stride,
+                        head,
+                        depth,
+                        depth_obj,
+                        norm_layer=norm_layer,
+                        norm_layer_2d=norm_layer_2d,
+                        act_layer=act_layer,
+                        drop_rate=drop_rate,
+                        drop_path_rate=drop_path_rates[cur_depth : cur_depth + depth],
+                        attn_drop_rate=attn_drop_rate,
+                        superpixel_layer=sp_layer,
+                        pixel_ls_init_value=pixel_ls_init_value,
+                        ls_init_value=ls_init_value,
+                        pre_norm_pixel=pre_norm_pixel_stage,
+                        sp_embed_method=sp_embed_method,
+                        sp_project_method=sp_project_method,
+                        pixel_refine_method=pixel_refine_method,
+                        return_updated_pixel_features=return_updated_pixel_features if self.use_patch_embed is False else False,
+                        unflatten_sp_features=unflatten_sp_features,
+                        use_pos_embed=use_pos_embeds[i],
+                        use_cls_token=use_class_tokens[i],
+                        pos_embed_method=pos_embed_method,
+                        no_embed_class=self.no_embed_class,
+                        superpixel_shape=sp_shape,
+                        use_pixel_similarities=use_pixel_similarities,
+                        use_middle_pixel_features=use_middle_pixel_features,
+                        merge_layer = merge_layer,
+                        merge_layer_obj = merge_layer_obj,
                         group_pos = group_pos,
                         group_vit_pos = group_vit_pos,
                         reweight = reweight_pixel_update,
@@ -2186,14 +2290,19 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             assert len(self.stages) > 0
             global_token = None  
             pixel_features_obj = None 
-            sp_features_seg_obj = None            
+            sp_features_seg_obj = None
+            sp_features_obj = None            
             if self.use_group_token == 'mix':
                 attn_dict_list = []
                 gt_list = []
+                attn_dict_list_obj = []
+                gt_list_obj = []
 
             else:
                 attn_dict_list = None 
-                gt_list = None        
+                gt_list = None
+                attn_dict_list_obj = None
+                gt_list_obj = None        
             for i, stage in enumerate(self.stages):# skip final stage if use extra stage
                 if ('extralayer' not in self.classification_feature) or  i < len(self.stages) -1:
                     if self.obj_stages_pos is not None and i in self.obj_stages_pos:
@@ -2207,7 +2316,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             else:
                                 sp_features_obj = sp_features_last.clone()
                                 pixel_features_obj = pixel_features.clone()
-                        pixel_features, sp_features, sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
+                        pixel_features,sp_features_seg, _ , _ ,sp_features_mid,global_token = stage(
                             pixel_features,
                             sp_features_last,
                             [],
@@ -2221,14 +2330,17 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                             gt_list,
                             global_token, 
                         )
-                        
+                    
                     else:
-                        pixel_features, sp_features, sp_features_seg,attn_dict_list, gt_list,sp_features_mid,global_token = stage(
+                        pixel_features, sp_features_seg,attn_dict_list, gt_list,sp_features_mid,global_token, sp_features_seg_obj,attn_dict_list_obj,gt_list_obj = stage(
                             pixel_features,
                             sp_features_last,
                             attn_dict_list,
                             gt_list,
-                            global_token, 
+                            global_token,
+                            sp_features_seg_obj,
+                            attn_dict_list_obj,
+                            gt_list_obj, 
                         )
                     
                     if self.return_mid_pixel: 
@@ -2237,7 +2349,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     else:
                         pixel_features_mid = None
 
-                    sp_features_last = sp_features
+                    sp_features_last = sp_features_seg
                 if self.vis_sp_stage:
                     import h5py
                     sp_vis = sp_features_last.detach() 
@@ -2254,15 +2366,14 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 # # res[f"sp_features_stage{i}"] = sp_features
                 # if return_updated_pixel_features:
                 #     endpoints[f"pixel_features_stage{i}"] = pixel_features
-            
             endpoints = {
                 "pixel_features": pixel_features,
                 "sp_features": sp_features_seg,
-                "attn_dict_list": attn_dict_list,
-                "gt_list": gt_list,
-                "sp_features_mid": sp_features_mid,
-                "pixel_features_mid": pixel_features_mid,
+                "attn_dict_list": attn_dict_list_obj if len(attn_dict_list_obj) > 0 else attn_dict_list,
+                "gt_list": gt_list_obj if len(gt_list_obj) > 0 else gt_list,
                 "sp_features_obj": sp_features_seg_obj,
+                "sp_features_mid": sp_features_mid,
+                "pixel_features_mid": pixel_features_mid,                
             }
 
                            
@@ -3132,6 +3243,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 if 'extralayer' in self.classification_feature:
                     if self.obj_stages_pos is not None:                  
                         info, _, _ = self.obj_stages[-1].patch_embed(pixel_features, gt_2d)
+                    elif self.depths_obj[-1] == -1:
+                        info, _, _ = self.obj_extralayer.patch_embed(pixel_features, gt_2d)
                     else:
                         info, _, _ = last_sp_layer(pixel_features, gt_2d)
                         
