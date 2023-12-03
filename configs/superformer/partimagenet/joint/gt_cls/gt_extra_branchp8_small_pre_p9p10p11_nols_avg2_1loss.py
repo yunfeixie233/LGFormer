@@ -3,6 +3,6 @@ _base_ = [
 ]
 model = dict(
     decode_head=dict(
-    depths_obj = (None,2,-1,),
+    depths_obj = (None,4,-1,),
     )
 )
