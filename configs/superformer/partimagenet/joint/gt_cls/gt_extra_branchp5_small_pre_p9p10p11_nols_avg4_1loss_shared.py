@@ -3,7 +3,7 @@ _base_ = [
 ]
 model = dict(
     decode_head=dict(
-    depths_obj = (None,8,-1,),
+    depths_obj = (None,7,-1,),
     shared_merge_layer = True,
     )
 )
