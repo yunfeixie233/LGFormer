@@ -1468,7 +1468,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
-        
+        #bbranch setting
+        shared_merge_layer: bool = False,
         **kwargs
 
     ):
@@ -1497,7 +1498,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
         
-        
+        self.shared_merge_layer = shared_merge_layer
         
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
@@ -1760,19 +1761,23 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 group_pos = None                          
                 merge_layer = None
             #use obj branch
-            if depths_obj[i] is not None and depths_obj[i] != -1:
+            if depths_obj is not None and depths_obj[i] is not None and depths_obj[i] != -1:
                 depth_obj = depths_obj[i]
                 group_cfg_obj = deepcopy(group_cfg)
                 trim_num = min(group_cfg_obj['layer_num'],depth_obj)
-                group_cfg_obj['layer_num'] = trim_num
-                group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
-                group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][:trim_num]                
-                group_cfg_obj['group_init_strides'] = group_cfg['group_init_strides'][:trim_num]
-                group_cfg_obj['group_init_kernel_sizes'] = group_cfg['group_init_kernel_sizes'][:trim_num]
-                group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
-                merge_layer_obj = self._make_group_layer(
-                    stage = i, cfg = group_cfg_obj
-                )       
+                if self.shared_merge_layer:
+                    assert(group_cfg_obj['layer_num'] <= depth_obj)
+                    merge_layer_obj = merge_layer
+                else:
+                    group_cfg_obj['layer_num'] = trim_num
+                    group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
+                    group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][:trim_num]                
+                    group_cfg_obj['group_init_strides'] = group_cfg['group_init_strides'][:trim_num]
+                    group_cfg_obj['group_init_kernel_sizes'] = group_cfg['group_init_kernel_sizes'][:trim_num]
+                    group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
+                    merge_layer_obj = self._make_group_layer(
+                        stage = i, cfg = group_cfg_obj
+                    )       
                 print("#######group_cfg_obj########")
                 for key, value in group_cfg_obj.items():
                     print(f"{key}:{value}")     
