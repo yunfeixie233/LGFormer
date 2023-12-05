@@ -1778,7 +1778,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 depth_obj = depths_obj[i]
                 group_cfg_obj = deepcopy(group_cfg)
                 trim_num = min(group_cfg_obj['layer_num'],depth_obj)
-                group_pos_obj = group_pos
+                group_pos_obj = group_cfg['group_pos']
                 group_pos_obj[i] = group_cfg['group_pos'][i][:trim_num]
                 group_pos_obj_i = group_pos_obj[i] 
                 if self.shared_merge_layer:
