@@ -599,6 +599,7 @@ class SuperformerStage(nn.Module):
         merge_layer = None,
         merge_layer_obj = None,
         group_pos = None,
+        group_pos_obj = None,
         group_vit_pos = None,
         reweight: bool = False,
         use_global_token: bool = False,
@@ -631,6 +632,7 @@ class SuperformerStage(nn.Module):
         self.merge_layer_obj = merge_layer_obj
         
         self.group_pos = group_pos
+        self.group_pos_obj = group_pos_obj
         self.group_vit_pos = group_vit_pos
         
         self.use_gt_in_vit = use_gt_in_vit
@@ -931,7 +933,7 @@ class SuperformerStage(nn.Module):
                 if self.vis_sp_block:
                     to_h5(self.output_dir,1,sp_feature = x, max_file_per_fold=50)                
                 x = self.blocks[i](x)
-                #obj branch part
+                #init & forward sp feature for obj branch
                 if self.depth_obj is not None:
                     if i == self.obj_idx:
                         x_obj  = x.clone()
@@ -941,30 +943,36 @@ class SuperformerStage(nn.Module):
             #return sp of middle layer to generate similarity if needed
             if self.return_mid_sp and i == self.return_mid_sp:
                 sp_featuers_mid = x.clone()            
-  
+            #group token layer in part branch
             if self.merge_layer and i in self.group_pos:
                 #unpack when cross attention
                 gt = gt_list[-1] if gt_list else None
-                gt_obj = gt_list_obj[-1] if gt_list_obj else None         
                 if self.use_global_token: 
                     x, global_token = einops.unpack(x, ps, 'b * d') 
 
                 else:
                     x,attn_dict_list , gt = self.merge_layer[self.group_pos.index(i)](
                     x, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list, prev_token=gt, global_token = None
-                )
-                    #if True, apply group layer for obj branch
-                    if self.depth_obj is not None and i-self.obj_idx >=0 and i-self.obj_idx < len(self.merge_layer_obj):
-                        x_obj, attn_dict_list_obj , gt_obj = self.merge_layer_obj[i-self.obj_idx](
-                        x_obj, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list_obj, prev_token=gt_obj, global_token = None
-                    )                    
+                )                 
                 if self.use_global_token: 
                     x, ps = einops.pack([x, gt], 'b * d ')             
                 if gt is not None and gt_list is not None:
                     gt_list.append(gt)
+            # group token layer in obj branch     
+            if self.merge_layer_obj and i in self.group_pos_obj:
+                #unpack when cross attention
+                gt_obj = gt_list_obj[-1] if gt_list_obj else None         
+                if self.use_global_token: 
+                    x_obj, global_token = einops.unpack(x_obj, ps, 'b * d') 
+
+                else:
+                    x_obj,attn_dict_list_obj , gt_obj = self.merge_layer_obj[self.group_pos.index(i)](
+                    x_obj, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list_obj, prev_token=gt_obj, global_token = None
+                )                 
+                if self.use_global_token: 
+                    x_obj, ps = einops.pack([x_obj, gt_obj], 'b * d ')             
                 if gt_obj is not None and gt_list_obj is not None:
-                    gt_list_obj.append(gt_obj)
-              
+                    gt_list_obj.append(gt_obj)  
         if self.use_global_token:
             x, global_token = einops.unpack(x, ps, 'b * d')
         if self.vis_sp_block:
@@ -1470,6 +1478,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         log_interval: int = 50,
         #bbranch setting
         shared_merge_layer: bool = False,
+        onlyobj_merge_layer: bool = False,
         **kwargs
 
     ):
@@ -1499,7 +1508,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.reweight_pixel_sim = reweight_pixel_sim
         
         self.shared_merge_layer = shared_merge_layer
-        
+        self.onlyobj_merge_layer = onlyobj_merge_layer
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
         self.reweight_pixel_update_last = reweight_pixel_update_last
@@ -1746,7 +1755,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             )
             if self.use_group_token == 'mix':
                 group_cfg.update({'superpixel_shape': sp_shape})
-                group_pos = group_cfg['group_pos'][i]
+                group_pos_i = group_cfg['group_pos'][i]
                 if group_vit_pos:
                     assert self.classification_feature == "group_extralayer"
                     group_vit_pos = group_cfg['group_vit_pos'][i]
@@ -1758,15 +1767,23 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
                                 
             else:
-                group_pos = None                          
+                group_pos_i = None                          
                 merge_layer = None
-            #use obj branch
+            #init group token layer for obj branch            
+            #NOTE three methods to handle merge layer(group token layer) when branch
+            # 1.default: obj branch and part branch have individual merge layers respectively
+            # 2.shared_merge_layer: obj branch and part branch share the same merge layer
+            # 3.onlyobj_merge_layer: only use merge layer in obj branch
             if depths_obj is not None and depths_obj[i] is not None and depths_obj[i] != -1:
                 depth_obj = depths_obj[i]
                 group_cfg_obj = deepcopy(group_cfg)
                 trim_num = min(group_cfg_obj['layer_num'],depth_obj)
+                group_pos_obj = group_pos
+                group_pos_obj[i] = group_cfg['group_pos'][i][:trim_num]
+                group_pos_obj_i = group_pos_obj[i] 
                 if self.shared_merge_layer:
                     assert(group_cfg_obj['layer_num'] <= depth_obj)
+                    assert(group_pos_obj == group_pos)
                     merge_layer_obj = merge_layer
                 else:
                     group_cfg_obj['layer_num'] = trim_num
@@ -1777,7 +1794,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
                     merge_layer_obj = self._make_group_layer(
                         stage = i, cfg = group_cfg_obj
-                    )       
+                    )
+                    if self.onlyobj_merge_layer:
+                        merge_layer = None       
                 print("#######group_cfg_obj########")
                 for key, value in group_cfg_obj.items():
                     print(f"{key}:{value}")     
@@ -1785,7 +1804,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                        
             else:
                 depth_obj = None
-                merge_layer_obj = None                
+                merge_layer_obj = None  
+                group_pos_obj_i = None              
             # first feature already has norm & act
             pre_norm_pixel_stage = pre_norm_pixel and i != 0
             if pre_norm_pixel_stage:
@@ -1834,7 +1854,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_middle_pixel_features=use_middle_pixel_features,
                     merge_layer = merge_layer,
                     merge_layer_obj = merge_layer_obj,
-                    group_pos = group_pos,
+                    group_pos = group_pos_i,
+                    group_pos_obj = group_pos_obj_i,
                     group_vit_pos = group_vit_pos,
                     reweight = reweight_pixel_update,
                     use_global_token = use_global_token,
