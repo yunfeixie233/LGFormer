@@ -966,7 +966,7 @@ class SuperformerStage(nn.Module):
                     x_obj, global_token = einops.unpack(x_obj, ps, 'b * d') 
 
                 else:
-                    x_obj,attn_dict_list_obj , gt_obj = self.merge_layer_obj[self.group_pos.index(i)](
+                    x_obj,attn_dict_list_obj , gt_obj = self.merge_layer_obj[self.group_pos_obj.index(i)](
                     x_obj, hw_shape = self.patch_embed.superpixel_shape,attn_dict_list=attn_dict_list_obj, prev_token=gt_obj, global_token = None
                 )                 
                 if self.use_global_token: 

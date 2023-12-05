@@ -25,3 +25,8 @@
 2023-12-05 17:46:31  2021  bash sync.sh best_p11.pth
 2023-12-05 17:46:31  2021  bash sync.sh best_p11.pth
 2023-12-05 17:46:40  2021  bash sync.sh best_p11.pth
+2023-12-05 17:47:12  2022  git add .
+2023-12-05 17:47:21  2023  git commit -m "fixed: group pos trimmed"
+2023-12-05 17:47:29  2024  git push
+2023-12-05 17:49:32  2000  conda activate yunfei_v2
+2023-12-05 17:50:53  2000  conda activate yunfei_v2
