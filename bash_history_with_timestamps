@@ -17,3 +17,11 @@
 2023-12-05 17:21:44  2015  git add .
 2023-12-05 17:22:32  2015  git add .
 2023-12-05 17:41:39  2017  git pull
+2023-12-05 17:42:01  2018  git add .
+2023-12-05 17:42:10  2019  git commit -m "update: group pos"
+2023-12-05 17:42:16  2020  git push
+2023-12-05 17:45:57  2000  conda activate yunfei_v2
+2023-12-05 17:46:03  2020  git push
+2023-12-05 17:46:31  2021  bash sync.sh best_p11.pth
+2023-12-05 17:46:31  2021  bash sync.sh best_p11.pth
+2023-12-05 17:46:40  2021  bash sync.sh best_p11.pth

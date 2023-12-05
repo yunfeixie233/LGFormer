@@ -1778,17 +1778,15 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 depth_obj = depths_obj[i]
                 group_cfg_obj = deepcopy(group_cfg)
                 trim_num = min(group_cfg_obj['layer_num'],depth_obj)
-                group_pos_obj = group_cfg['group_pos']
-                group_pos_obj[i] = group_cfg['group_pos'][i][:trim_num]
-                group_pos_obj_i = group_pos_obj[i] 
+                group_pos_obj_i = group_cfg['group_pos'][i][-trim_num:] 
                 if self.shared_merge_layer:
                     assert(group_cfg_obj['layer_num'] <= depth_obj)
-                    assert(group_pos_obj == group_pos)
+                    assert(group_pos_obj_i == group_pos_i)
                     merge_layer_obj = merge_layer
                 else:
                     group_cfg_obj['layer_num'] = trim_num
                     group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
-                    group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][:trim_num]                
+                    group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][-trim_num:]                
                     group_cfg_obj['group_init_strides'] = group_cfg['group_init_strides'][:trim_num]
                     group_cfg_obj['group_init_kernel_sizes'] = group_cfg['group_init_kernel_sizes'][:trim_num]
                     group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
