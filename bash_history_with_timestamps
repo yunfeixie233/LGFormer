@@ -1,0 +1,11 @@
+2023-12-05 07:37:11  1983  tmux attach -d
+2023-12-05 07:37:12  1984  conda activate yunfei
+2023-12-05 07:37:21  1984  conda activate yunfei
+2023-12-05 07:37:25  1984  conda activate yunfei
+2023-12-05 11:56:05  1983  tmux attach -d
+2023-12-05 11:56:08  1983  tmux attach -d
+2023-12-05 12:25:24  1984  nvidia-smi
+2023-12-05 17:01:06  1983  tmux attach -d
+2023-12-05 17:01:15  1984  cd SpformerV1/
+2023-12-05 17:14:59  1983  tmux attach -d
+2023-12-05 17:15:02  1984  cd SpformerV1/
