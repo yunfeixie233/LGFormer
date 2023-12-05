@@ -118,6 +118,6 @@ mmseg/.mim
 runs
 continue_run.sh
 **/sync.sh
-
+bash_history_with_timestamps
 # Pytorch
 *.pth
