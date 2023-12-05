@@ -30,3 +30,6 @@
 2023-12-05 17:47:29  2024  git push
 2023-12-05 17:49:32  2000  conda activate yunfei_v2
 2023-12-05 17:50:53  2000  conda activate yunfei_v2
+2023-12-05 17:51:04  2025  git add .
+2023-12-05 17:51:06  2026  git commit -m "fixed: group pos trimmed"
+2023-12-05 17:51:15  2027  git push
