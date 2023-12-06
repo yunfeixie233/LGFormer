@@ -1479,6 +1479,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #bbranch setting
         shared_merge_layer: bool = False,
         onlyobj_merge_layer: bool = False,
+        part_cls_method: str = 'cls_first',
         **kwargs
 
     ):
@@ -1509,6 +1510,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         
         self.shared_merge_layer = shared_merge_layer
         self.onlyobj_merge_layer = onlyobj_merge_layer
+        self.part_cls_method = part_cls_method
         assert (reweight_pixel_update and  reweight_pixel_update_last) is False
         self.reweight_pixel_update = reweight_pixel_update
         self.reweight_pixel_update_last = reweight_pixel_update_last
@@ -3435,54 +3437,101 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                  
             if self.vis_spgt:
                 self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info_part, soft = True)  
-            sp_feature_part = self.seg_norm(sp_features)
-            b, num, c = sp_feature_part.shape
-            sp_feature_part = sp_feature_part.reshape(b * num, c)
-            sp_logits_part = self.seg_head(sp_feature_part)
-            sp_logits_part = sp_logits_part.view(b, sh, sw, -1).permute(0, 3, 1, 2)
-
-            part_logits = None
-            if return_pixel_logits:
-                if isinstance(last_sp_layer, nn.AvgPool2d):
-                    raise NotImplementedError()
-                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                    if info_part is None:
-                        raise ValueError()
-                    if self.resize_similarity:
-                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                    else:
+            if self.part_cls_method == "upsample_first":
+                pixel_logits = None
+                if return_pixel_logits:
+                    if isinstance(last_sp_layer, nn.AvgPool2d):
+                        raise NotImplementedError()
+                    elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                        if info is None:
+                            raise ValueError()
                         scale_factor = 1
-                    # raise NotImplementedError(
-                    #     "TODO(meijier): use pixel similarities & not merge"
-                    # )
+                        # raise NotImplementedError(
+                        #     "TODO(meijier): use pixel similarities & not merge"
+                        # )
 
-                    similarities = st.get_final_similarity(info_part, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
-                    similarities = prepare_similarities(
-                        last_sp_layer,
-                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
-                        scale_factor=scale_factor,
-                        resize_version = self.resize_version
-                    )
-                    similarities = similarities.softmax(1)
-                    similarities = einops.rearrange(
-                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
-                    )
-                    vis_sim = False
-                    if vis_sim:
-                        to_h5(self.output_dir,max_file_per_fold=20,max_keys_per_file=1,similarities = similarities)
+                        similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                        similarities = prepare_similarities(
+                            last_sp_layer,
+                            similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                            scale_factor=scale_factor,
+                            resize_version = self.resize_version
+                        )
+                        similarities = similarities.softmax(1)
+                        similarities = einops.rearrange(
+                            similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                        )
+                        sp_part_2d = superpixel_ops.expand_superpixel_features(
+                            sp_part_2d, similarities
+                        )
+                        _, _, h, w = sp_part_2d.shape
+                        sp_part_2d = rearrange(
+                            sp_part_2d,
+                            'b c h w -> b (h w) c'
+                        )
+                        sp_part_2d = self.seg_norm(sp_part_2d)
+                        part_logits = self.seg_head(sp_part_2d)
+                        part_logits = rearrange(
+                            part_logits,
+                            ' b (h w) c -> b c h w',
+                            h = h, w = w
+                        )
+                        
+                        ret['part'] = part_logits                    
+                        ret['obj'] = obj_logits
+                        return ret 
+                    else:
+                        raise ValueError()
+            elif self.part_cls_method =='cls_first': 
+                sp_feature_part = self.seg_norm(sp_features)
+                b, num, c = sp_feature_part.shape
+                sp_feature_part = sp_feature_part.reshape(b * num, c)
+                sp_logits_part = self.seg_head(sp_feature_part)
+                sp_logits_part = sp_logits_part.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+
+                part_logits = None
+                if return_pixel_logits:
+                    if isinstance(last_sp_layer, nn.AvgPool2d):
+                        raise NotImplementedError()
+                    elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                        if info_part is None:
+                            raise ValueError()
+                        if self.resize_similarity:
+                            scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                        else:
+                            scale_factor = 1
+                        # raise NotImplementedError(
+                        #     "TODO(meijier): use pixel similarities & not merge"
+                        # )
+
+                        similarities = st.get_final_similarity(info_part, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                        similarities = prepare_similarities(
+                            last_sp_layer,
+                            similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                            scale_factor=scale_factor,
+                            resize_version = self.resize_version
+                        )
+                        similarities = similarities.softmax(1)
+                        similarities = einops.rearrange(
+                            similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                        )
+                        vis_sim = False
+                        if vis_sim:
+                            to_h5(self.output_dir,max_file_per_fold=20,max_keys_per_file=1,similarities = similarities)
+                        
+                        if self.use_similarity_head:
+                            similarities = self.similarity_head(similarities)
+                        part_logits = superpixel_ops.expand_superpixel_features(
+                            sp_logits_part, similarities
+                        )
+                    else:
+                        raise ValueError()
+                    ret['part'] = part_logits                    
+                    ret['obj'] = obj_logits
                     
-                    if self.use_similarity_head:
-                        similarities = self.similarity_head(similarities)
-                    part_logits = superpixel_ops.expand_superpixel_features(
-                        sp_logits_part, similarities
-                    )
-                else:
-                    raise ValueError()
-                ret['part'] = part_logits                    
-                ret['obj'] = obj_logits
-                
-                return ret 
-            
+                    return ret 
+            else:
+                raise(NotImplementedError)
         else:
             raise(NotImplementedError)
         

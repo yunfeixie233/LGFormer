@@ -33,3 +33,16 @@
 2023-12-05 17:51:04  2025  git add .
 2023-12-05 17:51:06  2026  git commit -m "fixed: group pos trimmed"
 2023-12-05 17:51:15  2027  git push
+2023-12-06 10:48:30  1998  git pull
+2023-12-06 10:48:33  1999  git stash apply
+2023-12-06 10:53:23  2000  python tools/train.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py
+2023-12-06 10:53:31  2001  unset LD_LIBRARY_PATH
+2023-12-06 10:53:32  2001  unset LD_LIBRARY_PATH
+2023-12-06 10:53:57  2002  python tools/train.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py
+2023-12-06 10:54:57  2002  python tools/train.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py
+2023-12-06 10:55:08  2002  python tools/train.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py
+2023-12-06 10:55:54  2002  python tools/train.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py
+2023-12-06 10:56:05  2002  python tools/train.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py
+2023-12-06 10:56:33  2003  python tools/analysis_tools/get_flops.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py --shape 512 512
+2023-12-06 10:57:23  2003  python tools/analysis_tools/get_flops.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py --shape 512 512
+2023-12-06 10:57:32  2004  bash clean.sh
