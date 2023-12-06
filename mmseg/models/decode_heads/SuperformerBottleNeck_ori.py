@@ -3445,10 +3445,10 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     elif isinstance(last_sp_layer, st.SuperPixelTokenization):
                         if info is None:
                             raise ValueError()
-                        if self.resize_similarity:
-                            scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                        else:
-                            scale_factor = 1
+                        # if self.resize_similarity:
+                        #     scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                        # else:
+                        scale_factor = 1
                         # raise NotImplementedError(
                         #     "TODO(meijier): use pixel similarities & not merge"
                         # )

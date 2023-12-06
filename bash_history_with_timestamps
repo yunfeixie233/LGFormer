@@ -46,3 +46,10 @@
 2023-12-06 10:56:33  2003  python tools/analysis_tools/get_flops.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py --shape 512 512
 2023-12-06 10:57:23  2003  python tools/analysis_tools/get_flops.py /data3/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp4_small_pre_p9p10p11_nols_avg4_1loss_onlyobj_upsample.py --shape 512 512
 2023-12-06 10:57:32  2004  bash clean.sh
+2023-12-06 16:01:55  2011  git reset --hard origin/study
+2023-12-06 23:39:24  1995  git reset --hard origin/study
+2023-12-06 23:40:35  1995  git reset --hard origin/study
+2023-12-06 23:40:36  1996  conda activate yunfei_v2
+2023-12-06 23:40:38  1997  git add .
+2023-12-06 23:40:40  1997  git add .
+2023-12-06 23:40:41  1998  cd SpformerV1/
