@@ -9,5 +9,6 @@ model = dict(
     use_ffn = True,
     use_final_group_cls = False,
     use_final_group = False,
-    use_group_attn = True,    
+    use_group_attn = True, 
+    use_gt_fuse = False,   
 ))

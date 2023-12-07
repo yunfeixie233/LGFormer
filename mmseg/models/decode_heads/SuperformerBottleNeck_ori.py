@@ -3360,7 +3360,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     to_h5(self.output_dir,1,final_group_logits = final_group_logits, max_file_per_fold=10)                 
             else:
                 last_obj_layer = self.obj_stages[-1].patch_embed
-                
+
                 sp_obj_2d = einops.rearrange(sp_features_obj,
                             'b (h w) c -> b c h w',
                             h = sh, w = sw)
@@ -3427,7 +3427,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             sp_part_2d = einops.rearrange(sp_features,
                         'b (h w) c -> b c h w',
                         h = sh, w = sw)
-
+            if self.use_gt_fuse:
+                sp_features_obj = sp_features_obj + final_gt
             if 'extralayer' in self.classification_feature:
                 info_part, _, _ = last_sp_layer(pixel_features,sp_part_2d)
             else:
