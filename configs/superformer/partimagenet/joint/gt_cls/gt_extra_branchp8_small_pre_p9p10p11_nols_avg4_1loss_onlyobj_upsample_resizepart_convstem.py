@@ -3,7 +3,7 @@ _base_ = [
 ]
 model = dict(
     decode_head=dict(
-    depths_obj = (None,3,-1,),
+    depths_obj = (None,4,-1,),
     group_pos = [[],[7,8,9,],[]],    
     onlyobj_merge_layer = True,
     part_cls_method = "upsample_first",
