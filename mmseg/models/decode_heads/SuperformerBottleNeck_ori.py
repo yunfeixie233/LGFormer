@@ -1480,6 +1480,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         shared_merge_layer: bool = False,
         onlyobj_merge_layer: bool = False,
         part_cls_method: str = 'cls_first',
+        resize_similarity_part: bool =True,
+        resize_similarity_obj: bool =True,
+        
         **kwargs
 
     ):
@@ -1520,6 +1523,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         self.final_iter = final_iter
         self.use_patch_embed  = use_patch_embed
         self.resize_similarity = resize_similarity
+        self.resize_similarity_part =  resize_similarity_part
+        self.resize_similarity_obj = resize_similarity_obj
         if self.use_patch_embed:
             self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -3310,40 +3315,45 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #implementation is same with "group_extralayer"
             # final output
             final_group_logits = None
+            last_stage_part = self.stages[-1]
+            last_layer_part = last_stage_part.patch_embed
+            if self.obj_stages_pos is not None: 
+                last_stage_obj = self.obj_stages[-1]
+            elif self.depths_obj is not None and self.depths_obj[-1] == -1:
+                last_stage_obj = self.obj_extralayer
+            else:
+                last_stage_obj = last_stage_part
+             
+            last_layer_obj = last_stage_obj.patch_embed
+            
             # if True, only use final group for classification
             # if False, use sp feature from obj branch for classification
+                     
             if self.use_final_group_cls:
                 gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
                                     h = h_g, 
                                     w = w_g) 
                 if 'extralayer' in self.classification_feature:
-                    if self.obj_stages_pos is not None:                  
-                        info, _, _ = self.obj_stages[-1].patch_embed(pixel_features, gt_2d)
-                    elif self.depths_obj is not None and self.depths_obj[-1] == -1:
-                        info, _, _ = self.obj_extralayer.patch_embed(pixel_features, gt_2d)
-                    else:
-                        info, _, _ = last_sp_layer(pixel_features, gt_2d)
-                        
+                    info_obj, _, _ = last_layer_obj(pixel_features, gt_2d)
+
                 else:
-                    if self.obj_stages_pos is not None:                  
-                        info = self.obj_stages[-1].tokenization_info
-                    else:
-                        info = last_stage.tokenization_info
+                    info_obj = last_stage_obj.tokenization_info
+
+                if info_obj is None:
+                    raise ValueError()                        
                 if self.vis_sp_id:
-                    self.visualize_superpixel(img = img, info = info, resize_similarities= True)    
+                    self.visualize_superpixel(img = img, info = info_obj, resize_similarities= True)    
                     
                 if self.vis_spgt:
-                    self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info, soft = True)  
+                    self.visualize_spgt(img = img,sp_shape = (sh, sw) , attn_dict_list = attn_dict_list, info = info_obj, soft = True)  
 
-                if info is None:
-                    raise ValueError()
-                if self.resize_similarity:
-                    scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                if self.resize_similarity_obj:
+                    scale_factor = self.img_size[0] // last_layer_obj.pixel_shape[0] // stride
                 else:
                     scale_factor = 1
-                similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                similarities = st.get_final_similarity(info_obj, last_layer_obj.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
                 similarities = prepare_similarities(
-                    last_sp_layer,
+                    last_layer_obj,
                     similarities,  # pyright: ignore [reportGeneralTypeIssues]
                     scale_factor=scale_factor,
                     resize_version = self.resize_version
@@ -3387,7 +3397,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     elif isinstance(last_sp_layer, st.SuperPixelTokenization):
                         if info_obj is None:
                             raise ValueError()
-                        if self.resize_similarity:
+                        if self.resize_similarity_obj:
                             scale_factor = self.img_size[0] // last_obj_layer.pixel_shape[0] // stride
                         else:
                             scale_factor = 1
@@ -3430,9 +3440,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             if self.use_gt_fuse:
                 sp_features_obj = sp_features_obj + final_gt
             if 'extralayer' in self.classification_feature:
-                info_part, _, _ = last_sp_layer(pixel_features,sp_part_2d)
+                info_part, _, _ = last_layer_part(pixel_features,sp_part_2d)
             else:
-                info_part = last_stage.tokenization_info
+                info_part = last_stage_part.tokenization_info
             if self.vis_sp_id:
                 self.visualize_superpixel(img = img, info = info_part, resize_similarities= True)    
                  
@@ -3441,22 +3451,22 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             if self.part_cls_method == "upsample_first":
                 pixel_logits = None
                 if return_pixel_logits:
-                    if isinstance(last_sp_layer, nn.AvgPool2d):
+                    if isinstance(last_layer_part, nn.AvgPool2d):
                         raise NotImplementedError()
-                    elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-                        if info is None:
+                    elif isinstance(last_layer_part, st.SuperPixelTokenization):
+                        if info_part is None:
                             raise ValueError()
-                        # if self.resize_similarity:
-                        #     scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
-                        # else:
-                        scale_factor = 1
+                        if self.resize_similarity_part:
+                            scale_factor = self.img_size[0] // last_layer_part.pixel_shape[0] // stride
+                        else:
+                            scale_factor = 1
                         # raise NotImplementedError(
                         #     "TODO(meijier): use pixel similarities & not merge"
                         # )
 
-                        similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                        similarities = st.get_final_similarity(info_part, last_layer_part.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
                         similarities = prepare_similarities(
-                            last_sp_layer,
+                            last_layer_part,
                             similarities,  # pyright: ignore [reportGeneralTypeIssues]
                             scale_factor=scale_factor,
                             resize_version = self.resize_version
@@ -3495,22 +3505,22 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
 
                 part_logits = None
                 if return_pixel_logits:
-                    if isinstance(last_sp_layer, nn.AvgPool2d):
+                    if isinstance(last_layer_part, nn.AvgPool2d):
                         raise NotImplementedError()
-                    elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    elif isinstance(last_layer_part, st.SuperPixelTokenization):
                         if info_part is None:
                             raise ValueError()
                         if self.resize_similarity:
-                            scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                            scale_factor = self.img_size[0] // last_layer_part.pixel_shape[0] // stride
                         else:
                             scale_factor = 1
                         # raise NotImplementedError(
                         #     "TODO(meijier): use pixel similarities & not merge"
                         # )
 
-                        similarities = st.get_final_similarity(info_part, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                        similarities = st.get_final_similarity(info_part, last_layer_part.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
                         similarities = prepare_similarities(
-                            last_sp_layer,
+                            last_layer_part,
                             similarities,  # pyright: ignore [reportGeneralTypeIssues]
                             scale_factor=scale_factor,
                             resize_version = self.resize_version
