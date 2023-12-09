@@ -937,7 +937,7 @@ class SuperformerStage(nn.Module):
                 #init & forward sp feature for obj branch
                 if self.depth_obj is not None:
                     if i == self.obj_idx:
-                        x_obj  = x.clone()
+                        x_obj  = x.clone().detach()
                     if i >= self.obj_idx:
                         if self.shared_blocks:
                             x_obj = self.blocks[i](x_obj)
