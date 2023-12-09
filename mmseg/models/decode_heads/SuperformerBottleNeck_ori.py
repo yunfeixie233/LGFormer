@@ -609,9 +609,10 @@ class SuperformerStage(nn.Module):
         use_gt_in_vit: bool = False,
         vis_sp_block: bool = False,
         output_dir: str = None,
+        shared_blocks: bool = False,
     ) -> None:
         super().__init__()
-
+        self.shared_blocks = shared_blocks
         assert stride == 1
 
         print(f"superpixel_shape: {superpixel_shape}")
@@ -619,7 +620,6 @@ class SuperformerStage(nn.Module):
         self.sp_stride = sp_stride
         # [0, seg_block_idx) are the blocks for segmentation
         self.seg_block_idx = seg_block_idx if seg_block_idx is not None else depth
-
         self.return_updated_pixel_features = return_updated_pixel_features
         self.unflatten_sp_features = unflatten_sp_features
         self.superpixel_shape = superpixel_shape
@@ -793,28 +793,29 @@ class SuperformerStage(nn.Module):
         if depth_obj is not None:
             assert depth_obj >= -1
             self.obj_idx = depth - depth_obj
-            self.blocks_obj =  nn.Sequential(
-                *[
-                    block_fn(
-                        dim=out_channels,
-                        num_heads=num_heads,
-                        mlp_ratio=4,
-                        qkv_bias=True,
-                        # drop=drop_rate,
-                        proj_drop=drop_rate,
-                        attn_drop=attn_drop_rate,
-                        drop_path=(
-                            drop_path_rate[i + self.obj_idx]
-                            if isinstance(drop_path_rate, Sequence)
-                            else drop_path_rate
-                        ),
-                        norm_layer=norm_layer,
-                        act_layer=act_layer,
-                        init_values=ls_init_value
-                    )
-                    for i in range(depth_obj)
-                ]
-            )
+            if self.shared_blocks is False:
+                self.blocks_obj =  nn.Sequential(
+                    *[
+                        block_fn(
+                            dim=out_channels,
+                            num_heads=num_heads,
+                            mlp_ratio=4,
+                            qkv_bias=True,
+                            # drop=drop_rate,
+                            proj_drop=drop_rate,
+                            attn_drop=attn_drop_rate,
+                            drop_path=(
+                                drop_path_rate[i + self.obj_idx]
+                                if isinstance(drop_path_rate, Sequence)
+                                else drop_path_rate
+                            ),
+                            norm_layer=norm_layer,
+                            act_layer=act_layer,
+                            init_values=ls_init_value
+                        )
+                        for i in range(depth_obj)
+                    ]
+                )
         
 
         if reweight:
@@ -938,7 +939,10 @@ class SuperformerStage(nn.Module):
                     if i == self.obj_idx:
                         x_obj  = x.clone()
                     if i >= self.obj_idx:
-                        x_obj = self.blocks_obj[i-self.obj_idx](x_obj)
+                        if self.shared_blocks:
+                            x_obj = self.blocks[i](x_obj)
+                        else:
+                            x_obj = self.blocks_obj[i-self.obj_idx](x_obj)
                     
             #return sp of middle layer to generate similarity if needed
             if self.return_mid_sp and i == self.return_mid_sp:
@@ -1476,13 +1480,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         #log reweight
         log_reweight: bool = False,
         log_interval: int = 50,
-        #bbranch setting
+        #branch setting
         shared_merge_layer: bool = False,
         onlyobj_merge_layer: bool = False,
         part_cls_method: str = 'cls_first',
         resize_similarity_part: bool =True,
         resize_similarity_obj: bool =True,
-        
+        shared_blocks: bool = False,
         **kwargs
 
     ):
@@ -1507,6 +1511,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             in_index=0,
             use_gt_cls = use_gt_cls,
     **kwargs)
+        self.shared_blocks = shared_blocks
         self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
         self.reweight_pixel_sim = reweight_pixel_sim
@@ -1869,7 +1874,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     return_mid_sp = return_mid_sp,
                     use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
                     vis_sp_block = vis_sp_block,
-                    output_dir = output_dir          
+                    output_dir = output_dir,
+                    shared_blocks = self.shared_blocks,          
                 )
             )
 
@@ -1915,7 +1921,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         return_mid_sp = return_mid_sp,
                         use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
                         vis_sp_block = vis_sp_block,
-                        output_dir = output_dir          
+                        output_dir = output_dir,
+                        shared_blocks = self.shared_blocks,          
+          
                     )
             elif i == num_stages - 1 and self.depths_obj is not None and self.depths_obj[-1] == -1:
                 self.obj_extralayer= \
@@ -1959,7 +1967,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         return_mid_sp = return_mid_sp,
                         use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
                         vis_sp_block = vis_sp_block,
-                        output_dir = output_dir          
+                        output_dir = output_dir,
+                        shared_blocks = self.shared_blocks,          
                     )
             elif obj_stages_pos is not None and i in obj_stages_pos:
                 obj_stages.append( \
@@ -2001,7 +2010,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         return_mid_sp = return_mid_sp,
                         use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
                         vis_sp_block = vis_sp_block,
-                        output_dir = output_dir          
+                        output_dir = output_dir,
+                        shared_blocks = self.shared_blocks,          
+                                  
                     )
                 )
             cur_depth += depth                   
