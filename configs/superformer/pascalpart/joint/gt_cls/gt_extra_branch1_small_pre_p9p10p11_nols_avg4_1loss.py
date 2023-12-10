@@ -6,8 +6,8 @@ model = dict(
     obj_stages_pos = (1,2,),
     )
 )
-accumulative_counts = 2
-total_iter=50000 * accumulative_counts
+accumulative_counts = 4
+total_iter=10000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(

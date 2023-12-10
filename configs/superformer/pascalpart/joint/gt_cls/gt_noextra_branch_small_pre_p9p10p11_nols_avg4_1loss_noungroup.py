@@ -12,7 +12,7 @@ model = dict(
 
 
 accumulative_counts = 4
-total_iter=50000 * accumulative_counts
+total_iter=10000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(

@@ -35,6 +35,7 @@ optim_wrapper = dict(
     weight_decay=0.05),
     accumulative_counts=accumulative_counts,    
     paramwise_cfg=dict(
+        norm_decay_mult=0,
         bypass_duplicate=True,        
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -65,7 +66,7 @@ optim_wrapper = dict(
             'stages.1.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
             'stages.1.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
             'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),         
-            'stages.1.blocks':dict(lr_mult=0.1)},    
+            'stages.1.blocks':dict(lr_mult=0.1),},    
         ))
 
 param_scheduler = [

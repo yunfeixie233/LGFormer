@@ -16,8 +16,8 @@ model = dict(
             type='CrossEntropyLoss',loss_name = 'loss_obj',use_sigmoid=False, loss_weight=1.0,reduction='mean',)],    
 ))
 
-accumulative_counts = 2
-total_iter=50000 * accumulative_counts
+accumulative_counts = 4
+total_iter=10000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
