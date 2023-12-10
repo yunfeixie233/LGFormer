@@ -46,7 +46,7 @@ classes = (
     'object 146', 'object 147', 'object 148', 'object 149', 'object 150', 
     'object 151', 'object 152', 'object 153', 'object 154', 'object 155', 
     'object 156', 'object 157', 'object 158',
-    # 'background'
+    'background'
 ))
 
     def __init__(self,
