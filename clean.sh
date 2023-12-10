@@ -1,6 +1,6 @@
 #!/bin/bash
 
-folder_path="/data2/yunfei/SpformerV1/work_dirs/superformer"
+folder_path="/data2/yunfei/SpformerV1/work_dirs/"
 
 # 遍历每个子文件夹
 find "$folder_path" -type d | while read -r dir; do

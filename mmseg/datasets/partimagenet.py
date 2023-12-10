@@ -54,7 +54,7 @@ class PartImagenetDataset(BaseSegDataset):
                 'Aeroplane Tail',
                 'Bottle Mouth',
                 'Bottle Body',
-                # 'background'
+                'background'
             ),
         palette=[[120, 120, 120], [180, 120, 120], [6, 230, 230], [80, 50, 50],
                  [4, 200, 3], [120, 120, 80], [140, 140, 140], [204, 5, 255],
@@ -66,7 +66,7 @@ class PartImagenetDataset(BaseSegDataset):
                  [255, 9, 92], [112, 9, 255], [8, 255, 214], [7, 255, 224],
                  [255, 184, 6], [10, 255, 71], [255, 41, 10], [7, 255, 255],
                  [224, 255, 8], [102, 8, 255], [255, 61, 6], [255, 194, 7],
-                #  [0, 0, 0]
+                 [0, 0, 0]
                  ],
             )
 

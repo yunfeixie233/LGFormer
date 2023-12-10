@@ -5,7 +5,7 @@ _base_ = [
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
-num_classes = 40 # do not include background
+num_classes = 41 #include background
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
@@ -86,7 +86,7 @@ default_hooks = dict(
     timer=dict(type='IterTimerHook'),
     logger=dict(type='LoggerHook', interval=50, log_metric_by_epoch=False),
     param_scheduler=dict(type='ParamSchedulerHook'),
-    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
+    checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     # visualization=dict(type='SegVisualizationHook',draw = True, interval = 1))
     visualization=dict(type='SegVisualizationHook'))
