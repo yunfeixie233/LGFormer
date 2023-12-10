@@ -1,14 +1,14 @@
 _base_ = [
-    './gt_extra_small_pre_p9_nols_avg4_all.py',
+    './sp_extra_small_pre_p9_ls_avg4_fusegt.py',
 ]
-num_classes = 57
+
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
     group_pos = ((),(7,8,9,),()), 
     group_init_strides = (4,4,4,),
     group_init_kernel_sizes = (4,4,4,),
-    group_layers = {0:256,1:256,2:256},   
+    group_layers = {0:64,1:64,2:64},   
     group_token_init_method = ('avgpool','avgpool','avgpool',), 
     loss_decode=[
             dict(

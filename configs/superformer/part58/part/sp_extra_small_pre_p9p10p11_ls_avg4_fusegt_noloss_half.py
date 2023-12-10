@@ -1,29 +1,8 @@
 _base_ = [
-    './gt_extra_small_pre_p9_nols_avg4_all.py',
+    './sp_extra_small_pre_p9p10p11_ls_avg4_fusegt_noloss.py',
 ]
-num_classes = 57
-model = dict(
-    type='EncoderDecoder',
-    decode_head=dict(
-    group_pos = ((),(7,8,9,),()), 
-    group_init_strides = (4,4,4,),
-    group_init_kernel_sizes = (4,4,4,),
-    group_layers = {0:64,1:64,2:64},   
-    group_token_init_method = ('avgpool','avgpool','avgpool',), 
-    loss_decode=[
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_sp',use_sigmoid=False, loss_weight=0.7,reduction='mean',),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_1', use_sigmoid=False, loss_weight=0.1,reduction='mean',),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_2', use_sigmoid=False, loss_weight=0.1,reduction='mean',),
-            dict(
-            type='CrossEntropyLoss',loss_name = 'loss_gt_3', use_sigmoid=False, loss_weight=0.1,reduction='mean',),            
-            ],         
-))
-
-accumulative_counts = 4
-total_iter=10000 * accumulative_counts
+accumulative_counts = 2
+total_iter=25000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
@@ -31,7 +10,7 @@ optim_wrapper = dict(
     lr=0.0002,
     betas=(0.9, 0.999),
     weight_decay=0.05),
-    accumulative_counts=accumulative_counts,        
+    accumulative_counts=accumulative_counts,    
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -46,9 +25,24 @@ optim_wrapper = dict(
             'seg_norm': dict(decay_mult=0.),
             'gamma': dict(decay_mult=0.),
             'reweight': dict(decay_mult=0.),
-            'stages.0':dict(lr_mult=0.1),
-            'stages.1':dict(lr_mult=0.1),            
-        }))
+            'stem':dict(lr_mult=0.1),
+            'sp_init':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.0':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),
+            'stages.0.sp_project':dict(lr_mult=0.1),
+            'stages.0.blocks':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.0':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1._sp_qkv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1._pixel_qkv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1.sp_pos_conv.':dict(lr_mult=0.1),
+            'stages.1.patch_embed.blocks.1.pixel_pos_conv.':dict(lr_mult=0.1),
+            'stages.0.patch_embed.blocks.1.sp_ls1.':dict(lr_mult=0.1),         
+            'stages.1.blocks':dict(lr_mult=0.1)},    
+        ))
 
 param_scheduler = [
     dict(
@@ -61,6 +55,7 @@ param_scheduler = [
             verbose=False                # 设置为True以打印每次更新的学习率
     )
 ]
+
 train_cfg = dict(
     type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
@@ -72,5 +67,3 @@ default_hooks = dict(
     checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=10000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
     visualization=dict(type='SegVisualizationHook'))
-
-find_unused_parameters=True

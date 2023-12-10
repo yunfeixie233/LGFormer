@@ -1,11 +1,11 @@
 _base_ = [
     '../../../_base_/default_runtime.py', 
-    '../../../_base_/datasets/pascal_voc12_part.py',
+    '../../../_base_/datasets/partimagenet_158.py',
     '../../superformer_baseline.py'
 ]
 crop_size = (512, 512)
 data_preprocessor = dict(size=crop_size)
-seg_num_classes = 58
+num_classes = 158
 model = dict(
     data_preprocessor=data_preprocessor,
     decode_head=dict(
@@ -18,21 +18,22 @@ model = dict(
     strides=(1,1,1,),
     sp_sizes=(4,4,4,),
     sp_heads=(2,2,1,),
-    seg_num_classes=seg_num_classes,    
     sp_features_init_methods=("from_feature","from_feature","from_feature",),
     ls_init_value = 1e-5,
+    seg_num_classes = num_classes,
 ),
     test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(512, 512)))
 
 accumulative_counts = 2
-total_iter=40000 * accumulative_counts
+total_iter=50000 * accumulative_counts
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
-    type='SGD',
-    lr=0.007,
-    momentum=0.9,
-    weight_decay=1e-4,),
+    type='AdamW',
+    lr=0.0002,
+    betas=(0.9, 0.999),
+    weight_decay=0.05),
+    accumulative_counts=accumulative_counts,    
     paramwise_cfg=dict(
         custom_keys={
             'pos_embed': dict(decay_mult=0.),
@@ -68,17 +69,17 @@ optim_wrapper = dict(
 
 param_scheduler = [
     dict(
-        type='PolyLR',
-        power=0.9,
-        begin=0,
-        end=total_iter,
-        eta_min=0.0,
-        by_epoch=False,
+            type='MultiStepLR',
+            begin=0,                     # 从第0个epoch开始
+            end=total_iter,            # 在总训练周期结束时停止更新学习率
+            by_epoch=False,               # 通过epoch来更新学习率
+            milestones=[int(total_iter * 0.9), int(total_iter * 0.95)],  # 在第90个和第95个epoch降低学习率
+            gamma=0.1,                   # 学习率衰减因子
+            verbose=False                # 设置为True以打印每次更新的学习率
     )
 ]
-
 train_cfg = dict(
-    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1)
+    type='IterBasedTrainLoop', max_iters=total_iter, val_interval=1000)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 default_hooks = dict(
@@ -87,6 +88,6 @@ default_hooks = dict(
     param_scheduler=dict(type='ParamSchedulerHook'),
     checkpoint=dict(type='CheckpointHook', by_epoch=False, interval=4000),
     sampler_seed=dict(type='DistSamplerSeedHook'),
+    # visualization=dict(type='SegVisualizationHook',draw = True, interval = 1))
     visualization=dict(type='SegVisualizationHook'))
-
 find_unused_parameters=True

@@ -1,7 +1,7 @@
 _base_ = [
-    './gt_extra_small_pre_p9_nols_avg4_all.py',
+    './sp_extra_small_pre_p9_ls_avg4_fusegt.py',
 ]
-num_classes = 57
+
 model = dict(
     type='EncoderDecoder',
     decode_head=dict(
