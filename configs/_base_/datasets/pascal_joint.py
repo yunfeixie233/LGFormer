@@ -1,6 +1,6 @@
 # dataset settings
 dataset_type = 'PascalPartDataset_joint'
-data_root = 'data/VOCdevkit/VOC2010'
+data_root = 'data/VOCdevkit_part/VOC2010'
 crop_size = (512, 512)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
