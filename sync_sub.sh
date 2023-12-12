@@ -2,7 +2,7 @@
 unset LD_LIBRARY_PATH
 
 pkill -u meijieru python
-
+sleep 3600
 check_gpu_memory() {
     # 使用nvidia-smi获取每个GPU的内存使用情况
     # --query-gpu=memory.used查询内存使用量
