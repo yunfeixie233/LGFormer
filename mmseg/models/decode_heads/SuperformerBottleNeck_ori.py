@@ -14,7 +14,6 @@ import torch.nn.functional as F
 from functools import partial, lru_cache
 import copy
 from tabulate import tabulate
-
 import timm
 from timm.models.vision_transformer import Block, _cfg
 from timm.models.registry import register_model
@@ -1792,10 +1791,12 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 trim_num = min(group_cfg_obj['layer_num'],depth_obj)
                 group_pos_obj_i = group_cfg['group_pos'][i][-trim_num:] 
                 if self.shared_merge_layer:
+                    #NOTE 1.fully shared
+                    #2.partly shared
                     
-                    assert(group_cfg_obj['layer_num'] <= depth_obj)
-                    assert(group_pos_obj_i == group_pos_i)
-                    merge_layer_obj = merge_layer
+                    merge_layer_obj  = merge_layer[:trim_num]
+                    if len(merge_layer_obj) != len(merge_layer):
+                        print(f"warning: object partly share group layer from part with {len(merge_layer_obj)} layers, group_pos_obj is {group_pos_obj_i} ")
                 else:
                     group_cfg_obj['layer_num'] = trim_num
                     group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
