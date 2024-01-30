@@ -2567,7 +2567,13 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                         # final_gt = self.group_fuse_conv(final_gt)
                         # final_gt = rearrange(final_gt,'b c h w ->b (h w) c')
                         
-
+                elif self.gt_cls_method == "upsample_nosimilarity":
+                    group_stride = 1                    
+                    if final_gt == None:
+                        final_gt = gt
+                    else:
+                        final_gt = gt + final_gt
+                                             
                 else:
                     raise(NotImplementedError)
      
@@ -3324,8 +3330,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             ret['seg'] = final_group_logits
             return ret
         elif 'joint' in self.classification_feature:
-        #firstly use group token to get object segment
-        #implementation is same with "group_extralayer"
+            #firstly use group token to get object segment
+            #implementation is same with "group_extralayer"
             # final output
             final_group_logits = None
             last_stage_part = self.stages[-1]
@@ -3338,11 +3344,24 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 last_stage_obj = last_stage_part
              
             last_layer_obj = last_stage_obj.patch_embed
-            
+            # if self.gt_cls_method == "upsample_nosimilarity", we do ablation study
+            # by directly use bilinear upsample for obj_logits and part_logits
+            # else we use similarity to get obj_logits and part_logits
             # if True, only use final group for classification
             # if False, use sp feature from obj branch for classification
-                     
-            if self.use_final_group_cls:
+            if self.gt_cls_method == "upsample_nosimilarity":
+                obj_logits = gt_logits
+                part_logits = self.seg_head(sp_features)
+                part_logits = rearrange(
+                    part_logits,
+                    ' b (h w) c -> b c h w',
+                    h = sh, w = sw
+                )
+                
+                ret['part'] = part_logits                    
+                ret['obj'] = obj_logits
+                return ret                    
+            elif self.use_final_group_cls:
                 gt_2d = rearrange(final_gt,'b (h w) c -> b c h w',
                                     h = h_g, 
                                     w = w_g) 
