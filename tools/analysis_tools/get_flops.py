@@ -28,7 +28,7 @@ def parse_args():
         '--shape',
         type=int,
         nargs='+',
-        default=[2048, 1024],
+        default=[512, 512],
         help='input image size')
     parser.add_argument(
         '--cfg-options',
@@ -84,7 +84,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
 
     flops = FlopCountAnalysis(model, data)
     
-    print(flop_count_table(flops, max_depth=6))
+    print(flop_count_table(flops, max_depth=1))
 
 
 
