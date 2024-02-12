@@ -2100,6 +2100,11 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     print(self.seg_specific_classifier)
                     raise ValueError()
                 self.seg_norm = norm_layer(self.embed_dim)
+            elif self.classification_feature == 'joint_superpixel':
+                self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes_part)  
+                self.seg_norm = norm_layer(self.embed_dim)
+                self.seg_head_obj = nn.Linear(self.embed_dim, self.seg_num_classes_obj)
+                self.seg_norm_obj = norm_layer(self.embed_dim)                  
             elif 'joint' in self.classification_feature:
                 self.seg_head = nn.Linear(self.embed_dim, self.seg_num_classes_part)    
                 self.seg_norm = norm_layer(self.embed_dim)
@@ -2311,7 +2316,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         dpr = np.linspace(0, group_cfg['group_drop_path_rate'], len(group_cfg['group_layers'].keys()))
 
         for i in range(depth):
-            if i >0 :
+            if i > 0 :
                 if ori_cfg["group_projector_method"] == 'linear':
                     group_projector =nn.Sequential(
                         nn.LayerNorm(ori_cfg['group_embed_dims']),
@@ -2463,8 +2468,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             endpoints = {
                 "pixel_features": pixel_features,
                 "sp_features": sp_features_seg,
-                "attn_dict_list": attn_dict_list_obj if len(attn_dict_list_obj) > 0 else attn_dict_list,
-                "gt_list": gt_list_obj if len(gt_list_obj) > 0 else gt_list,
+                "attn_dict_list": attn_dict_list_obj if attn_dict_list_obj and len(attn_dict_list_obj) > 0 else attn_dict_list,
+                "gt_list": gt_list_obj if gt_list_obj and len(gt_list_obj) > 0 else gt_list,
                 "sp_features_obj": sp_features_seg_obj,
                 "sp_features_mid": sp_features_mid,
                 "pixel_features_mid": pixel_features_mid,                
@@ -2527,6 +2532,69 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             #final info               
         last_stage = self.stages[-1]
         last_sp_layer = last_stage.patch_embed
+        if isinstance(last_sp_layer, nn.AvgPool2d):
+            sh=sw = last_sp_layer.kernel_size
+        elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+            sh, sw = last_sp_layer.superpixel_shape
+        else:
+            raise ValueError()          
+        #ablation setting: we use sp for joint part and obj seg
+        if self.classification_feature == 'joint_superpixel':
+            sp_feature_2d = einops.rearrange(sp_features,
+                          'b (h w) c -> b c h w',
+                          h = sh, w = sw)            
+            info, _, _ = last_sp_layer(pixel_features,sp_feature_2d)            
+            sp_feature_part = self.seg_norm(sp_features)
+            b, num, c = sp_feature_part.shape
+            sp_feature_part = sp_feature_part.reshape(b * num, c)
+            sp_logits_part = self.seg_head(sp_feature_part)
+            sp_logits_part = sp_logits_part.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+            
+            sp_feature_obj = self.seg_norm_obj(sp_features)
+            b, num, c = sp_feature_obj.shape
+            sp_feature_obj = sp_feature_obj.reshape(b * num, c)
+            sp_logits_obj = self.seg_head_obj(sp_feature_obj)
+            sp_logits_obj = sp_logits_obj.view(b, sh, sw, -1).permute(0, 3, 1, 2)
+
+            part_logits = None
+            obj_logits = None
+
+            if return_pixel_logits:
+                if isinstance(last_sp_layer, nn.AvgPool2d):
+                    raise NotImplementedError()
+                elif isinstance(last_sp_layer, st.SuperPixelTokenization):
+                    if info is None:
+                        raise ValueError()
+                    if self.resize_similarity:
+                        scale_factor = self.img_size[0] // last_sp_layer.pixel_shape[0] // stride
+                    else:
+                        scale_factor = 1
+                    # raise NotImplementedError(
+                    #     "TODO(meijier): use pixel similarities & not merge"
+                    # )
+
+                    similarities = st.get_final_similarity(info, last_sp_layer.num_blocks,merge= False,pixel = self.use_pixel_similarities_upsample)
+                    similarities = prepare_similarities(
+                        last_sp_layer,
+                        similarities,  # pyright: ignore [reportGeneralTypeIssues]
+                        scale_factor=scale_factor,
+                        resize_version = self.resize_version
+                    )
+                    similarities = similarities.softmax(1)
+                    similarities = einops.rearrange(
+                        similarities, "b n sh ph sw pw -> b n (sh ph) (sw pw)"
+                    )
+                    part_logits = superpixel_ops.expand_superpixel_features(
+                        sp_logits_part, similarities
+                    )
+                    obj_logits = superpixel_ops.expand_superpixel_features(
+                        sp_logits_obj, similarities
+                    )
+                else:
+                    raise ValueError()
+            ret['part'] = part_logits
+            ret['obj'] = obj_logits                    
+            return ret
         #firstly we will cls group token, gt logits will be upsample to sp shape
         if isinstance(self.group_init_strides[-1], int):
             group_stride = self.group_init_strides[-1]
@@ -2605,12 +2673,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 
 
          
-        if isinstance(last_sp_layer, nn.AvgPool2d):
-            sh=sw = last_sp_layer.kernel_size
-        elif isinstance(last_sp_layer, st.SuperPixelTokenization):
-            sh, sw = last_sp_layer.superpixel_shape
-        else:
-            raise ValueError()  
+
         
         if self.classification_feature == "pixel":
             b, c, h, w = pixel_features.shape
