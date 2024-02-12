@@ -36,7 +36,7 @@ REMOTE_BASE_DIR="/data1/yunfei/log"
 REMOTE_PORT=20046
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/part58/gt/sp_extra_small_pre_p9p10p11_ls_avg4_fusegt_oldaug.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp9_small_pre_p9p10p11_nols_avg4_1loss_convstem_nosharedblocks_onlyobj.py"
 
 )   
 should_skip_sync() {
