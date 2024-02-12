@@ -609,8 +609,11 @@ class SuperformerStage(nn.Module):
         vis_sp_block: bool = False,
         output_dir: str = None,
         shared_blocks: bool = False,
+        detach_obj_feature: bool = True,
     ) -> None:
         super().__init__()
+        
+        self.detach_obj_feature = detach_obj_feature
         self.shared_blocks = shared_blocks
         assert stride == 1
 
@@ -936,7 +939,10 @@ class SuperformerStage(nn.Module):
                 #init & forward sp feature for obj branch
                 if self.depth_obj is not None:
                     if i == self.obj_idx:
-                        x_obj  = x.clone().detach()
+                        if self.detach_obj_feature:
+                            x_obj  = x.clone().detach()
+                        else:
+                            x_obj = x.clone()
                     if i >= self.obj_idx:
                         if self.shared_blocks:
                             x_obj = self.blocks[i](x_obj)
@@ -1486,6 +1492,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
         resize_similarity_part: bool =True,
         resize_similarity_obj: bool =True,
         shared_blocks: bool = False,
+        detach_obj_feature: bool = True,
         **kwargs
 
     ):
@@ -1510,6 +1517,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             in_index=0,
             use_gt_cls = use_gt_cls,
     **kwargs)
+        
         self.shared_blocks = shared_blocks
         self.use_global_token = use_global_token
         self.reweight_sp_update = reweight_sp_update
@@ -1877,7 +1885,8 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                     use_gt_in_vit= True if self.classification_feature=='group_extralayer' else False,          
                     vis_sp_block = vis_sp_block,
                     output_dir = output_dir,
-                    shared_blocks = self.shared_blocks,          
+                    shared_blocks = self.shared_blocks,
+                    detach_obj_feature = detach_obj_feature,          
                 )
             )
 
