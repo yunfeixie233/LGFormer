@@ -795,29 +795,29 @@ class SuperformerStage(nn.Module):
         if depth_obj is not None:
             assert depth_obj >= -1
             self.obj_idx = depth - depth_obj
-            if self.shared_blocks is False:
-                self.blocks_obj =  nn.Sequential(
-                    *[
-                        block_fn(
-                            dim=out_channels,
-                            num_heads=num_heads,
-                            mlp_ratio=4,
-                            qkv_bias=True,
-                            # drop=drop_rate,
-                            proj_drop=drop_rate,
-                            attn_drop=attn_drop_rate,
-                            drop_path=(
-                                drop_path_rate[i + self.obj_idx]
-                                if isinstance(drop_path_rate, Sequence)
-                                else drop_path_rate
-                            ),
-                            norm_layer=norm_layer,
-                            act_layer=act_layer,
-                            init_values=ls_init_value
-                        )
-                        for i in range(depth_obj)
-                    ]
-                )
+            # if self.shared_blocks is False:
+            #     self.blocks_obj =  nn.Sequential(
+            #         *[
+            #             block_fn(
+            #                 dim=out_channels,
+            #                 num_heads=num_heads,
+            #                 mlp_ratio=4,
+            #                 qkv_bias=True,
+            #                 # drop=drop_rate,
+            #                 proj_drop=drop_rate,
+            #                 attn_drop=attn_drop_rate,
+            #                 drop_path=(
+            #                     drop_path_rate[i + self.obj_idx]
+            #                     if isinstance(drop_path_rate, Sequence)
+            #                     else drop_path_rate
+            #                 ),
+            #                 norm_layer=norm_layer,
+            #                 act_layer=act_layer,
+            #                 init_values=ls_init_value
+            #             )
+            #             for i in range(depth_obj)
+            #         ]
+            #     )
         
 
         if reweight:
@@ -916,17 +916,8 @@ class SuperformerStage(nn.Module):
 
     ) -> torch.Tensor:
         #global token concat and forward with image token, default to False
-        if self.use_global_token:
-            global_token = self.global_token
-            global_token = einops.repeat(
-                global_token,
-                'n d -> b n d',
-                b=x.shape[0]
-            )
-                                    
-            x, ps = einops.pack([x, global_token], 'b * d ')
-        else:
-            global_token = None
+
+        global_token = None
         sp_featuers_mid = None
         for i in range(start, end):
             #whether use hierarchy structure: only forward group token in vit block
@@ -943,11 +934,11 @@ class SuperformerStage(nn.Module):
                             x_obj  = x.clone().detach()
                         else:
                             x_obj = x.clone()
-                    if i >= self.obj_idx:
-                        if self.shared_blocks:
-                            x_obj = self.blocks[i](x_obj)
-                        else:
-                            x_obj = self.blocks_obj[i-self.obj_idx](x_obj)
+                    # if i >= self.obj_idx:
+                    #     if self.shared_blocks:
+                    #         x_obj = self.blocks[i](x_obj)
+                    #     else:
+                    #         x_obj = self.blocks_obj[i-self.obj_idx](x_obj)
                     
             #return sp of middle layer to generate similarity if needed
             if self.return_mid_sp and i == self.return_mid_sp:
@@ -970,6 +961,7 @@ class SuperformerStage(nn.Module):
             # group token layer in obj branch     
             if self.merge_layer_obj and i in self.group_pos_obj:
                 #unpack when cross attention
+                assert len(self.merge_layer_obj) == len(self.group_pos_obj)
                 gt_obj = gt_list_obj[-1] if gt_list_obj else None         
                 if self.use_global_token: 
                     x_obj, global_token = einops.unpack(x_obj, ps, 'b * d') 
@@ -1790,6 +1782,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             #init group token layer for obj branch   
             assert self.onlyobj_merge_layer   
             if depths_obj is not None and depths_obj[i] is not None:
+                depth_obj = depths_obj[i]                
                 group_cfg_obj = deepcopy(group_cfg)
                 group_pos_obj_i = group_cfg['group_pos'][i]                
                 merge_layer_obj = self._make_group_layer(

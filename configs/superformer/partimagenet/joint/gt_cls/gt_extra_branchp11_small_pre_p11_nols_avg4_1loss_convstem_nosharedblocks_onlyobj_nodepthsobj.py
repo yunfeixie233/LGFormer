@@ -3,7 +3,7 @@ _base_ = [
 ]
 model = dict(
     decode_head=dict(
-    depths_obj = (None,-1,-1,),
+    depths_obj = (None,1,-1,),
     group_pos = [[],[9,],[]], 
     group_init_strides = (4,),
     group_init_kernel_sizes = (4,),
