@@ -1780,49 +1780,49 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 group_pos_i = None                          
                 merge_layer = None
             #init group token layer for obj branch   
-            assert self.onlyobj_merge_layer   
-            if depths_obj is not None and depths_obj[i] is not None:
-                depth_obj = depths_obj[i]                
-                group_cfg_obj = deepcopy(group_cfg)
-                group_pos_obj_i = group_cfg['group_pos'][i]                
-                merge_layer_obj = self._make_group_layer(
-                    stage = i, cfg = group_cfg_obj
-                )                
-                merge_layer = None   
-                for key, value in group_cfg_obj.items():
-                    print(f"{key}:{value}")                               
+            # assert self.onlyobj_merge_layer   
+            # if depths_obj is not None and depths_obj[i] is not None:
+            #     depth_obj = depths_obj[i]                
+            #     group_cfg_obj = deepcopy(group_cfg)
+            #     group_pos_obj_i = group_cfg['group_pos'][i]                
+            #     merge_layer_obj = self._make_group_layer(
+            #         stage = i, cfg = group_cfg_obj
+            #     )                
+            #     merge_layer = None   
+            #     for key, value in group_cfg_obj.items():
+            #         print(f"{key}:{value}")                               
             #NOTE three methods to handle merge layer(group token layer) when branch
             # 1.default: obj branch and part branch have individual merge layers respectively
             # 2.shared_merge_layer: obj branch and part branch share the same merge layer
             # 3.onlyobj_merge_layer: only use merge layer in obj branch
-            # if depths_obj is not None and depths_obj[i] is not None and depths_obj[i] != -1:
-            #     depth_obj = depths_obj[i]
-            #     group_cfg_obj = deepcopy(group_cfg)
-            #     trim_num = min(group_cfg_obj['layer_num'],depth_obj)
-            #     group_pos_obj_i = group_cfg['group_pos'][i][-trim_num:] 
-            #     if self.shared_merge_layer:
-            #         #NOTE 1.fully shared
-            #         #2.partly shared
+            if depths_obj is not None and depths_obj[i] is not None and depths_obj[i] != -1:
+                depth_obj = depths_obj[i]
+                group_cfg_obj = deepcopy(group_cfg)
+                trim_num = min(group_cfg_obj['layer_num'],depth_obj)
+                group_pos_obj_i = group_cfg['group_pos'][i][-trim_num:] 
+                if self.shared_merge_layer:
+                    #NOTE 1.fully shared
+                    #2.partly shared
                     
-            #         merge_layer_obj  = merge_layer[:trim_num]
-            #         if len(merge_layer_obj) != len(merge_layer):
-            #             print(f"warning: object partly share group layer from part with {len(merge_layer_obj)} layers, group_pos_obj is {group_pos_obj_i} ")
-            #     else:
-            #         group_cfg_obj['layer_num'] = trim_num
-            #         group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
-            #         group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][-trim_num:]                
-            #         group_cfg_obj['group_init_strides'] = group_cfg['group_init_strides'][:trim_num]
-            #         group_cfg_obj['group_init_kernel_sizes'] = group_cfg['group_init_kernel_sizes'][:trim_num]
-            #         group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
-            #         merge_layer_obj = self._make_group_layer(
-            #             stage = i, cfg = group_cfg_obj
-            #         )
-            #         if self.onlyobj_merge_layer:
-            #             merge_layer = None       
-            #     print("#######group_cfg_obj########")
-            #     for key, value in group_cfg_obj.items():
-            #         print(f"{key}:{value}")     
-            #     print("#######group_cfg_obj########")
+                    merge_layer_obj  = merge_layer[:trim_num]
+                    if len(merge_layer_obj) != len(merge_layer):
+                        print(f"warning: object partly share group layer from part with {len(merge_layer_obj)} layers, group_pos_obj is {group_pos_obj_i} ")
+                else:
+                    group_cfg_obj['layer_num'] = trim_num
+                    group_cfg_obj['group_layers'] = dict(list(group_cfg['group_layers'].items())[:trim_num])
+                    group_cfg_obj['group_pos'][i] = group_cfg['group_pos'][i][-trim_num:]                
+                    group_cfg_obj['group_init_strides'] = group_cfg['group_init_strides'][:trim_num]
+                    group_cfg_obj['group_init_kernel_sizes'] = group_cfg['group_init_kernel_sizes'][:trim_num]
+                    group_cfg_obj['group_token_init_method'] = group_cfg['group_token_init_method'][:trim_num]
+                    merge_layer_obj = self._make_group_layer(
+                        stage = i, cfg = group_cfg_obj
+                    )
+                    if self.onlyobj_merge_layer:
+                        merge_layer = None       
+                print("#######group_cfg_obj########")
+                for key, value in group_cfg_obj.items():
+                    print(f"{key}:{value}")     
+                print("#######group_cfg_obj########")
                        
             else:
                 depth_obj = None
