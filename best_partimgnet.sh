@@ -1,7 +1,7 @@
 #!/bin/bash
 unset LD_LIBRARY_PATH
 # pkill -u meijieru python
-desired_env="yunfei"
+desired_env="yunfei_v2"
 current_env=$(conda env list | grep '*' | awk '{print $1}')
 
 if [[ "$current_env" != "$desired_env" ]]; then

@@ -11,5 +11,7 @@ model = dict(
     stem_kernel_sizes=(4,),
     stem_conv_types=("conv",),
     stem_strides=(4,),   
+    group_embed_dims=768,
+    
     )
 )
