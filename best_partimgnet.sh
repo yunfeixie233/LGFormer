@@ -1,7 +1,7 @@
 #!/bin/bash
 unset LD_LIBRARY_PATH
 # pkill -u meijieru python
-desired_env="yunfei_v2"
+desired_env="yunfei"
 current_env=$(conda env list | grep '*' | awk '{print $1}')
 
 if [[ "$current_env" != "$desired_env" ]]; then
@@ -11,7 +11,7 @@ if [[ "$current_env" != "$desired_env" ]]; then
     echo "Switched to env $current_env"
 fi
 
-default_load_from="best_p9_stem.pth"
+default_load_from="base_p9.pth"
 
 # Check for the --resume argument
 resume=false
@@ -36,7 +36,7 @@ REMOTE_BASE_DIR="/data1/yunfei/log"
 REMOTE_PORT=20046
 
 configs=(
-    "/data2/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp9_small_pre_p9p10p11_nols_avg4_1loss_convstem_nosharedblocks_sharedgroup.py"
+    "/data2/yunfei/SpformerV1/configs/superformer/partimagenet/joint/gt_cls/gt_extra_branchp9_small_pre_p9p10p11_nols_avg4_1loss_convstem_nosharedblocks_sharedgroup_base.py"
 )
 
 

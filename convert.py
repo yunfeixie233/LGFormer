@@ -3,27 +3,38 @@ import einops
 rearrange = einops.rearrange
 import torch.nn.functional as F
 
-# 读取.pth文件
-data = torch.load('/data3/yunfei/SpformerV1/best_p6.pth')
-print(data.keys())
-new_data = {}
-model_data = data['state_dict']
-for key, value in model_data.items():
-    # key = key.replace('backbone.layers.0','backbone.stages.0.blocks.0')
-    # key = key.replace('backbone.layers.1','backbone.stages.0.blocks.1')
-    # key = key.replace('backbone.layers.2','backbone.stages.0.blocks.2')
-    # key = key.replace('backbone.layers.3','backbone.stages.0.blocks.3')
-    # key = key.replace('backbone.layers.4','backbone.stages.0.blocks.4')
-    # key = key.replace('backbone.layers.5','backbone.stages.0.blocks.5')
-    # key = key.replace('backbone.layers.6','backbone.stages.0.blocks.6')
-    # key = key.replace('backbone.layers.7','backbone.stages.0.blocks.7')
-    # key = key.replace('backbone.layers.8','backbone.stages.0.blocks.8')
-    # key = key.replace('backbone.layers.9','backbone.stages.0.blocks.9')
-    # key = key.replace('backbone.layers.10','backbone.stages.0.blocks.10')
-    # key = key.replace('backbone.layers.11','backbone.stages.0.blocks.11')
-    # key = key.replace('backbone.','decode_head.')
-    # if 'pos_embed' in key:
-    #     key = 'decode_head.stages.0.pos_embed'
-    # new_data[key] = value
-    print(key)
+def compare_weights(weight_file1, weight_file2):
+    # 读取第一个权重文件
+    data1 = torch.load(weight_file1)
+    model_data1 = data1
+    keys1 = set(model_data1.keys())
 
+    # 读取第二个权重文件
+    data2 = torch.load(weight_file2)
+    model_data2 = data2
+    keys2 = set(model_data2.keys())
+
+    # 找出共有的key
+    common_keys = keys1.intersection(keys2)
+    print("共有的key:")
+    for key in common_keys:
+        print(key)
+
+    # 找出第一个权重文件独有的key
+    unique_keys1 = keys1.difference(keys2)
+    print("\n第一个权重文件独有的key:")
+    for key in unique_keys1:
+        print(key)
+
+    # 找出第二个权重文件独有的key
+    unique_keys2 = keys2.difference(keys1)
+    print("\n第二个权重文件独有的key:")
+    for key in unique_keys2:
+        print(key)
+
+# 输入两个权重文件的路径
+weight_file1 = '/data2/yunfei/SpformerV1/best_p9_stem.pth'
+weight_file2 = '/data2/yunfei/SpformerV1/base_p9.pth'
+
+# 比较权重
+compare_weights(weight_file1, weight_file2)
