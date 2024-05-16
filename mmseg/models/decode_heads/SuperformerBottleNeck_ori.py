@@ -2266,23 +2266,9 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
             )
         elif method == "sp_cross_asymmetry":
             assert sp_dim is not None
-            if self.use_patch_embed:
-                sp_iter = 0
-            elif 'extralayer' in self.classification_feature :
-                if i != len(self.sp_features_init_methods) -1:
-                    sp_iter = self.sp_iter
-                else:
-                    sp_iter = self.final_iter
-            else:
-                sp_iter = self.sp_iter
-                
-            if self.extralayer_nols and i == len(self.sp_features_init_methods) -1 :
-                sp_ls_init_value = None
-            else:
-                sp_ls_init_value = self.sp_ls_init_value
             sp_fn = partial(
                 st.SuperPixelTokenizationCrossAttentionAsymmetry,
-                sp_iter,
+                self.sp_iter,
                 sp_head,
                 pixel_dim,
                 pixel_shape,
@@ -2296,7 +2282,7 @@ class SuperformerBottleNeck_ori(MultiLossBaseDecodeHead):
                 num_channels_sp=sp_dim,
                 num_heads_sp=sp_head,
                 layer_kwargs={
-                    "ls_init_value": sp_ls_init_value,
+                    "ls_init_value": self.sp_ls_init_value,
                     "norm_layer": self.norm_layer_2d,
                 },
                 reweight_sp = self.reweight_sp_update,
