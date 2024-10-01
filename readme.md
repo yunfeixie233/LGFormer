@@ -60,16 +60,6 @@ Employing 6 superpixels for part segmentation and 10 groups for object segmentat
 ## Installation
 To be updated.
 
-## Citation
-@misc{xie2024pixelsobjectshierarchicalapproach,  
-title={From Pixels to Objects: A Hierarchical Approach for Part and Object Segmentation Using Local and Global Aggregation},  
-author={Yunfei Xie and Cihang Xie and Alan Yuille and Jieru Mei},  
-year={2024},  
-eprint={2409.01353},  
-archivePrefix={arXiv},  
-primaryClass={cs.CV},  
-url={https://arxiv.org/abs/2409.01353},  
-}
 
 
 ## 📜 Citation
