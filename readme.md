@@ -41,7 +41,7 @@ LGFormer uses a bidirectional design that aggregates features from local to glob
 LGFormer outperforms previous state-of-the-art models in both part and object segmentation tasks, while requiring significantly less computational resources. This efficiency is achieved through the use of superpixels and hierarchical aggregation.
 
 <div align="center">
-<img src="resources/results.png" width="85%">
+<img src="resources/result.png" width="85%">
 </div>
 
 ## Installation
