@@ -24,8 +24,8 @@ Fixed patches, as traditionally used in image transformers, often lead to broken
 <img src="resources/motivation.png" width="85%">
 </div>
 
-Patch Tokens ≠ Semantic Tokens  
-Superpixels are better part representations.
+- Patch Tokens ≠ Semantic Tokens  
+- Superpixels are better part representations.
 
 ## Bidirectional Hierarchical Design and Pipeline
 LGFormer uses a bidirectional design that aggregates features from local to global contexts in the forward pass and recovers predictions from coarse to fine in the backward pass. This hierarchical representation moves from pixels to superpixels to groups, efficiently balancing fine-grained segmentation with global context understanding. The pipeline follows a dual-branch structure, where one branch focuses on part tokens and the other on group tokens.
@@ -37,11 +37,19 @@ LGFormer uses a bidirectional design that aggregates features from local to glob
 <img src= "resources/pipeline.png" width="85%">
 </div>
 
-## Results
+## Supervised Results
 LGFormer outperforms previous state-of-the-art models in both part and object segmentation tasks, while requiring significantly less computational resources. This efficiency is achieved through the use of superpixels and hierarchical aggregation.
 
 <div align="center">
 <img src="resources/result.png" width="85%">
+</div>
+
+## Unsupervised Results
+Quantitive Evaluation of Unsupervised Superpixels and Groups:
+Employing 6 superpixels for part segmentation and 10 groups for object segmentation in an unsupervised setting yielded mIoU scores comparable to those achieved with supervised methods.
+
+<div align="center">
+<img src="resources/oracle.png" width="85%">
 </div>
 
 ## Installation
