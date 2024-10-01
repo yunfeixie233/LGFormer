@@ -12,8 +12,13 @@ ECCV 2024.
 </div>
 
 - Part semantics emerge from superpixel visualization, even without supervision.
-- Superpixels naturally discover part semantics without the need for annotations.
+- Superpixels naturally discover part semantics, making them ideal for capturing fine-grained representations.
 
+
+
+## 📢 Breaking News
+
+- **[📄💥 September 2, 2024] [Our arXiv paper is released](https://arxiv.org/abs/2409.01353).**
 
 
 
@@ -67,3 +72,19 @@ url={https://arxiv.org/abs/2409.01353},
 }
 
 
+## 📜 Citation
+
+If you find this work useful for your research and applications, please cite using this BibTeX:
+
+```bibtex
+@misc{xie2024pixelsobjectshierarchicalapproach,  
+title={From Pixels to Objects: A Hierarchical Approach for Part and Object Segmentation Using Local and Global Aggregation},  
+author={Yunfei Xie and Cihang Xie and Alan Yuille and Jieru Mei},  
+year={2024},  
+eprint={2409.01353},  
+archivePrefix={arXiv},  
+primaryClass={cs.CV},  
+url={https://arxiv.org/abs/2409.01353},  
+}
+
+```
